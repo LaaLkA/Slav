@@ -1,0 +1,15 @@
+.env
+.env.*
+ralph-logs*/
+tasks-*.json.bak
+graphify-out/
+graphify-merged/
+.unlazy/
+.DS_Store
+.claude
+CLAUDE.md
+obsidian*
+ralph.sh
+wiki-compile.sh
+scripts/*
+.idea
