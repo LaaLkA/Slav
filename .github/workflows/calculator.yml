@@ -1,0 +1,63 @@
+name: calculator
+
+on:
+  push:
+    branches: ['**']
+    # Path filters are not evaluated for tag pushes, so every v* tag triggers the workflow.
+    tags: ['v*']
+    paths:
+      - 'calculator/**'
+      - '.github/workflows/calculator.yml'
+  pull_request:
+    paths:
+      - 'calculator/**'
+      - '.github/workflows/calculator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: calculator
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew build
+
+  package:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            task: packageMsi
+            format: msi
+          - os: macos-latest
+            task: packageDmg
+            format: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew :app:${{ matrix.task }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: slav-${{ matrix.format }}
+          path: calculator/app/build/compose/binaries/main/${{ matrix.format }}/*.${{ matrix.format }}
+          if-no-files-found: error
