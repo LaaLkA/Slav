@@ -1,0 +1,24 @@
+[versions]
+kotlin = "2.4.21"
+compose-multiplatform = "1.12.2"
+# Material 3 is versioned separately from Compose Multiplatform; 1.12.0-alpha03 is the release paired with Compose 1.12.x.
+compose-material3 = "1.12.0-alpha03"
+# The last published Material icons; the Compose plugin itself still pins this version.
+compose-material-icons = "1.7.3"
+kotlinx-serialization = "1.12.0"
+kotlinx-coroutines = "1.11.0"
+sqldelight = "2.3.2"
+
+[libraries]
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
+compose-material-icons-core = { module = "org.jetbrains.compose.material:material-icons-core", version.ref = "compose-material-icons" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
