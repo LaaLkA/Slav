@@ -36,4 +36,14 @@ data class GeneralSettings(
  * Bend lengths in (fromMm, toMm]; null ends are open. A range is identified in price tables by
  * [toMm], so inserting a new bound leaves existing cells in the range they were entered for.
  */
-data class BendRange(val fromMm: BigDecimal?, val toMm: BigDecimal?)
+data class BendRange(val fromMm: BigDecimal?, val toMm: BigDecimal?) {
+    /** The column header of the bending table (spec 4.6): «до 100», «100–300», «свыше 1000». */
+    val label: String
+        get() = when {
+            fromMm != null && toMm != null -> "${fromMm.toHeader()}–${toMm.toHeader()}"
+            toMm != null -> "до ${toMm.toHeader()}"
+            fromMm != null -> "свыше ${fromMm.toHeader()}"
+            // No bounds configured: one range for every length.
+            else -> "любая длина"
+        }
+}

@@ -18,3 +18,6 @@ fun BigDecimal.mm2ToM2(): BigDecimal = movePointLeft(6)
 
 /** mm³ → m³ */
 fun BigDecimal.mm3ToM3(): BigDecimal = movePointLeft(9)
+
+/** A dimension as a table header shows it: "2" for both 2 and 2.0, "1.5" for 1.50. */
+internal fun BigDecimal.toHeader(): String = stripTrailingZeros().toPlainString()

@@ -3,6 +3,7 @@ package io.github.laalka.slav.core
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 fun dec(value: String) = BigDecimal(value)
@@ -20,6 +21,32 @@ fun assertDecimalRounded(expected: String, actual: BigDecimal) {
 }
 
 fun assertMoney(expected: String, actual: Money) = assertDecimal(expected, actual.amount)
+
+/** Exact text, scale included: a rounded line is always written with two decimals. */
+fun assertKopecks(expected: String, actual: Money) = assertEquals(expected, actual.amount.toPlainString())
+
+/** A one-piece calculation of a single part, no product operations. */
+fun onePart(material: Material, vararg operations: PartOperation, materialExtra: ManualExtra? = null) =
+    CalculationInput(
+        name = "Расчёт",
+        quantity = 1,
+        parts = listOf(Part("Деталь", 1, material, operations.toList(), materialExtra)),
+        productOperations = emptyList(),
+    )
+
+fun PriceBook.priced(input: CalculationInput): CalcResult {
+    val outcome = Calculator(this).calculate(input)
+    return assertIs<CalcOutcome.Ok>(outcome, "expected Ok, got $outcome").result
+}
+
+fun PriceBook.errorsOf(input: CalculationInput): List<CalcError> {
+    val outcome = Calculator(this).calculate(input)
+    return assertIs<CalcOutcome.Failed>(outcome, "expected Failed, got $outcome").errors
+}
+
+/** Cost of the first operation of the only part. */
+fun PriceBook.costOf(material: Material, operation: PartOperation): Money =
+    priced(onePart(material, operation)).parts.single().operations.single().cost
 
 object Fixtures {
     const val STEEL = "Сталь"
