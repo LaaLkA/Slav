@@ -6,7 +6,8 @@ plugins {
 kotlin { jvmToolchain(17) }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
+    // The model is @Serializable and BigDecimalSerializer is public, so consumers see the library.
+    api(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))
 }
 
