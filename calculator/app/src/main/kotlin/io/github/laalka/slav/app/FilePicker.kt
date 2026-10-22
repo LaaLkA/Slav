@@ -8,18 +8,18 @@ import kotlin.io.path.name
 
 /** Asks the user for a file; null when the dialog was cancelled. */
 interface FilePicker {
-    fun chooseExportTarget(suggestedName: String): Path?
+    /** A file to write; [extension] includes its dot (".json"), and a name typed without it gets it. */
+    fun chooseSaveTarget(title: String, suggestedName: String, extension: String): Path?
 
     fun chooseImportSource(): Path?
 }
 
 /** The system file dialogs: AWT's FileDialog opens the native dialog on macOS and Windows. */
 class NativeFilePicker(private val owner: Frame) : FilePicker {
-    override fun chooseExportTarget(suggestedName: String): Path? {
-        val chosen = FileDialog(owner, "Экспорт настроек", FileDialog.SAVE).apply { file = suggestedName }.pick()
-            ?: return null
-        // Settings files are recognised by their extension; a name typed without it gets one.
-        return if (chosen.name.endsWith(JSON, ignoreCase = true)) chosen else chosen.resolveSibling(chosen.name + JSON)
+    override fun chooseSaveTarget(title: String, suggestedName: String, extension: String): Path? {
+        val chosen = FileDialog(owner, title, FileDialog.SAVE).apply { file = suggestedName }.pick() ?: return null
+        // Files are recognised by their extension; a name typed without it gets one.
+        return if (chosen.name.endsWith(extension, ignoreCase = true)) chosen else chosen.resolveSibling(chosen.name + extension)
     }
 
     override fun chooseImportSource(): Path? = FileDialog(owner, "Импорт настроек", FileDialog.LOAD).apply {

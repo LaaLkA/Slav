@@ -316,7 +316,9 @@ private fun CalculateBar(state: EditorState, onCalculate: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.large, vertical = Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
-            if (state.calcErrors.isNotEmpty()) CalcErrors(state.calcErrors, state.calcErrorsHint)
+            if (state.calcErrors.isNotEmpty()) {
+                CalcErrors(state.calcErrors, state.calcErrorsHint, modifier = Modifier.testTag(EditorTags.ERRORS))
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
                 Text(
                     if (state.canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: ${state.missingCount}",
@@ -332,14 +334,22 @@ private fun CalculateBar(state: EditorState, onCalculate: () -> Unit) {
     }
 }
 
-/** Spec 7.3: everything that stopped the calculation at once; the table, row and column of each missing price. */
+/**
+ * Spec 7.3: everything that stopped the calculation at once; the table, row and column of each
+ * missing price. Also shown by the card when «Пересчитать по текущим ценам» fails (spec 8.3).
+ */
 @Composable
-private fun CalcErrors(errors: List<ReadableError>, hint: String?) {
+fun CalcErrors(
+    errors: List<ReadableError>,
+    hint: String?,
+    title: String = "Расчёт не выполнен — не хватает данных",
+    modifier: Modifier = Modifier,
+) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth().testTag(EditorTags.ERRORS),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()).padding(Spacing.medium),
@@ -347,7 +357,7 @@ private fun CalcErrors(errors: List<ReadableError>, hint: String?) {
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Warning, contentDescription = null)
-                Text("Расчёт не выполнен — не хватает данных", style = MaterialTheme.typography.titleSmall)
+                Text(title, style = MaterialTheme.typography.titleSmall)
             }
             val cells = errors.mapNotNull { it.cell }
             if (cells.isNotEmpty()) {

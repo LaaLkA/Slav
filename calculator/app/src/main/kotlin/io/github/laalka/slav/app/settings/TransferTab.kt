@@ -32,7 +32,7 @@ fun TransferTab(model: TransferModel, filePicker: FilePicker) {
     val state by model.state.collectAsState()
     TabContent {
         SectionCard("Экспорт настроек", subtitle = "Справочники, сортамент и все цены — в один файл .json. Расчёты в файл не входят.") {
-            Button(onClick = { filePicker.chooseExportTarget(model.suggestedFileName())?.let(model::export) }) {
+            Button(onClick = { filePicker.chooseSaveTarget("Экспорт настроек", model.suggestedFileName(), ".json")?.let(model::export) }) {
                 Text("Экспортировать в файл…")
             }
         }

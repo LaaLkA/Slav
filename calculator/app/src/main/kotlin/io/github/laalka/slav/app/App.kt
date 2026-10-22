@@ -58,7 +58,13 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
             }
             VerticalDivider()
             when (val current = page) {
-                Page.Calculations -> CalculationsScreen(onNew = { navigator.navigate(Screen.Editor(null)) })
+                Page.Calculations -> CalculationsScreen(
+                    navigator.calculationList,
+                    filePicker,
+                    onNew = { navigator.navigate(Screen.Editor(null)) },
+                    onOpen = navigator::open,
+                    onCopy = navigator::copy,
+                )
                 // Keyed by the model: another calculation's editor starts with fresh fields.
                 is Page.Editor -> key(current.model) {
                     EditorScreen(current.model, onBack = { navigator.navigate(Screen.Calculations) })

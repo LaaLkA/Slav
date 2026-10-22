@@ -110,6 +110,8 @@ fun InputField(
     error: String? = null,
     numeric: Boolean = false,
     onEnter: (() -> Unit)? = null,
+    placeholder: String? = null,
+    leadingIcon: (@Composable () -> Unit)? = null,
 ) {
     var text by remember { mutableStateOf(value) }
     val style = LocalTextStyle.current
@@ -125,6 +127,8 @@ fun InputField(
             isEnter
         },
         label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        placeholder = placeholder?.let { { Text(it, maxLines = 1) } },
+        leadingIcon = leadingIcon,
         isError = error != null,
         supportingText = error?.let { { Text(it) } },
         singleLine = true,

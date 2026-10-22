@@ -3,7 +3,9 @@ package io.github.laalka.slav.app
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import io.github.laalka.slav.app.calculations.CalculationListModel
 import io.github.laalka.slav.app.calculations.CardModel
+import io.github.laalka.slav.app.calculations.ListRow
 import io.github.laalka.slav.app.editor.EditorModel
 import io.github.laalka.slav.app.settings.SettingsModel
 import kotlinx.coroutines.CoroutineScope
@@ -47,6 +49,9 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Created once: the settings tabs keep their state while the user visits other screens. */
     val settings = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences)
 
+    /** Created once as well: search, filters and sorting stay while calculations are opened. */
+    val calculationList = CalculationListModel(deps.calculations, deps.settings)
+
     private var calculationsPage: Page = Page.Calculations
     private val _page = MutableStateFlow<Page>(Page.Calculations)
     val page: StateFlow<Page> = _page.asStateFlow()
@@ -69,6 +74,12 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         }
     }
 
+    /** A row of the list: a priced calculation opens its card, a draft its editor, since a draft has no price (spec 7.2). */
+    fun open(row: ListRow) = navigate(if (row.isDraft) Screen.Editor(row.id) else Screen.Card(row.id))
+
+    /** Spec 8.3: the copy is a draft, opened in the editor, and is priced on the current settings. */
+    fun copy(id: UUID) = navigate(Screen.Editor(calculationList.copy(id)))
+
     /** The rail's «Расчёты»: back to the page left for the settings, or to the start page from within the section. */
     fun selectCalculations() {
         if (_page.value != Page.Settings) {
@@ -78,7 +89,8 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         when (val page = calculationsPage) {
             is Page.Editor -> page.model.resume()
             is Page.Card -> page.model.reload()
-            Page.Calculations, Page.Settings -> Unit
+            Page.Calculations -> calculationList.reload()
+            Page.Settings -> Unit
         }
         _page.value = calculationsPage
     }
@@ -113,6 +125,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     private fun openEditor(): EditorModel? = (calculationsPage as? Page.Editor)?.model
 
     private fun show(page: Page) {
+        if (page == Page.Calculations) calculationList.reload()
         calculationsPage = page
         _page.value = page
     }

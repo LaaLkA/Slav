@@ -18,6 +18,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
     implementation(libs.kotlinx.coroutines.swing)
+    implementation(libs.pdfbox)
+    implementation(libs.poi.ooxml)
     testImplementation(kotlin("test"))
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -42,7 +44,7 @@ compose.desktop {
             packageName = "Slav"
             packageVersion = appVersion
             // Output of `./gradlew :app:suggestRuntimeModules`; re-run it after adding dependencies.
-            modules("java.instrument", "jdk.unsupported")
+            modules("java.instrument", "java.security.jgss", "java.sql", "java.xml.crypto", "jdk.unsupported")
 
             windows {
                 // Must never change: a new .msi replaces the installed one only when this UUID matches.
