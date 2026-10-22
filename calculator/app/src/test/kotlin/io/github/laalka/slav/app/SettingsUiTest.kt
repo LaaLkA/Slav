@@ -15,7 +15,6 @@ import io.github.laalka.slav.data.AppPaths
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.math.BigDecimal
-import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -42,11 +41,5 @@ class SettingsUiTest {
             val saved = assertNotNull(deps.settings.load().laserSheetCutPerCm.priceFor("Сталь", BigDecimal("2")))
             assertEquals(0, BigDecimal("37.5").compareTo(saved), "saved $saved")
         }
-    }
-
-    private object NoFilePicker : FilePicker {
-        override fun chooseExportTarget(suggestedName: String): Path? = error("The test opens no file dialogs")
-
-        override fun chooseImportSource(): Path? = error("The test opens no file dialogs")
     }
 }

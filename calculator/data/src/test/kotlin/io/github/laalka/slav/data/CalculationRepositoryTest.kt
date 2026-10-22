@@ -106,6 +106,22 @@ class CalculationRepositoryTest {
     }
 
     @Test
+    fun `restoring a priced calculation undoes a draft saved over it, dates included`() {
+        val old = book.copy(paintingPerM2 = dec("300"))
+        val id = calculated(sheetInput("Кронштейн"), prices = old)
+        calculations.setStatus(id, CalculationStatus.SENT)
+        val original = assertNotNull(calculations.get(id))
+        clock.advance(Duration.ofHours(1))
+        calculations.saveDraft(sheetInput("Кронштейн изменённый", quantity = 2), id)
+        clock.advance(Duration.ofHours(1))
+
+        calculations.restore(original)
+
+        assertEquals(original, calculations.get(id))
+        assertEquals(listOf("Кронштейн"), names(calculations.list(query = "кронштейн")))
+    }
+
+    @Test
     fun `recalculating on current prices replaces the snapshot`() {
         val id = calculated(sheetInput("Кронштейн"))
         clock.advance(Duration.ofDays(1))

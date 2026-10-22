@@ -63,7 +63,7 @@ class Calculator(private val priceBook: PriceBook) {
                 priceWelding(op.weldType, op.rows, op.group, op.thicknessMm, priceBook, errors)
             // The product area is Σ area by the parts' dimensions (spec 6.7), not their painting overrides.
             is ProductOperation.Painting -> pricePainting(
-                op.areaOverrideM2 ?: parts.sumOf { it.material.paintAreaM2 * it.qtyPerProduct.toBigDecimal() },
+                op.areaOverrideM2 ?: parts.paintAreaM2(),
                 priceBook,
                 errors,
             )

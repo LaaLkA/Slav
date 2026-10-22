@@ -42,10 +42,14 @@ fun main() {
         Desktop.getDesktop().setQuitStrategy(QuitStrategy.CLOSE_ALL_WINDOWS)
     }
     application {
+        val navigator = rememberNavigator(deps)
         Window(
+            // An edited calculation may first ask whether to keep the edit (spec 8.3).
             onCloseRequest = {
-                deps.close()
-                exitApplication()
+                navigator.requestExit {
+                    deps.close()
+                    exitApplication()
+                }
             },
             title = "Slav — расчёт стоимости",
             state = rememberWindowState(size = DpSize(MIN_WIDTH.dp, MIN_HEIGHT.dp)),
@@ -53,7 +57,7 @@ fun main() {
             LaunchedEffect(Unit) { window.minimumSize = Dimension(MIN_WIDTH, MIN_HEIGHT) }
             val themeMode by deps.preferences.themeMode.collectAsState()
             SlavTheme(darkTheme = themeMode.isDark(isSystemInDarkTheme())) {
-                App(deps, remember { NativeFilePicker(window) })
+                App(deps, remember { NativeFilePicker(window) }, navigator)
             }
         }
     }

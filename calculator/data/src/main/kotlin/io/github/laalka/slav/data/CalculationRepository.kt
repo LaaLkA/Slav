@@ -141,6 +141,29 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         return key
     }
 
+    /**
+     * Writes [calculation] back exactly as it was read, status and dates included: «Отменить
+     * изменения» after an edit of a priced calculation was autosaved over it as a draft (spec 8.3).
+     */
+    fun restore(calculation: StoredCalculation) {
+        val result = requireNotNull(calculation.result) { "Only a priced calculation is restored, ${calculation.id} is a draft" }
+        val snapshot = checkNotNull(calculation.snapshot) { "Priced calculation ${calculation.id} has no snapshot" }
+        val snapshotAt = checkNotNull(calculation.snapshotAt) { "Priced calculation ${calculation.id} has no snapshot date" }
+        queries.updateCalculated(
+            name = calculation.input.name,
+            nameSearch = searchForm(calculation.input.name),
+            status = calculation.status.name,
+            quantity = calculation.input.quantity.toLong(),
+            unitPrice = result.unitPrice.amount.toPlainString(),
+            updatedAt = calculation.updatedAt.toEpochMilli(),
+            snapshotAt = snapshotAt.toEpochMilli(),
+            inputJson = encode(calculation.input),
+            snapshotJson = storageJson.encodeToString(PriceBook.serializer(), snapshot),
+            resultJson = storageJson.encodeToString(StoredResult.serializer(), StoredResult.of(result)),
+            id = calculation.id.toString(),
+        )
+    }
+
     fun get(id: UUID): StoredCalculation? = queries.selectById(id.toString()).executeAsOneOrNull()?.toStored()
 
     /**
