@@ -1,0 +1,12 @@
+-- All settings of spec 4 as one PriceBook JSON document: it is always read and written whole.
+CREATE TABLE settings (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+select:
+SELECT json FROM settings WHERE id = 1;
+
+upsert:
+INSERT OR REPLACE INTO settings(id, json, updated_at) VALUES (1, :json, :updatedAt);

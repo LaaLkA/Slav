@@ -1,0 +1,63 @@
+-- A calculation is one JSON tree (input, price snapshot, result) read whole; only what the list
+-- filters and sorts on is copied into columns. Instants are epoch milliseconds.
+CREATE TABLE calculation (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- name.lowercase(): SQLite folds case for ASCII only, so a Cyrillic search compares lowercased text.
+    name_search TEXT NOT NULL,
+    status TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    -- The unit price as a plain decimal string; NULL for a draft.
+    unit_price TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    -- When the price snapshot was taken; NULL while there is none.
+    snapshot_at INTEGER,
+    input_json TEXT NOT NULL,
+    snapshot_json TEXT,
+    result_json TEXT
+);
+
+selectById:
+SELECT * FROM calculation WHERE id = :id;
+
+-- instr, not LIKE: the search text is literal, so '%' and '_' typed by the user match themselves.
+selectSummaries:
+SELECT id, name, status, quantity, unit_price, created_at, updated_at
+FROM calculation
+WHERE instr(name_search, :search) > 0
+  AND status IN :statuses
+  AND (:fromMillis IS NULL OR updated_at >= :fromMillis)
+  AND (:untilMillis IS NULL OR updated_at < :untilMillis);
+
+insert:
+INSERT INTO calculation(
+    id, name, name_search, status, quantity, unit_price, created_at, updated_at,
+    snapshot_at, input_json, snapshot_json, result_json
+) VALUES (
+    :id, :name, :nameSearch, :status, :quantity, :unitPrice, :createdAt, :updatedAt,
+    :snapshotAt, :inputJson, :snapshotJson, :resultJson
+);
+
+-- A draft has no price; the snapshot stays, so finishing the edit recalculates on the same prices.
+updateDraft:
+UPDATE calculation
+SET name = :name, name_search = :nameSearch, status = :status, quantity = :quantity, unit_price = NULL,
+    updated_at = :updatedAt, input_json = :inputJson, result_json = NULL
+WHERE id = :id;
+
+updateCalculated:
+UPDATE calculation
+SET name = :name, name_search = :nameSearch, status = :status, quantity = :quantity, unit_price = :unitPrice,
+    updated_at = :updatedAt, snapshot_at = :snapshotAt, input_json = :inputJson,
+    snapshot_json = :snapshotJson, result_json = :resultJson
+WHERE id = :id;
+
+updateStatus:
+UPDATE calculation SET status = :status, updated_at = :updatedAt WHERE id = :id;
+
+updateQuantity:
+UPDATE calculation SET quantity = :quantity, input_json = :inputJson, updated_at = :updatedAt WHERE id = :id;
+
+delete:
+DELETE FROM calculation WHERE id = :id;
