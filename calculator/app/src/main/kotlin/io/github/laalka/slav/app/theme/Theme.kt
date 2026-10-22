@@ -1,11 +1,15 @@
 package io.github.laalka.slav.app.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF415F91),
@@ -83,7 +87,24 @@ private val DarkColors = darkColorScheme(
     surfaceContainerHighest = Color(0xFF33353A),
 )
 
-/** Application theme: follows the operating system's light or dark mode. */
+// Cards take `medium` (12 dp) and the settings sections `large` (16 dp).
+private val SlavShapes = Shapes(
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+)
+
+/** Every gap and padding is a multiple of 8 dp. */
+object Spacing {
+    val small = 8.dp
+    val medium = 16.dp
+    val large = 24.dp
+}
+
+/** Digits of equal width, so the numbers of a column line up. */
+fun TextStyle.tabular(): TextStyle = copy(fontFeatureSettings = "tnum")
+
+/** Application theme; [darkTheme] follows the operating system unless the user chose a theme in the settings. */
 @Composable
 fun SlavTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -91,6 +112,7 @@ fun SlavTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        shapes = SlavShapes,
         content = content,
     )
 }

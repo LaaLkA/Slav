@@ -20,45 +20,55 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import io.github.laalka.slav.app.settings.SettingsModel
+import io.github.laalka.slav.app.settings.SettingsScreen
 
-private enum class Destination(val label: String, val icon: ImageVector) {
-    Calculations("Расчёты", Icons.AutoMirrored.Filled.List),
-    Settings("Настройки", Icons.Filled.Settings),
+/** The destinations of the navigation rail. */
+sealed interface Screen {
+    data object Calculations : Screen
+
+    data object Settings : Screen
 }
 
+const val NAV_CALCULATIONS_TAG = "nav/calculations"
+const val NAV_SETTINGS_TAG = "nav/settings"
+
 @Composable
-fun App() {
-    var destination by remember { mutableStateOf(Destination.Calculations) }
+fun App(deps: Deps, filePicker: FilePicker) {
+    var screen by remember { mutableStateOf<Screen>(Screen.Calculations) }
+    // Created once: the settings tabs keep their state while the user visits other screens.
+    val settings = remember(deps) { SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Row(modifier = Modifier.fillMaxSize()) {
             NavigationRail {
-                Destination.entries.forEach { item ->
-                    NavigationRailItem(
-                        selected = destination == item,
-                        onClick = { destination = item },
-                        icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(item.label) },
-                    )
-                }
+                NavigationRailItem(
+                    selected = screen == Screen.Calculations,
+                    onClick = { screen = Screen.Calculations },
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
+                    label = { Text("Расчёты") },
+                    modifier = Modifier.testTag(NAV_CALCULATIONS_TAG),
+                )
+                NavigationRailItem(
+                    selected = screen == Screen.Settings,
+                    onClick = { screen = Screen.Settings },
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    label = { Text("Настройки") },
+                    modifier = Modifier.testTag(NAV_SETTINGS_TAG),
+                )
             }
             VerticalDivider()
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                when (destination) {
-                    Destination.Calculations -> EmptyState("Расчётов пока нет")
-                    Destination.Settings -> EmptyState("Настройки")
+            when (screen) {
+                Screen.Calculations -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Расчётов пока нет",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                Screen.Settings -> SettingsScreen(settings, filePicker)
             }
         }
     }
-}
-
-@Composable
-private fun EmptyState(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
