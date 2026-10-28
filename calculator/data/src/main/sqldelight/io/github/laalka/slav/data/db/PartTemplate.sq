@@ -1,0 +1,39 @@
+-- A ready part of the library: the part is one JSON tree (core Part) read whole; only the name is
+-- copied into a column, for the search and for the uniqueness. Instants are epoch milliseconds.
+CREATE TABLE part_template (
+    id TEXT PRIMARY KEY,
+    -- The name as the user typed it, trimmed.
+    name TEXT NOT NULL,
+    -- name.lowercase(): SQLite folds case for ASCII only, so a Cyrillic search compares lowercased text.
+    -- Unique, so two names that differ in letter case only cannot both be stored.
+    name_search TEXT NOT NULL,
+    part_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX part_template_name_search ON part_template(name_search);
+
+selectById:
+SELECT * FROM part_template WHERE id = :id;
+
+selectByNameSearch:
+SELECT * FROM part_template WHERE name_search = :nameSearch;
+
+-- instr, not LIKE: the search text is literal, so '%' and '_' typed by the user match themselves.
+selectMatching:
+SELECT * FROM part_template WHERE instr(name_search, :search) > 0;
+
+insert:
+INSERT INTO part_template(id, name, name_search, part_json, created_at, updated_at)
+VALUES (:id, :name, :nameSearch, :partJson, :createdAt, :updatedAt);
+
+-- The part of a template is replaced, its name is not: the name typed to find it may differ in letter case only.
+overwrite:
+UPDATE part_template SET part_json = :partJson, updated_at = :updatedAt WHERE id = :id;
+
+rename:
+UPDATE part_template SET name = :name, name_search = :nameSearch, updated_at = :updatedAt WHERE id = :id;
+
+delete:
+DELETE FROM part_template WHERE id = :id;

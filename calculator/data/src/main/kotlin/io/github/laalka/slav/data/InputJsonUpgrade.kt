@@ -37,6 +37,13 @@ internal fun upgradeInputJson(input: JsonElement): JsonElement {
         .replacing("productOperations") { operations -> JsonArray(operations.jsonArray.map(::upgradeProductOperation)) }
 }
 
+/**
+ * One part's JSON of any program version as the current [io.github.laalka.slav.core.Part] reads it,
+ * for a part stored on its own (the library). A part is one piece, so a legacy quantity n, which
+ * the input turns into n parts, leaves the part itself as it is.
+ */
+internal fun upgradePartJson(part: JsonElement): JsonElement = upgradePart(part).first()
+
 private fun upgradePart(part: JsonElement): List<JsonElement> {
     val root = part as? JsonObject ?: return listOf(part)
     // A draft keeps an unfilled quantity as 0; such a part is still one part, not none.

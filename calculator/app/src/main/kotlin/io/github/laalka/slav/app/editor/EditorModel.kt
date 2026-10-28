@@ -2,17 +2,20 @@ package io.github.laalka.slav.app.editor
 
 import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
+import io.github.laalka.slav.app.library.EditorLibraryModel
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.core.Applicability
 import io.github.laalka.slav.core.CalcOutcome
 import io.github.laalka.slav.core.Calculator
 import io.github.laalka.slav.core.CalculationInput
 import io.github.laalka.slav.core.OperationKind
+import io.github.laalka.slav.core.Part
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.applicability
 import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
+import io.github.laalka.slav.data.PartTemplateRepository
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.StoredCalculation
 import kotlinx.coroutines.CoroutineScope
@@ -35,12 +38,14 @@ import kotlin.time.Duration.Companion.milliseconds
  * itself. Every change is saved as a draft [autosaveDelay] after the last one, and at once when the
  * editor is left. «Рассчитать» prices the input on the current settings for a new calculation or a
  * copy, and on the snapshot of the revision draft's source; [onCalculated] receives the id of the
- * saved calculation.
+ * saved calculation. A part can be saved to the library of ready parts and a ready part added to the
+ * product ([library]).
  */
 class EditorModel(
     private val calculations: CalculationRepository,
     private val settings: SettingsRepository,
     attachmentRepository: AttachmentRepository,
+    partTemplates: PartTemplateRepository,
     fileOpener: FileOpener,
     private val scope: CoroutineScope,
     id: UUID?,
@@ -85,6 +90,9 @@ class EditorModel(
         storedCalculationId = ::storedId,
         passwordGuard = null,
     )
+
+    /** «В библиотеку» on a part and «Добавить из библиотеки» above the parts; what they add is a copy, not a link. */
+    val library = EditorLibraryModel(partTemplates, partOf = ::partInput, insert = ::insertPart)
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }
 
@@ -303,6 +311,15 @@ class EditorModel(
         }
         return editorState(form, form.read(), book, isNew, priceSource, calcErrors, hint)
     }
+
+    /** The part [part] as the form reads now, for the library; null when there is no such part. */
+    private fun partInput(part: Long): Part? {
+        val index = form.parts.indexOfFirst { it.id == part }
+        return if (index < 0) null else form.read().input.parts[index]
+    }
+
+    /** A part of the library goes to the end of the list as a copy with its own ids; the template is not referenced again. */
+    private fun insertPart(part: Part) = edit { form -> form.copy(parts = form.parts + part.toForm(::newId)) }
 
     private fun editPart(part: Long, transform: (PartForm) -> PartForm) =
         edit { form -> form.copy(parts = form.parts.map { if (it.id == part) transform(it) else it }) }

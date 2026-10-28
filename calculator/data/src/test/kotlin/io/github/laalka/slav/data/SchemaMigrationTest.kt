@@ -21,9 +21,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3). The database each starts from is the
- * file the SQLDelight plugin made from the schema before the change (databases/1.db, 2.db, the ones
- * it also replays the migrations on at build time), with the rows a program of that version stored.
+ * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3; 3.sqm, 3 → 4). The database each starts
+ * from is the file the SQLDelight plugin made from the schema before the change (databases/1.db,
+ * 2.db, 3.db, the ones it also replays the migrations on at build time), with the rows a program of
+ * that version stored.
  */
 class SchemaMigrationTest {
     @TempDir
@@ -82,7 +83,7 @@ class SchemaMigrationTest {
 
     @Test
     fun `a database written by schema version 1 opens with its rows intact`() {
-        assertEquals(3L, SlavDatabase.Schema.version)
+        assertEquals(4L, SlavDatabase.Schema.version)
         paths.root.createDirectories()
         snapshot("1.db").copyTo(paths.databaseFile)
         val calculated = UUID.randomUUID()
@@ -103,6 +104,7 @@ class SchemaMigrationTest {
         assertEquals(1L, userVersion(paths.databaseFile))
         assertFalse("source_id" in columns(paths.databaseFile, "calculation"))
         assertFalse("attachment" in tables(paths.databaseFile))
+        assertFalse("part_template" in tables(paths.databaseFile))
 
         val backup = DatabaseFactory(paths, clock).open().use { db ->
             val calculations = CalculationRepository(db, clock)
@@ -133,6 +135,7 @@ class SchemaMigrationTest {
         assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
         assertTrue("source_id" in columns(paths.databaseFile, "calculation"))
         assertTrue("attachment" in tables(paths.databaseFile))
+        assertTrue("part_template" in tables(paths.databaseFile))
         // The copy taken before migrating is the old database: schema 1, three calculations.
         assertEquals(1L, userVersion(backup))
         assertEquals(1, paths.backupsDir.listDirectoryEntries().size)
@@ -172,16 +175,51 @@ class SchemaMigrationTest {
         assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
         // Next to the index SQLite makes for the primary key.
         assertTrue("attachment_calculation_id" in indexes(paths.databaseFile, "attachment"))
+        assertTrue("part_template" in tables(paths.databaseFile))
         // The copy taken before migrating is the old database: schema 2, no attachment table.
         assertEquals(2L, userVersion(backup))
         assertFalse("attachment" in tables(backup))
     }
 
     @Test
+    fun `a database written by schema version 3 gets the library of parts and keeps its rows`() {
+        paths.root.createDirectories()
+        snapshot("3.db").copyTo(paths.databaseFile)
+        val calculated = UUID.randomUUID()
+        DriverManager.getConnection("jdbc:sqlite:${paths.databaseFile}").use { connection ->
+            connection.insertWithoutSource(calculated, CalculationStatus.CALCULATED, "Кронштейн", quantity = 3, priced = true)
+            connection.createStatement().use { it.execute("PRAGMA user_version = 3") }
+        }
+        assertEquals(3L, userVersion(paths.databaseFile))
+        assertFalse("part_template" in tables(paths.databaseFile))
+
+        val backup = DatabaseFactory(paths, clock).open().use { db ->
+            val calculations = CalculationRepository(db, clock)
+            val templates = PartTemplateRepository(db, clock)
+
+            assertEquals(book.priced(sheetInput("Кронштейн", 3)), assertNotNull(calculations.get(calculated)).result)
+            assertEquals(emptyList(), templates.list())
+
+            // The new table is usable, and its names are unique in any letter case.
+            val part = sheetInput("Кронштейн").parts.single()
+            val saved = assertIs<TemplateWriteResult.Written>(templates.save("Кронштейн", part)).template
+            assertIs<TemplateWriteResult.NameTaken>(templates.save("КРОНШТЕЙН", part))
+            assertEquals(listOf(saved), templates.list("крон"))
+            checkNotNull(db.startupBackup)
+        }
+
+        assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
+        assertEquals(listOf("part_template_name_search"), indexes(paths.databaseFile, "part_template").filterNot { it.startsWith("sqlite_autoindex") })
+        // The copy taken before migrating is the old database: schema 3, no library of parts.
+        assertEquals(3L, userVersion(backup))
+        assertFalse("part_template" in tables(backup))
+    }
+
+    @Test
     fun `a new database has the current schema and the same columns and indexes as a migrated one`() {
         DatabaseFactory(paths, clock).open().use { }
 
-        listOf("1.db" to 1, "2.db" to 2).forEach { (name, version) ->
+        listOf("1.db" to 1, "2.db" to 2, "3.db" to 3).forEach { (name, version) ->
             val migratedPaths = AppPaths(dir.resolve("migrated-$version"))
             migratedPaths.root.createDirectories()
             snapshot(name).copyTo(migratedPaths.databaseFile)
@@ -190,7 +228,7 @@ class SchemaMigrationTest {
             }
             DatabaseFactory(migratedPaths, clock).open().use { }
 
-            listOf("calculation", "attachment").forEach { table ->
+            listOf("calculation", "attachment", "part_template").forEach { table ->
                 assertEquals(columns(paths.databaseFile, table), columns(migratedPaths.databaseFile, table), "$table, from schema $version")
                 assertEquals(indexes(paths.databaseFile, table), indexes(migratedPaths.databaseFile, table), "$table, from schema $version")
             }

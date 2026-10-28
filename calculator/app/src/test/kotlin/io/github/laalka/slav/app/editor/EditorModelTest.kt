@@ -53,7 +53,7 @@ class EditorModelTest {
     fun close() = deps.close()
 
     private fun TestScope.editor(id: UUID? = null) =
-        EditorModel(deps.calculations, deps.settings, deps.attachments, deps.fileOpener, backgroundScope, id, onCalculated = { calculated += it })
+        EditorModel(deps.calculations, deps.settings, deps.attachments, deps.partTemplates, deps.fileOpener, backgroundScope, id, onCalculated = { calculated += it })
 
     private fun stored(id: UUID): StoredCalculation = assertNotNull(deps.calculations.get(id))
 

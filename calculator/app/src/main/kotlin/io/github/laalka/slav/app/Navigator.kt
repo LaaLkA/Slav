@@ -8,6 +8,7 @@ import io.github.laalka.slav.app.calculations.CardLink
 import io.github.laalka.slav.app.calculations.CardModel
 import io.github.laalka.slav.app.calculations.ListRow
 import io.github.laalka.slav.app.editor.EditorModel
+import io.github.laalka.slav.app.library.LibraryModel
 import io.github.laalka.slav.app.settings.SettingsModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,8 @@ sealed interface Screen {
 
     data class Card(val id: UUID) : Screen
 
+    data object Library : Screen
+
     data object Settings : Screen
 }
 
@@ -35,12 +38,14 @@ sealed interface Page {
 
     data class Card(val model: CardModel) : Page
 
+    data object Library : Page
+
     data object Settings : Page
 }
 
 /**
- * The navigation of the window. «Расчёты» keeps its page while «Настройки» is open, so a price
- * filled in there is one click away from the calculation that needed it. Leaving the editor in
+ * The navigation of the window. «Расчёты» keeps its page while «Детали» or «Настройки» is open, so
+ * a price filled in there is one click away from the calculation that needed it. Leaving the editor in
  * any other way, closing the window included, goes through [EditorModel.leave], which saves the
  * draft and drops a revision draft nothing was changed in (spec 8.3).
  */
@@ -51,6 +56,9 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Created once as well: search, filters and sorting stay while calculations are opened. */
     val calculationList = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
 
+    /** Created once: the search of «Детали» stays while the user visits other screens. */
+    val library = LibraryModel(deps.partTemplates)
+
     private var calculationsPage: Page = Page.Calculations
     private val _page = MutableStateFlow<Page>(Page.Calculations)
     val page: StateFlow<Page> = _page.asStateFlow()
@@ -60,6 +68,11 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             Screen.Settings -> {
                 openEditor()?.flush()
                 _page.value = Page.Settings
+            }
+            Screen.Library -> {
+                openEditor()?.flush()
+                library.reload()
+                _page.value = Page.Library
             }
             Screen.Calculations -> leaveThen { show(Page.Calculations) }
             is Screen.Editor -> leaveThen { show(Page.Editor(editor(to.id))) }
@@ -76,9 +89,9 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Spec 8.3: the copy is a draft, opened in the editor, and is priced on the current settings. */
     fun copy(id: UUID) = navigate(Screen.Editor(calculationList.copy(id)))
 
-    /** The rail's «Расчёты»: back to the page left for the settings, or to the start page from within the section. */
+    /** The rail's «Расчёты»: back to the page left for «Детали» or the settings, or to the start page from within the section. */
     fun selectCalculations() {
-        if (_page.value != Page.Settings) {
+        if (_page.value != Page.Settings && _page.value != Page.Library) {
             navigate(Screen.Calculations)
             return
         }
@@ -86,7 +99,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             is Page.Editor -> page.model.resume()
             is Page.Card -> page.model.reload()
             Page.Calculations -> calculationList.reload()
-            Page.Settings -> Unit
+            Page.Library, Page.Settings -> Unit
         }
         _page.value = calculationsPage
     }
@@ -111,6 +124,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         calculations = deps.calculations,
         settings = deps.settings,
         attachmentRepository = deps.attachments,
+        partTemplates = deps.partTemplates,
         fileOpener = deps.fileOpener,
         scope = scope,
         id = id,

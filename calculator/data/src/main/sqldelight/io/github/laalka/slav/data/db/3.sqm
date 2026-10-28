@@ -1,0 +1,11 @@
+-- The library of ready parts; see PartTemplate.sq. A new table, so there is nothing to move for an existing database.
+CREATE TABLE part_template (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_search TEXT NOT NULL,
+    part_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX part_template_name_search ON part_template(name_search);

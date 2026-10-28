@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,9 +22,11 @@ import androidx.compose.ui.platform.testTag
 import io.github.laalka.slav.app.calculations.CalculationsScreen
 import io.github.laalka.slav.app.calculations.CardScreen
 import io.github.laalka.slav.app.editor.EditorScreen
+import io.github.laalka.slav.app.library.LibraryScreen
 import io.github.laalka.slav.app.settings.SettingsScreen
 
 const val NAV_CALCULATIONS_TAG = "nav/calculations"
+const val NAV_LIBRARY_TAG = "nav/library"
 const val NAV_SETTINGS_TAG = "nav/settings"
 
 @Composable
@@ -34,11 +37,18 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
         Row(modifier = Modifier.fillMaxSize()) {
             NavigationRail {
                 NavigationRailItem(
-                    selected = page != Page.Settings,
+                    selected = page != Page.Library && page != Page.Settings,
                     onClick = navigator::selectCalculations,
                     icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
                     label = { Text("Расчёты") },
                     modifier = Modifier.testTag(NAV_CALCULATIONS_TAG),
+                )
+                NavigationRailItem(
+                    selected = page == Page.Library,
+                    onClick = { navigator.navigate(Screen.Library) },
+                    icon = { Icon(Icons.Filled.Build, contentDescription = null) },
+                    label = { Text("Детали") },
+                    modifier = Modifier.testTag(NAV_LIBRARY_TAG),
                 )
                 NavigationRailItem(
                     selected = page == Page.Settings,
@@ -71,6 +81,7 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
                         onOpenLink = navigator::open,
                     )
                 }
+                Page.Library -> LibraryScreen(navigator.library)
                 Page.Settings -> SettingsScreen(navigator.settings, filePicker)
             }
         }

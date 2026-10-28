@@ -135,6 +135,68 @@ class NavigatorTest {
     }
 
     @Test
+    fun `Детали saves the open editor and keeps it, and Расчёты returns to the same editor`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null))
+        val editor = navigator.editor
+        editor.onNameChange("Рама")
+
+        navigator.navigate(Screen.Library)
+
+        assertEquals(Page.Library, navigator.page.value)
+        assertEquals("Рама", deps.calculations.list().single().name, "the draft is saved on the way to the library")
+        navigator.selectCalculations()
+        assertSame(editor, navigator.editor)
+        assertEquals("Рама", editor.state.value.name.text)
+    }
+
+    @Test
+    fun `from Детали to the settings and back the rail's Расчёты still returns to the calculation that was open`() = runTest {
+        val (navigator, id) = calculated()
+        val card = assertIs<Page.Card>(navigator.page.value).model
+
+        navigator.navigate(Screen.Library)
+        navigator.navigate(Screen.Settings)
+        assertEquals(Page.Settings, navigator.page.value)
+        navigator.navigate(Screen.Library)
+        navigator.selectCalculations()
+
+        assertSame(card, assertIs<Page.Card>(navigator.page.value).model)
+        assertEquals(id, card.id)
+    }
+
+    @Test
+    fun `Детали reads the library again each time it is shown`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Library)
+        assertEquals(true, navigator.library.state.value.isEmpty)
+
+        navigator.navigate(Screen.Calculations)
+        navigator.navigate(Screen.Editor(null))
+        navigator.editor.fillGoldenCase()
+        navigator.editor.library.requestSave(navigator.editor.state.value.parts.single().id)
+        navigator.editor.library.onSaveNameChange("Кронштейн")
+        navigator.editor.library.confirmSave()
+        navigator.navigate(Screen.Library)
+
+        assertEquals(listOf("Кронштейн"), navigator.library.state.value.rows.map { it.name })
+    }
+
+    @Test
+    fun `closing the window from Детали saves the open editor`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null))
+        navigator.editor.onNameChange("Рама")
+        navigator.navigate(Screen.Library)
+        var exited = false
+
+        navigator.requestExit { exited = true }
+
+        assertEquals(true, exited)
+        assertEquals("Рама", deps.calculations.list().single().name)
+    }
+
+    @Test
     fun `the open editor survives a visit to the settings and sees prices changed there`() = runTest {
         val navigator = Navigator(deps, backgroundScope)
         navigator.navigate(Screen.Editor(null))

@@ -260,7 +260,8 @@ fun CalculationInput.toForm(newId: () -> Long): CalculationForm = CalculationFor
     },
 )
 
-private fun Part.toForm(newId: () -> Long) = PartForm(
+/** The form of a stored part, for a part taken from the library; [newId] numbers the part and its rows. */
+internal fun Part.toForm(newId: () -> Long) = PartForm(
     id = newId(),
     name = name,
     material = material.toForm(),

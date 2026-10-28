@@ -16,6 +16,7 @@ import io.github.laalka.slav.data.AppPaths
 import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.DatabaseFactory
+import io.github.laalka.slav.data.PartTemplateRepository
 import io.github.laalka.slav.data.PasswordSeed
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.SettingsTransfer
@@ -42,6 +43,7 @@ class Deps(
     // The calculations copy and delete the drawings with themselves, so they share this one.
     val attachments = AttachmentRepository(database)
     val calculations = CalculationRepository(database, attachments = attachments)
+    val partTemplates = PartTemplateRepository(database)
     val adminPassword = AdminPassword(database, adminSeed)
     val settingsTransfer = SettingsTransfer(settings, paths, appVersion)
     val preferences = AppPreferences(paths.root.resolve("preferences.properties"))

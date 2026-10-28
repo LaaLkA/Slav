@@ -7,11 +7,9 @@ import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.data.db.Calculation
 import io.github.laalka.slav.data.db.SelectSummaries
 import java.math.BigDecimal
-import java.text.Collator
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
-import java.util.Locale
 import java.util.UUID
 
 /** Statuses of spec 8.1 in their workflow order, which is also the order the list sorts them in. */
@@ -353,9 +351,6 @@ class CalculationRepository(
     private class Priced(val unitPrice: String, val snapshotJson: String, val resultJson: String)
 
     private companion object {
-        // Sorting is done here, not in SQL: names need Russian collation and prices are decimal strings.
-        val nameCollator: Collator = Collator.getInstance(Locale.forLanguageTag("ru")).apply { strength = Collator.SECONDARY }
-
         fun encode(input: CalculationInput) = storageJson.encodeToString(CalculationInput.serializer(), input)
 
         fun encodeSnapshot(snapshot: PriceBook) = storageJson.encodeToString(PriceBook.serializer(), snapshot)
@@ -370,9 +365,6 @@ class CalculationRepository(
             StoredResult.serializer(),
             upgradeResultJson(storageJson.parseToJsonElement(text)),
         ).toResult()
-
-        /** SQLite folds case for ASCII only; the name and the query are both lowercased here instead. */
-        fun searchForm(text: String) = text.lowercase()
 
         fun Calculation.toStored() = StoredCalculation(
             id = UUID.fromString(id),
@@ -396,6 +388,7 @@ class CalculationRepository(
             updatedAt = Instant.ofEpochMilli(updated_at),
         )
 
+        // Sorting is done here, not in SQL: names need Russian collation and prices are decimal strings.
         fun comparator(sort: CalculationSort): Comparator<CalculationSummary> {
             fun <T : Comparable<T>> by(selector: (CalculationSummary) -> T?): Comparator<CalculationSummary> {
                 val values: Comparator<T> = if (sort.descending) reverseOrder() else naturalOrder()

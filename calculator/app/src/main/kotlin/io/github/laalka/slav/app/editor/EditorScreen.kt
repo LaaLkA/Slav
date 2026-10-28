@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.attachments.AttachmentsBlock
+import io.github.laalka.slav.app.library.AddFromLibraryRow
+import io.github.laalka.slav.app.library.EditorLibraryDialogs
+import io.github.laalka.slav.app.library.LibraryTags
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
@@ -85,6 +88,7 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
                     }
                 }
                 AttachmentsBlock(model.attachments, filePicker)
+                AddFromLibraryRow(model.library)
                 state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
                 state.partsError?.let { ErrorText(it) }
                 OutlinedButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
@@ -100,6 +104,7 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
         HorizontalDivider()
         CalculateBar(state, model::calculate)
     }
+    EditorLibraryDialogs(model.library)
 }
 
 @Composable
@@ -128,6 +133,10 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                 onClick = { model.copyPart(part.id) },
                 modifier = Modifier.padding(top = Spacing.small).testTag("${part.tag}/copy"),
             ) { Text("Копировать") }
+            TextButton(
+                onClick = { model.library.requestSave(part.id) },
+                modifier = Modifier.padding(top = Spacing.small).testTag(LibraryTags.toLibrary(part.tag)),
+            ) { Text("В библиотеку") }
             IconButton(
                 onClick = { model.deletePart(part.id) },
                 modifier = Modifier.padding(top = Spacing.small).testTag("${part.tag}/delete"),
