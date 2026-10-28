@@ -16,6 +16,7 @@ import io.github.laalka.slav.app.calculations.WRONG_PASSWORD
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.theme.SlavTheme
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationKind
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.nio.file.Path
@@ -91,6 +92,7 @@ class AttachmentsUiTest {
         deps().use { deps ->
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, picker) } }
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             compose.waitForIdle()
 
             picker.next = drawing("scheme.png", size = 500)

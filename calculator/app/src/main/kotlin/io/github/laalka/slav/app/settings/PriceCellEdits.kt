@@ -47,7 +47,13 @@ sealed interface PriceCell {
     data class Welding(val weldType: String, val group: String, val thicknessMm: BigDecimal) : PriceCell
 
     data object Painting : PriceCell
+
+    /** «Лазер, ₽/мин», the one operation price of the simplified calculation. */
+    data object LaserCutPerMinute : PriceCell
 }
+
+/** The title of the laser price by the minute: the field in the settings, and the missing price of a calculation. */
+fun laserCutPerMinuteTitle(currency: String): String = "Лазер, $currency/мин"
 
 /** Read with the lookups the calculator uses, so the editor shows exactly the price a calculation takes. */
 fun PriceBook.priceAt(cell: PriceCell): BigDecimal? = when (cell) {
@@ -56,6 +62,7 @@ fun PriceBook.priceAt(cell: PriceCell): BigDecimal? = when (cell) {
     is PriceCell.Bending -> bendingPerBend.priceFor(cell.group, cell.thicknessMm, cell.range)
     is PriceCell.Welding -> weldingPerCm.priceFor(cell.weldType, cell.group, cell.thicknessMm)
     PriceCell.Painting -> paintingPerM2
+    PriceCell.LaserCutPerMinute -> laserCutPerMinute
 }
 
 /**
@@ -85,6 +92,7 @@ fun PriceBook.withPrice(cell: PriceCell, price: BigDecimal?): PriceBook = when (
         },
     )
     PriceCell.Painting -> copy(paintingPerM2 = price)
+    PriceCell.LaserCutPerMinute -> copy(laserCutPerMinute = price)
 }
 
 /** Without the rows of [group] in the operation tables: a deleted group leaves no prices behind. */

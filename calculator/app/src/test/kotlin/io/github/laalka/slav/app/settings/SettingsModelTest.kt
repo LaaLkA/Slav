@@ -54,6 +54,37 @@ class SettingsModelTest {
     }
 
     @Test
+    fun `the laser rate per minute is a single price, saved when typed, removed when emptied, kept unsaved when not a number`() {
+        val cell = PriceCell.LaserCutPerMinute
+        assertEquals("50", model.prices.state.value.laserCutPerMinute.text, "the first-run test value")
+        assertEquals("Лазер, ₽/мин", model.prices.state.value.laserCutPerMinuteTitle)
+
+        model.prices.onCellChange(cell, "62,5")
+        assertSame(dec("62.5"), stored.laserCutPerMinute)
+        assertEquals("62,5", model.prices.state.value.laserCutPerMinute.text)
+
+        model.prices.onCellChange(cell, "abc")
+        assertSame(dec("62.5"), stored.laserCutPerMinute)
+        assertEquals("abc", model.prices.state.value.laserCutPerMinute.text)
+        assertEquals(NOT_A_NUMBER, model.prices.state.value.laserCutPerMinute.error)
+
+        // Zero is a price (a free laser), an empty field is not one.
+        model.prices.onCellChange(cell, "0")
+        assertSame(dec("0"), stored.laserCutPerMinute)
+        assertNull(model.prices.state.value.laserCutPerMinute.error)
+        model.prices.onCellChange(cell, "")
+        assertNull(stored.laserCutPerMinute)
+        assertEquals("", model.prices.state.value.laserCutPerMinute.text)
+    }
+
+    @Test
+    fun `the title of the laser rate follows the currency of the settings`() {
+        model.general.onCurrencyChange("руб.")
+
+        assertEquals("Лазер, руб./мин", model.prices.state.value.laserCutPerMinuteTitle)
+    }
+
+    @Test
     fun `a comma decimal is the same number as a dot decimal`() {
         assertEquals(dec("2.5"), parseDecimal("2,5"))
         assertEquals(dec("2.5"), parseDecimal("2.5"))

@@ -10,6 +10,9 @@ import io.github.laalka.slav.core.Part
 import io.github.laalka.slav.core.PartOperation
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.ProductOperation
+import io.github.laalka.slav.core.QuickCalculationInput
+import io.github.laalka.slav.core.QuickCalculator
+import io.github.laalka.slav.core.QuickOutcome
 import io.github.laalka.slav.core.SheetCutMode
 import io.github.laalka.slav.core.SheetShape
 import java.math.BigDecimal
@@ -43,6 +46,26 @@ fun goldenInput(name: String = "Кронштейн", quantity: Int = 1) = Calcul
 fun Deps.saveCalculated(input: CalculationInput = goldenInput()): UUID {
     val book = settings.load()
     val result = assertIs<CalcOutcome.Ok>(Calculator(book).calculate(input)).result
+    return calculations.saveCalculated(input, book, result)
+}
+
+/**
+ * The golden quick case: Ст3, 2 mm, 1.5 m² of sheet and 12 min of laser — 24,00 kg and 5 400,00 on
+ * the default prices: 4800 for the material and 600 for the cut.
+ */
+fun quickGoldenInput(name: String = "Лист на раскрой", quantity: Int = 1) = QuickCalculationInput(
+    name = name,
+    quantity = quantity,
+    grade = "Ст3",
+    thicknessMm = BigDecimal("2"),
+    sheetAreaM2 = BigDecimal("1.5"),
+    cutTimeMin = BigDecimal("12"),
+)
+
+/** [input] priced on the current settings and saved as «Рассчитан», the way the quick editor's «Рассчитать» saves it. */
+fun Deps.saveQuickCalculated(input: QuickCalculationInput = quickGoldenInput()): UUID {
+    val book = settings.load()
+    val result = assertIs<QuickOutcome.Ok>(QuickCalculator(book).calculate(input)).result
     return calculations.saveCalculated(input, book, result)
 }
 

@@ -1,6 +1,7 @@
 package io.github.laalka.slav.data
 
 import io.github.laalka.slav.core.CalcResult
+import io.github.laalka.slav.core.CutLine
 import io.github.laalka.slav.core.Decimal
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.MaterialLine
@@ -8,6 +9,7 @@ import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.OperationLine
 import io.github.laalka.slav.core.PartResult
+import io.github.laalka.slav.core.QuickResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -67,6 +69,23 @@ internal data class StoredLine(val kind: OperationKind, val cost: Money, val man
         fun of(line: OperationLine) = StoredLine(line.kind, line.cost, line.manualExtra)
     }
 }
+
+/** The stored form of [QuickResult]: the mass and the two rounded lines; the unit price is rebuilt from them. */
+@Serializable
+internal data class StoredQuickResult(val massKg: Decimal, val material: StoredMaterialLine, val cut: StoredCutLine) {
+    fun toResult() = QuickResult(massKg, MaterialLine(material.cost, material.manualExtra), CutLine(cut.cost, cut.manualExtra))
+
+    companion object {
+        fun of(result: QuickResult) = StoredQuickResult(
+            massKg = result.massKg,
+            material = StoredMaterialLine(result.material.cost, result.material.manualExtra),
+            cut = StoredCutLine(result.cut.cost, result.cut.manualExtra),
+        )
+    }
+}
+
+@Serializable
+internal data class StoredCutLine(val cost: Money, val manualExtra: ManualExtra?)
 
 /**
  * The result JSON of any program version as [StoredResult] reads it. Results saved by 1.0.0-beta.1

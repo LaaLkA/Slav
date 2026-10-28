@@ -26,6 +26,7 @@ enum class SettingsSection(val title: String) {
     BENDING("Гибка"),
     WELDING("Сварка"),
     PAINTING("Покраска порошковая"),
+    LASER_CUT_PER_MINUTE("Лазер, по времени"),
     BEND_RANGE_BOUNDS("Границы диапазонов гиба"),
     WELD_TYPES("Типы сварки"),
 
@@ -176,9 +177,13 @@ private val sections: List<Section<*>> = listOf(
         key = { listOf(nameKey(it.weldType), nameKey(it.group), sizeKey(it.thicknessMm)) },
         value = { listOf(it.weldType, it.group, sizeKey(it.thicknessMm), sizeKey(it.pricePerCm)) },
     ),
-    // A single value: a file without it leaves the local price, as any element the file lacks.
+    // Single values: a file without one leaves the local price, as any element the file lacks.
     Section(
         SettingsSection.PAINTING, { listOfNotNull(it.paintingPerM2) }, { copy(paintingPerM2 = it.singleOrNull()) },
+        key = { Unit }, value = ::sizeKey,
+    ),
+    Section(
+        SettingsSection.LASER_CUT_PER_MINUTE, { listOfNotNull(it.laserCutPerMinute) }, { copy(laserCutPerMinute = it.singleOrNull()) },
         key = { Unit }, value = ::sizeKey,
     ),
     Section(

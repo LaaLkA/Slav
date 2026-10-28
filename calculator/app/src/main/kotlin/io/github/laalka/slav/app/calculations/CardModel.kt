@@ -8,12 +8,14 @@ import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.app.ui.formatDateTime
 import io.github.laalka.slav.app.ui.formatMeasure
 import io.github.laalka.slav.app.ui.formatMoney
+import io.github.laalka.slav.core.CalcError
 import io.github.laalka.slav.core.CalcOutcome
-import io.github.laalka.slav.core.CalcResult
 import io.github.laalka.slav.core.Calculator
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.PriceBook
+import io.github.laalka.slav.core.QuickCalculator
+import io.github.laalka.slav.core.QuickOutcome
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
@@ -80,7 +82,7 @@ data class CardState(
 }
 
 /**
- * The card of one calculation (spec 8.2, 8.3). A calculated record is never changed in place:
+ * The card of one calculation of either kind (spec 8.2, 8.3). A calculated record is never changed in place:
  * «Изменить», «Пересчитать по текущим ценам» and «Изменить тираж» each make a new calculation and
  * leave this one as it was; [onRevision] receives the id of the new one. «Пересчитать по текущим
  * ценам» prices the input on the current settings and creates the new calculation only once
@@ -117,8 +119,8 @@ class CardModel(
         passwordGuard = adminPassword.takeIf { calculation.status != CalculationStatus.DRAFT },
     )
 
-    /** The prices and result of the pending «Пересчитать по текущим ценам», applied as previewed. */
-    private var pendingRecalc: Pair<PriceBook, CalcResult>? = null
+    /** The pending «Пересчитать по текущим ценам»: its new unit price for the preview, and how to save it as previewed. */
+    private var pendingRecalc: PendingRecalc? = null
     private var recalcErrors: List<ReadableError> = emptyList()
 
     private val _state = MutableStateFlow(build())
@@ -150,7 +152,7 @@ class CardModel(
 
     /** «Изменить тираж»: asks for the new run size. */
     fun requestQuantityChange() {
-        if (calculation.result == null) return
+        if (!calculation.isPriced) return
         quantityDialog = QuantityDialog(calculation.quantity.toString(), error = null)
         refresh()
     }
@@ -181,8 +183,14 @@ class CardModel(
             return
         }
         val snapshot = checkNotNull(calculation.snapshot) { "Calculation $id has no price snapshot" }
-        val result = checkNotNull(calculation.result) { "Calculation $id has no result" }
-        val revision = calculations.createRevision(id, calculation.input.copy(quantity = quantity), snapshot, result, calculation.snapshotAt)
+        val revision = when (val current = calculation) {
+            is StoredCalculation.Full -> calculations.createRevision(
+                id, current.input.copy(quantity = quantity), snapshot, checkNotNull(current.result) { "Calculation $id has no result" }, current.snapshotAt,
+            )
+            is StoredCalculation.Quick -> calculations.createRevision(
+                id, current.input.copy(quantity = quantity), snapshot, checkNotNull(current.result) { "Calculation $id has no result" }, current.snapshotAt,
+            )
+        }
         quantityDialog = null
         refresh()
         onRevision(revision)
@@ -201,20 +209,28 @@ class CardModel(
      * changes nothing yet; Failed lists every missing price (spec 7.3) and changes nothing either.
      */
     fun prepareRecalc() {
-        if (calculation.result == null) return
+        if (!calculation.isPriced) return
         val current = settings.load()
         currency = current.general.currencySymbol
-        when (val outcome = Calculator(current).calculate(calculation.input)) {
-            is CalcOutcome.Ok -> {
-                pendingRecalc = current to outcome.result
-                recalcErrors = emptyList()
+        pendingRecalc = null
+        recalcErrors = emptyList()
+        when (val priced = calculation) {
+            is StoredCalculation.Full -> when (val outcome = Calculator(current).calculate(priced.input)) {
+                is CalcOutcome.Ok ->
+                    pendingRecalc = PendingRecalc(outcome.result.unitPrice) { calculations.createRevision(id, priced.input, current, outcome.result) }
+                is CalcOutcome.Failed -> failRecalc(outcome.errors)
             }
-            is CalcOutcome.Failed -> {
-                pendingRecalc = null
-                recalcErrors = outcome.errors.map { it.readable(onSnapshot = false) }
+            is StoredCalculation.Quick -> when (val outcome = QuickCalculator(current).calculate(priced.input)) {
+                is QuickOutcome.Ok ->
+                    pendingRecalc = PendingRecalc(outcome.result.unitPrice) { calculations.createRevision(id, priced.input, current, outcome.result) }
+                is QuickOutcome.Failed -> failRecalc(outcome.errors)
             }
         }
         refresh()
+    }
+
+    private fun failRecalc(errors: List<CalcError>) {
+        recalcErrors = errors.map { it.readable(onSnapshot = false, currency = currency) }
     }
 
     /**
@@ -222,9 +238,9 @@ class CardModel(
      * hands it to [onRevision]; this one stays as it was.
      */
     fun confirmRecalc() {
-        val (prices, result) = checkNotNull(pendingRecalc) { "No recalculation to confirm" }
+        val recalc = checkNotNull(pendingRecalc) { "No recalculation to confirm" }
         pendingRecalc = null
-        val revision = calculations.createRevision(id, calculation.input, prices, result)
+        val revision = recalc.save()
         refresh()
         onRevision(revision)
     }
@@ -304,7 +320,7 @@ class CardModel(
                 )
             },
             productLines = breakdown?.productLines.orEmpty().map(::line),
-            recalc = pendingRecalc?.let { (_, result) -> preview(result, breakdown) },
+            recalc = pendingRecalc?.let { preview(it, breakdown) },
             recalcErrors = recalcErrors,
             source = source?.let { CardLink(it.id, "${it.name.ifBlank { UNNAMED }} от ${formatDate(it.createdAt.atZone(zone).toLocalDate())}", null, it.status == CalculationStatus.DRAFT) },
             revisions = revisions.map { it.toLink() },
@@ -320,17 +336,20 @@ class CardModel(
         isDraft = status == CalculationStatus.DRAFT,
     )
 
-    private fun preview(result: CalcResult, breakdown: Breakdown?): RecalcPreview? {
+    private fun preview(recalc: PendingRecalc, breakdown: Breakdown?): RecalcPreview? {
         breakdown ?: return null
         return RecalcPreview(
             snapshotDate = formatDate(breakdown.snapshotDate),
             oldUnitPrice = money(breakdown.unitPrice),
-            newUnitPrice = money(result.unitPrice),
+            newUnitPrice = money(recalc.unitPrice),
             oldTotal = money(breakdown.total),
-            newTotal = money(result.total(breakdown.quantity)),
-            unchanged = result.unitPrice.compareTo(breakdown.unitPrice) == 0,
+            newTotal = money(recalc.unitPrice * breakdown.quantity),
+            unchanged = recalc.unitPrice.compareTo(breakdown.unitPrice) == 0,
         )
     }
+
+    /** A recalculation priced on the current settings: [unitPrice] is shown, [save] makes the new calculation and returns its id. */
+    private class PendingRecalc(val unitPrice: Money, val save: () -> UUID)
 
     private fun line(line: BreakdownLine) = CardLine(line.title, line.extra?.let(::extra), money(line.cost))
 

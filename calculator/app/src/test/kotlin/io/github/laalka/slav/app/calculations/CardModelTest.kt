@@ -21,6 +21,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -54,7 +55,7 @@ class CardModelTest {
         onDeleted = { deleted++ },
     )
 
-    private fun stored(id: UUID): StoredCalculation = assertNotNull(deps.calculations.get(id))
+    private fun stored(id: UUID): StoredCalculation.Full = assertIs<StoredCalculation.Full>(deps.calculations.get(id))
 
     private fun StoredCalculation.st3TwoMillimetrePrice(): BigDecimal? =
         snapshot?.materialPricesPerKg?.single { it.grade == "Ст3" && it.thicknessMm.compareTo(BigDecimal("2")) == 0 }?.pricePerKg

@@ -6,7 +6,7 @@ import java.math.BigDecimal
 sealed interface CalcError {
     /**
      * An empty cell of [table] (a zero cell is a valid price). [row] and [column] are the headers
-     * the user sees in the settings table; both are null for the single painting price.
+     * the user sees in the settings table; both are null for a single price: painting, laser by the minute.
      */
     data class MissingPrice(val table: PriceTable, val row: String?, val column: String?) : CalcError
 
@@ -45,6 +45,9 @@ sealed interface PriceTable {
 
     /** «Покраска порошковая»: a single value. */
     data object Painting : PriceTable
+
+    /** «Лазер, ₽/мин» of the simplified calculation: a single value. */
+    data object LaserCutPerMinute : PriceTable
 }
 
 /**

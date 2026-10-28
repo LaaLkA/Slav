@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.editor
 import io.github.laalka.slav.app.settings.GroupTable
 import io.github.laalka.slav.app.settings.SettingsTab
 import io.github.laalka.slav.app.settings.SortamentKind
+import io.github.laalka.slav.app.settings.laserCutPerMinuteTitle
 import io.github.laalka.slav.app.settings.toInputText
 import io.github.laalka.slav.core.CalcError
 import io.github.laalka.slav.core.Material
@@ -36,11 +37,17 @@ val Material.kind: SortamentKind
         is Material.IBeam -> SortamentKind.I_BEAM
     }
 
-/** [onSnapshot]: the calculation is priced on its snapshot, so a missing grade is missing there, not in the settings. */
-fun CalcError.readable(onSnapshot: Boolean): ReadableError = when (this) {
-    is CalcError.MissingPrice -> {
+/**
+ * [onSnapshot]: the calculation is priced on its snapshot, so a missing grade is missing there, not in the settings.
+ * [currency] is the label of the settings, which the laser rate per minute is named with.
+ */
+fun CalcError.readable(onSnapshot: Boolean, currency: String): ReadableError = when (this) {
+    // A single price of the simplified calculation: there is no row or column to point to.
+    is CalcError.MissingPrice -> if (table == PriceTable.LaserCutPerMinute) {
+        ReadableError("Не задана цена: ${table.title(currency)}")
+    } else {
         val cell = MissingCell(
-            table = table.title,
+            table = table.title(currency),
             row = row?.let(::decimalHeader) ?: "—",
             column = column?.let(::decimalHeader) ?: "—",
             tab = if (table == PriceTable.MaterialPerKg) SettingsTab.MATERIAL_PRICES else SettingsTab.OPERATION_PRICES,
@@ -56,9 +63,9 @@ fun CalcError.readable(onSnapshot: Boolean): ReadableError = when (this) {
         ReadableError("Операция «${operation.title}» недоступна: сечение больше ${limitMm.toInputText()} мм")
 }
 
-/** The titles of the tables in «Цены материала» and «Цены операций». */
-private val PriceTable.title: String
-    get() = when (this) {
+/** The titles of the tables in «Цены материала» and «Цены операций»; the laser rate per minute is named with the currency. */
+private fun PriceTable.title(currency: String): String =
+    when (this) {
         PriceTable.MaterialPerKg -> "Цены материала"
         PriceTable.LaserSheetCut -> GroupTable.LASER_SHEET_CUT.title
         PriceTable.LaserSheetPierce -> GroupTable.LASER_SHEET_PIERCE.title
@@ -67,6 +74,7 @@ private val PriceTable.title: String
         is PriceTable.Bending -> "Гибка — $group"
         is PriceTable.Welding -> "Сварка — $weldType"
         PriceTable.Painting -> "Покраска порошковая"
+        PriceTable.LaserCutPerMinute -> laserCutPerMinuteTitle(currency)
     }
 
 // Core headers write decimals with a dot ("1.5", "100.5–300"); the settings tables show a comma.

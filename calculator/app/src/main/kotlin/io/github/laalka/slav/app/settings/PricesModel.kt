@@ -29,6 +29,9 @@ data class PricesState(
     val welding: List<PriceGrid>,
     val painting: CellState,
     val paintingUnit: String,
+    /** «Лазер, ₽/мин» of the simplified calculation. */
+    val laserCutPerMinute: CellState,
+    val laserCutPerMinuteTitle: String,
     /** Grows when the fields must show the model's text again, dropping what was typed. */
     val epoch: Int,
 )
@@ -126,6 +129,8 @@ class PricesModel(private val store: SettingsStore) {
             welding = welding,
             painting = cell(PriceCell.Painting),
             paintingUnit = "$currency/м²",
+            laserCutPerMinute = cell(PriceCell.LaserCutPerMinute),
+            laserCutPerMinuteTitle = laserCutPerMinuteTitle(currency),
             epoch = epoch,
         )
     }
@@ -170,6 +175,6 @@ class PricesModel(private val store: SettingsStore) {
         fun PricesState.allCells(): Set<PriceCell> =
             (listOf(material) + groupTables + bending + welding)
                 .flatMap { grid -> grid.rows.flatMap { row -> row.cells.map { it.cell } } }
-                .toSet() + painting.cell
+                .toSet() + painting.cell + laserCutPerMinute.cell
     }
 }

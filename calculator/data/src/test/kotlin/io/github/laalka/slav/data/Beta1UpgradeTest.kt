@@ -35,6 +35,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -83,6 +84,7 @@ class Beta1UpgradeTest {
             snapshotJson = snapshot,
             resultJson = result,
             sourceId = null,
+            kind = CalculationKind.FULL.name,
         )
         return id
     }
@@ -261,7 +263,7 @@ class Beta1UpgradeTest {
     }
 
     @Test
-    fun `a settings export of format 1 still imports and is exported again as format 2`() {
+    fun `a settings export of format 1 still imports and is exported again as format 3`() {
         val settings = SettingsRepository(db, clock)
         val transfer = SettingsTransfer(settings, paths, appVersion = "1.1.0", clock = clock)
         val file = dir.resolve("beta1-settings.json").also { it.writeText(fixture("settings-export-format1.json")) }
@@ -274,6 +276,7 @@ class Beta1UpgradeTest {
         assertEquals(0, BigDecimal("0.1").compareTo(imported.settings.general.minPaintAreaPerPartM2))
         assertEquals(0, BigDecimal("7850").compareTo(imported.settings.grades.single().densityKgM3))
         assertEquals(0, BigDecimal("350").compareTo(assertNotNull(imported.settings.paintingPerM2)))
+        assertNull(imported.settings.laserCutPerMinute)
         assertTrue(transfer.previewReplace(imported.settings).hasChanges)
 
         val backup = transfer.replace(imported.settings)
@@ -282,8 +285,8 @@ class Beta1UpgradeTest {
 
         val exported = dir.resolve("exported-again.json").also(transfer::export)
         // Written as the current format, which an older program refuses with «обновите программу».
-        assertEquals(2, PriceBook.FORMAT_VERSION)
-        assertEquals(2, Json.parseToJsonElement(exported.readText()).jsonObject.getValue("formatVersion").jsonPrimitive.int)
-        assertEquals(imported.settings.copy(formatVersion = 2), transfer.read(exported).settings)
+        assertEquals(3, PriceBook.FORMAT_VERSION)
+        assertEquals(3, Json.parseToJsonElement(exported.readText()).jsonObject.getValue("formatVersion").jsonPrimitive.int)
+        assertEquals(imported.settings.copy(formatVersion = 3), transfer.read(exported).settings)
     }
 }

@@ -7,9 +7,12 @@ import io.github.laalka.slav.app.calculations.CalculationListModel
 import io.github.laalka.slav.app.calculations.CardLink
 import io.github.laalka.slav.app.calculations.CardModel
 import io.github.laalka.slav.app.calculations.ListRow
+import io.github.laalka.slav.app.editor.CalculationEditor
 import io.github.laalka.slav.app.editor.EditorModel
 import io.github.laalka.slav.app.library.LibraryModel
+import io.github.laalka.slav.app.quick.QuickEditorModel
 import io.github.laalka.slav.app.settings.SettingsModel
+import io.github.laalka.slav.data.CalculationKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,8 +23,11 @@ import java.util.UUID
 sealed interface Screen {
     data object Calculations : Screen
 
-    /** [id] is null for «Новый расчёт». */
-    data class Editor(val id: UUID?) : Screen
+    /**
+     * [id] is null for «Новый расчёт», which is then a calculation of [kind]; a saved one is opened in
+     * the editor of its own kind, whatever [kind] says.
+     */
+    data class Editor(val id: UUID?, val kind: CalculationKind = CalculationKind.FULL) : Screen
 
     data class Card(val id: UUID) : Screen
 
@@ -35,6 +41,9 @@ sealed interface Page {
     data object Calculations : Page
 
     data class Editor(val model: EditorModel) : Page
+
+    /** The editor of a simplified calculation. */
+    data class QuickEditor(val model: QuickEditorModel) : Page
 
     data class Card(val model: CardModel) : Page
 
@@ -75,7 +84,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
                 _page.value = Page.Library
             }
             Screen.Calculations -> leaveThen { show(Page.Calculations) }
-            is Screen.Editor -> leaveThen { show(Page.Editor(editor(to.id))) }
+            is Screen.Editor -> leaveThen { show(editorPage(to)) }
             is Screen.Card -> leaveThen { show(card(to.id)) }
         }
     }
@@ -97,6 +106,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         }
         when (val page = calculationsPage) {
             is Page.Editor -> page.model.resume()
+            is Page.QuickEditor -> page.model.resume()
             is Page.Card -> page.model.reload()
             Page.Calculations -> calculationList.reload()
             Page.Library, Page.Settings -> Unit
@@ -112,13 +122,36 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         action()
     }
 
-    private fun openEditor(): EditorModel? = (calculationsPage as? Page.Editor)?.model
+    private fun openEditor(): CalculationEditor? = when (val page = calculationsPage) {
+        is Page.Editor -> page.model
+        is Page.QuickEditor -> page.model
+        else -> null
+    }
 
     private fun show(page: Page) {
         if (page == Page.Calculations) calculationList.reload()
         calculationsPage = page
         _page.value = page
     }
+
+    private fun editorPage(to: Screen.Editor): Page {
+        val kind = to.id?.let { id -> requireNotNull(deps.calculations.get(id)) { "No calculation $id" }.kind } ?: to.kind
+        return when (kind) {
+            CalculationKind.FULL -> Page.Editor(editor(to.id))
+            CalculationKind.QUICK -> Page.QuickEditor(quickEditor(to.id))
+        }
+    }
+
+    private fun quickEditor(id: UUID?) = QuickEditorModel(
+        calculations = deps.calculations,
+        settings = deps.settings,
+        attachmentRepository = deps.attachments,
+        fileOpener = deps.fileOpener,
+        scope = scope,
+        id = id,
+        // The editor has saved the calculation and has nothing left to ask.
+        onCalculated = { saved -> show(card(saved)) },
+    )
 
     private fun editor(id: UUID?) = EditorModel(
         calculations = deps.calculations,

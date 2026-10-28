@@ -2,6 +2,7 @@ package io.github.laalka.slav.app.calculations
 
 import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.input
 import io.github.laalka.slav.app.testAdminSeed
 import io.github.laalka.slav.app.export.ExportFormat
 import io.github.laalka.slav.app.ui.formatDate

@@ -21,6 +21,7 @@ import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Part
 import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationKind
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.math.BigDecimal
@@ -86,6 +87,7 @@ class LibraryUiTest {
 
             // A part filled in once, put into the library from its card; the dialog starts with the name of the part.
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             fillGoldenPart()
             click(LibraryTags.toLibrary("part/0"))
             node(LibraryTags.SAVE_NAME).assertTextContains("Деталь 1", substring = true)
@@ -100,6 +102,7 @@ class LibraryUiTest {
             // Another calculation: the blank first part goes, the library's part comes in, the welding of the product is added by hand.
             node(NAV_CALCULATIONS_TAG).performClick()
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             type(EditorTags.NAME, "Кронштейн с приваркой")
             click("part/0/delete")
             click(LibraryTags.ADD_FROM_LIBRARY)
@@ -133,6 +136,7 @@ class LibraryUiTest {
         deps().use { deps ->
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             fillGoldenPart()
             saveToLibrary("Кронштейн")
             type("part/0/length", "1200")
@@ -168,6 +172,7 @@ class LibraryUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             click(LibraryTags.ADD_FROM_LIBRARY)
             node(LibraryTags.PICK_EMPTY).assertExists()
             node(LibraryTags.PICK_CLOSE).performClick()

@@ -10,13 +10,15 @@ import java.math.BigDecimal
 private val TWO = BigDecimal(2)
 
 /** Spec 5: mass × price per kg (grade, thickness); [massKg] is the part's, from the drawing or the dimensions. */
-internal fun priceMaterial(material: Material, massKg: BigDecimal, grade: Grade, book: PriceBook, errors: Errors): Money {
-    val t = material.thicknessMm
+internal fun priceMaterial(thicknessMm: BigDecimal, massKg: BigDecimal, grade: Grade, book: PriceBook, errors: Errors): Money {
     val perKg = errors.price(
-        book.materialPricesPerKg.priceFor(grade.name, t), PriceTable.MaterialPerKg, grade.name, t.toHeader(),
+        book.materialPricesPerKg.priceFor(grade.name, thicknessMm), PriceTable.MaterialPerKg, grade.name, thicknessMm.toHeader(),
     )
     return Money(massKg * perKg)
 }
+
+/** Spec 3, 10: a line is its formula value plus the manual extra, rounded half-up to kopecks. */
+internal fun lineCost(cost: Money, extra: ManualExtra?): Money = (if (extra == null) cost else cost + extra.amount).rounded()
 
 /** Spec 6.2: L / 10 × cut(group, t) + pierces × pierce(group, t); a shape cut takes L and the pierces from the shape. */
 internal fun priceLaserSheet(

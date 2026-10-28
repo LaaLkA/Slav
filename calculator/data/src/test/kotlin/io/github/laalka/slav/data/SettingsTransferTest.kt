@@ -185,6 +185,35 @@ class SettingsTransferTest {
     }
 
     @Test
+    fun `the laser rate per minute is exported, replaced and merged like the other single price`() {
+        // The file of another user carries a different rate; their painting price is empty and stays out of the merge.
+        val incoming = independent.copy(laserCutPerMinute = dec("65"))
+        settings.save(local)
+
+        val file = exported(local.copy(laserCutPerMinute = dec("55")))
+        val header = Json.parseToJsonElement(file.readText()).jsonObject
+        assertEquals("55", header.getValue("laserCutPerMinute").jsonPrimitive.content)
+        assertEquals(dec("55"), transfer.read(file).settings.laserCutPerMinute)
+
+        settings.save(local)
+        assertEquals(SectionChanges(added = 0, changed = 1, removed = 0), transfer.previewMerge(incoming)[SettingsSection.LASER_CUT_PER_MINUTE])
+        assertEquals(dec("65"), transfer.merge(incoming).laserCutPerMinute)
+
+        // A file without a rate leaves the local one in a merge and removes it in a full replace.
+        settings.save(local)
+        assertEquals(SectionChanges(added = 0, changed = 0, removed = 0), transfer.previewMerge(independent)[SettingsSection.LASER_CUT_PER_MINUTE])
+        assertEquals(dec("50"), transfer.merge(independent).laserCutPerMinute)
+        assertEquals(SectionChanges(added = 0, changed = 0, removed = 1), transfer.previewReplace(independent)[SettingsSection.LASER_CUT_PER_MINUTE])
+        transfer.replace(independent)
+        assertEquals(null, settings.load().laserCutPerMinute)
+
+        // A rate the local settings lack is added.
+        settings.save(local.copy(laserCutPerMinute = null))
+        assertEquals(SectionChanges(added = 1, changed = 0, removed = 0), transfer.previewMerge(incoming)[SettingsSection.LASER_CUT_PER_MINUTE])
+        assertEquals(dec("65"), transfer.merge(incoming).laserCutPerMinute)
+    }
+
+    @Test
     fun `merge treats 2 and 2,0 as one thickness in the sortament and in every price table`() {
         settings.save(local)
 

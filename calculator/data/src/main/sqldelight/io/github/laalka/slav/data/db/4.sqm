@@ -1,0 +1,3 @@
+-- The kind of a calculation: 'FULL' (parts and operations) or 'QUICK' (the simplified calculation,
+-- a sheet and the laser time). Every calculation stored so far is a full one.
+ALTER TABLE calculation ADD COLUMN kind TEXT NOT NULL DEFAULT 'FULL';

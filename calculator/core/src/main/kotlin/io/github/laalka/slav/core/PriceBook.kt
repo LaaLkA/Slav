@@ -38,6 +38,11 @@ data class PriceBook(
     val weldingPerCm: List<WeldPrice>,
     /** Powder painting, ₽/m²; null when not set. */
     val paintingPerM2: Decimal?,
+    /**
+     * «Лазер, ₽/мин»: the laser by the minute, the only operation price of the simplified calculation;
+     * null when not set. Settings saved before it existed have no such field and take null.
+     */
+    @EncodeDefault val laserCutPerMinute: Decimal? = null,
 ) {
     fun renameGroup(old: String, new: String): PriceBook {
         require(groups.any { it.name == old }) { "Unknown material group '$old'" }
@@ -68,11 +73,11 @@ data class PriceBook(
 
     companion object {
         /**
-         * 2: part welding and painting are gone, the sheet has a shape and the general settings have
-         * the minimum painted area of a part. An older program reads a newer file as «обновите программу»;
-         * files of format 1 still import.
+         * 3: the laser rate per minute of the simplified calculation. 2: part welding and painting are
+         * gone, the sheet has a shape and the general settings have the minimum painted area of a part.
+         * An older program reads a newer file as «обновите программу»; files of formats 1 and 2 still import.
          */
-        const val FORMAT_VERSION = 2
+        const val FORMAT_VERSION = 3
 
         /**
          * First-run settings: steel St3 at 8000 kg/m³, the example prices of the old spreadsheet
@@ -150,6 +155,7 @@ data class PriceBook(
                     weldSemiAutomatic.map { (t, price) -> WeldPrice(argon, steel, t, price * BigDecimal(2)) } +
                     weldSemiAutomatic.map { (t, price) -> WeldPrice(laser, steel, t, price * BigDecimal(3)) },
                 paintingPerM2 = BigDecimal(450),
+                laserCutPerMinute = BigDecimal(50),
             )
         }
 

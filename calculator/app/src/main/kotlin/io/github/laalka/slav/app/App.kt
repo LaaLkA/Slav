@@ -23,6 +23,7 @@ import io.github.laalka.slav.app.calculations.CalculationsScreen
 import io.github.laalka.slav.app.calculations.CardScreen
 import io.github.laalka.slav.app.editor.EditorScreen
 import io.github.laalka.slav.app.library.LibraryScreen
+import io.github.laalka.slav.app.quick.QuickEditorScreen
 import io.github.laalka.slav.app.settings.SettingsScreen
 
 const val NAV_CALCULATIONS_TAG = "nav/calculations"
@@ -63,13 +64,16 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
                 Page.Calculations -> CalculationsScreen(
                     navigator.calculationList,
                     filePicker,
-                    onNew = { navigator.navigate(Screen.Editor(null)) },
+                    onNew = { kind -> navigator.navigate(Screen.Editor(null, kind)) },
                     onOpen = navigator::open,
                     onCopy = navigator::copy,
                 )
                 // Keyed by the model: another calculation's editor starts with fresh fields.
                 is Page.Editor -> key(current.model) {
                     EditorScreen(current.model, filePicker, onBack = { navigator.navigate(Screen.Calculations) })
+                }
+                is Page.QuickEditor -> key(current.model) {
+                    QuickEditorScreen(current.model, filePicker, onBack = { navigator.navigate(Screen.Calculations) })
                 }
                 is Page.Card -> key(current.model) {
                     CardScreen(

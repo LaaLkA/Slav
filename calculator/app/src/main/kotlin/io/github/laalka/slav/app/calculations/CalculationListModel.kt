@@ -6,6 +6,7 @@ import io.github.laalka.slav.app.ui.formatDateTime
 import io.github.laalka.slav.app.ui.formatMoney
 import io.github.laalka.slav.app.ui.parseDate
 import io.github.laalka.slav.data.AdminPassword
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationSort
 import io.github.laalka.slav.data.CalculationSortColumn
@@ -25,6 +26,7 @@ import java.util.UUID
 data class ListRow(
     val id: UUID,
     val name: String,
+    val kind: CalculationKind,
     val updatedAt: String,
     val status: CalculationStatus,
     val unitPrice: String?,
@@ -207,6 +209,7 @@ class CalculationListModel(
     private fun CalculationSummary.toRow(currency: String) = ListRow(
         id = id,
         name = name.ifBlank { "Без названия" },
+        kind = kind,
         updatedAt = formatDateTime(updatedAt, zone),
         status = status,
         unitPrice = unitPrice?.let { formatMoney(it, currency) },

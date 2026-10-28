@@ -21,10 +21,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3; 3.sqm, 3 → 4). The database each starts
- * from is the file the SQLDelight plugin made from the schema before the change (databases/1.db,
- * 2.db, 3.db, the ones it also replays the migrations on at build time), with the rows a program of
- * that version stored.
+ * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3; 3.sqm, 3 → 4; 4.sqm, 4 → 5). The database
+ * each starts from is the file the SQLDelight plugin made from the schema before the change
+ * (databases/1.db … 4.db, the ones it also replays the migrations on at build time), with the rows a
+ * program of that version stored.
  */
 class SchemaMigrationTest {
     @TempDir
@@ -83,7 +83,7 @@ class SchemaMigrationTest {
 
     @Test
     fun `a database written by schema version 1 opens with its rows intact`() {
-        assertEquals(4L, SlavDatabase.Schema.version)
+        assertEquals(5L, SlavDatabase.Schema.version)
         paths.root.createDirectories()
         snapshot("1.db").copyTo(paths.databaseFile)
         val calculated = UUID.randomUUID()
@@ -136,6 +136,8 @@ class SchemaMigrationTest {
         assertTrue("source_id" in columns(paths.databaseFile, "calculation"))
         assertTrue("attachment" in tables(paths.databaseFile))
         assertTrue("part_template" in tables(paths.databaseFile))
+        // The three calculations the old program stored and the revision draft made above are all full ones.
+        assertEquals(List(4) { "FULL" }, names(paths.databaseFile, "SELECT kind FROM calculation"))
         // The copy taken before migrating is the old database: schema 1, three calculations.
         assertEquals(1L, userVersion(backup))
         assertEquals(1, paths.backupsDir.listDirectoryEntries().size)
@@ -216,10 +218,46 @@ class SchemaMigrationTest {
     }
 
     @Test
+    fun `a database written by schema version 4 gets the kind of a calculation, every old one is a full one`() {
+        paths.root.createDirectories()
+        snapshot("4.db").copyTo(paths.databaseFile)
+        val calculated = UUID.randomUUID()
+        val draft = UUID.randomUUID()
+        DriverManager.getConnection("jdbc:sqlite:${paths.databaseFile}").use { connection ->
+            connection.insertWithoutSource(calculated, CalculationStatus.CALCULATED, "Кронштейн", quantity = 3, priced = true)
+            connection.insertWithoutSource(draft, CalculationStatus.DRAFT, "Рама", quantity = 2, priced = false)
+            connection.createStatement().use { it.execute("PRAGMA user_version = 4") }
+        }
+        assertEquals(4L, userVersion(paths.databaseFile))
+        assertFalse("kind" in columns(paths.databaseFile, "calculation"))
+
+        val backup = DatabaseFactory(paths, clock).open().use { db ->
+            val calculations = CalculationRepository(db, clock)
+
+            val stored = assertIs<StoredCalculation.Full>(assertNotNull(calculations.get(calculated)))
+            assertEquals(book.priced(sheetInput("Кронштейн", 3)), stored.result)
+            assertEquals(CalculationKind.FULL, assertNotNull(calculations.get(draft)).kind)
+            assertEquals(setOf(CalculationKind.FULL), calculations.list().map { it.kind }.toSet())
+
+            // The new column is usable: a simplified calculation is stored next to the old ones.
+            val quick = calculations.saveCalculated(quickInput("Лист"), book, book.quickPriced(quickInput("Лист")))
+            assertEquals(CalculationKind.QUICK, assertNotNull(calculations.get(quick)).kind)
+            assertEquals(3, calculations.list().size)
+            checkNotNull(db.startupBackup)
+        }
+
+        assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
+        assertTrue("kind" in columns(paths.databaseFile, "calculation"))
+        // The copy taken before migrating is the old database: schema 4, no kind.
+        assertEquals(4L, userVersion(backup))
+        assertFalse("kind" in columns(backup, "calculation"))
+    }
+
+    @Test
     fun `a new database has the current schema and the same columns and indexes as a migrated one`() {
         DatabaseFactory(paths, clock).open().use { }
 
-        listOf("1.db" to 1, "2.db" to 2, "3.db" to 3).forEach { (name, version) ->
+        listOf("1.db" to 1, "2.db" to 2, "3.db" to 3, "4.db" to 4).forEach { (name, version) ->
             val migratedPaths = AppPaths(dir.resolve("migrated-$version"))
             migratedPaths.root.createDirectories()
             snapshot(name).copyTo(migratedPaths.databaseFile)

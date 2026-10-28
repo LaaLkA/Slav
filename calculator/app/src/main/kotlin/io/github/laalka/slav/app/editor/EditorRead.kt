@@ -88,7 +88,7 @@ fun MaterialForm.read(): MaterialRead {
     return MaterialRead(material, gradeChosen = grade != null, dimensionsComplete = reader.errors.keys.all { it == "/grade" })
 }
 
-private class FormReader {
+internal class FormReader {
     val errors = linkedMapOf<String, String>()
 
     fun calculation(form: CalculationForm): CalculationInput {
@@ -192,9 +192,9 @@ private class FormReader {
         return rows.mapIndexed { index, row -> read(EditorTags.row(tag, index), row) }
     }
 
-    private fun text(tag: String, text: String): String = text.trim().also { if (it.isEmpty()) errors[tag] = REQUIRED }
+    fun text(tag: String, text: String): String = text.trim().also { if (it.isEmpty()) errors[tag] = REQUIRED }
 
-    private fun count(tag: String, text: String): Int {
+    fun count(tag: String, text: String): Int {
         if (text.isBlank()) {
             errors[tag] = REQUIRED
             return 0
@@ -204,7 +204,7 @@ private class FormReader {
         return count ?: 0
     }
 
-    private fun positive(tag: String, text: String): BigDecimal {
+    fun positive(tag: String, text: String): BigDecimal {
         val input = readPositive(text)
         if (input is NumberInput.Valid) return input.value
         errors[tag] = if (input is NumberInput.Invalid) input.message else REQUIRED
@@ -218,10 +218,10 @@ private class FormReader {
         is NumberInput.Invalid -> null.also { errors[tag] = input.message }
     }
 
-    private fun <T> choice(tag: String, value: T?): T? = value.also { if (it == null) errors[tag] = NOT_CHOSEN }
+    fun <T> choice(tag: String, value: T?): T? = value.also { if (it == null) errors[tag] = NOT_CHOSEN }
 
     /** Optional; a comment without an amount is kept with a zero amount. */
-    private fun extra(lineTag: String, form: ExtraForm): ManualExtra? {
+    fun extra(lineTag: String, form: ExtraForm): ManualExtra? {
         val comment = form.comment.trim()
         val amount = when (val input = readPrice(form.amount)) {
             NumberInput.Empty -> null
@@ -318,8 +318,8 @@ private fun Material.toForm(): MaterialForm {
     }
 }
 
-private fun ManualExtra?.toForm() = if (this == null) ExtraForm() else ExtraForm(amount.amount.toInputText(), comment)
+internal fun ManualExtra?.toForm() = if (this == null) ExtraForm() else ExtraForm(amount.amount.toInputText(), comment)
 
-private fun positiveText(value: BigDecimal) = if (value.signum() > 0) value.toInputText() else ""
+internal fun positiveText(value: BigDecimal) = if (value.signum() > 0) value.toInputText() else ""
 
-private fun countText(value: Int) = if (value > 0) value.toString() else ""
+internal fun countText(value: Int) = if (value > 0) value.toString() else ""

@@ -39,6 +39,10 @@ data class Breakdown(
     /** The day the price snapshot was taken, the date the unit price is valid for. */
     val snapshotDate: LocalDate,
     val parts: List<BreakdownPart>,
+    /**
+     * The lines of the product itself: its assembly operations, or, for a simplified calculation,
+     * which has no parts, its material and its cut.
+     */
     val productLines: List<BreakdownLine>,
     val unitPrice: Money,
     val unitMassKg: BigDecimal,
@@ -48,8 +52,35 @@ data class Breakdown(
     val runMassKg: BigDecimal get() = unitMassKg * quantity.toBigDecimal()
 }
 
-/** The breakdown of a priced calculation; null for a draft, which has no price (spec 7.2). */
-fun StoredCalculation.breakdown(zone: ZoneId): Breakdown? {
+/** The breakdown of a priced calculation of either kind; null for a draft, which has no price (spec 7.2). */
+fun StoredCalculation.breakdown(zone: ZoneId): Breakdown? = when (this) {
+    is StoredCalculation.Full -> fullBreakdown(zone)
+    is StoredCalculation.Quick -> quickBreakdown(zone)
+}
+
+/** The two lines of a simplified calculation: the sheet and the laser time. */
+private fun StoredCalculation.Quick.quickBreakdown(zone: ZoneId): Breakdown? {
+    val result = result ?: return null
+    val snapshotAt = checkNotNull(snapshotAt) { "Priced calculation $id has no snapshot date" }
+    return Breakdown(
+        name = name,
+        status = status,
+        quantity = quantity,
+        snapshotDate = snapshotAt.atZone(zone).toLocalDate(),
+        parts = emptyList(),
+        productLines = listOf(
+            BreakdownLine(QUICK_MATERIAL_TITLE, result.material.manualExtra, result.material.cost),
+            BreakdownLine(QUICK_CUT_TITLE, result.cut.manualExtra, result.cut.cost),
+        ),
+        unitPrice = result.unitPrice,
+        unitMassKg = result.massKg,
+    )
+}
+
+const val QUICK_MATERIAL_TITLE = "Материал"
+const val QUICK_CUT_TITLE = "Резка (время)"
+
+private fun StoredCalculation.Full.fullBreakdown(zone: ZoneId): Breakdown? {
     val result = result ?: return null
     val snapshotAt = checkNotNull(snapshotAt) { "Priced calculation $id has no snapshot date" }
     return Breakdown(

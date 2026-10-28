@@ -18,6 +18,7 @@ import io.github.laalka.slav.app.theme.SlavTheme
 import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationStatus
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
@@ -56,6 +57,7 @@ class EditorUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             type(EditorTags.NAME, "Кронштейн")
             type(EditorTags.QUANTITY, "10")
             choose("part/0/grade", "Ст3")
@@ -95,6 +97,7 @@ class EditorUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             choose("part/0/grade", "Ст3")
             choose("part/0/size", "2")
             click("part/0/shape/RING")
@@ -124,6 +127,7 @@ class EditorUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
             node(CalculationTags.NEW).performClick()
+            node(CalculationTags.newOf(CalculationKind.FULL)).performClick()
             type(EditorTags.NAME, "Рама")
             choose("part/0/grade", "Ст3")
             type("part/0/length", "600")

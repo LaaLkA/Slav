@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
 
@@ -48,6 +49,9 @@ object CalculationTags {
 
     fun status(status: CalculationStatus) = "calculations/status/${status.name}"
 
+    /** The item of the «Новый расчёт» menu that starts a calculation of [kind]. */
+    fun newOf(kind: CalculationKind) = "calculations/new/${kind.name}"
+
     /** A link to a newer version of the card's calculation, by its position. */
     fun cardRevision(index: Int) = "card/revision/$index"
 
@@ -56,6 +60,21 @@ object CalculationTags {
     /** A row of the list by its position; its cells and actions are "<row>/name", "<row>/menu", "<row>/copy"… */
     fun row(index: Int) = "calculations/row/$index"
 }
+
+/** «упрощённый»: marks a simplified calculation next to its name, in the list and on its card. */
+@Composable
+fun QuickChip(modifier: Modifier = Modifier) {
+    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHighest, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier) {
+        Text(
+            QUICK_CHIP_TEXT,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
+}
+
+const val QUICK_CHIP_TEXT = "упрощённый"
 
 /** The status as a chip; the colour tells the stage apart at a glance in the list. */
 @Composable

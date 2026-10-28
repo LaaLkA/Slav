@@ -40,6 +40,19 @@ class SerializationTest {
         val tree = json.parseToJsonElement(text).jsonObject
         assertEquals(PriceBook.FORMAT_VERSION, tree.getValue("formatVersion").jsonPrimitive.int)
         assertTrue("\"densityKgM3\":\"8000\"" in text, text)
+        assertTrue("\"laserCutPerMinute\":\"50\"" in text, text)
+        // An unset rate is written too, as null.
+        assertTrue("\"laserCutPerMinute\":null" in json.encodeToString(book.copy(laserCutPerMinute = null)))
+    }
+
+    @Test
+    fun `settings saved before the laser rate existed still decode, with no rate`() {
+        val book = json.parseToJsonElement(json.encodeToString(PriceBook.default())).jsonObject
+        val format2 = JsonObject(book - "laserCutPerMinute" + ("formatVersion" to JsonPrimitive(2)))
+        val decoded = json.decodeFromJsonElement<PriceBook>(format2)
+        assertEquals(null, decoded.laserCutPerMinute)
+        assertEquals(2, decoded.formatVersion)
+        assertEquals(PriceBook.default().copy(formatVersion = 2, laserCutPerMinute = null), decoded)
     }
 
     @Test

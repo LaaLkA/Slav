@@ -47,6 +47,22 @@ class SettingsUiTest {
     }
 
     @Test
+    fun `the laser rate per minute of the simplified calculation is typed into its own field`() {
+        Deps(AppPaths(temp.root.toPath()), appVersion = "test").use { deps ->
+            compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
+
+            compose.onNodeWithTag(NAV_SETTINGS_TAG).performClick()
+            compose.onNodeWithTag(SettingsTab.OPERATION_PRICES.testTag).performClick()
+            compose.onNodeWithTag(PriceCell.LaserCutPerMinute.testTag()).performScrollTo().assertTextContains("50")
+            compose.onNodeWithText("Лазер, ₽/мин").performScrollTo().assertExists()
+            compose.onNodeWithTag(PriceCell.LaserCutPerMinute.testTag()).performScrollTo().performTextReplacement("65")
+            compose.waitForIdle()
+
+            assertEquals(0, BigDecimal("65").compareTo(assertNotNull(deps.settings.load().laserCutPerMinute)))
+        }
+    }
+
+    @Test
     fun `the administrator password is changed in Общие and the new one opens the delete question`() {
         Deps(AppPaths(temp.root.toPath()), appVersion = "test", adminSeed = testAdminSeed()).use { deps ->
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }

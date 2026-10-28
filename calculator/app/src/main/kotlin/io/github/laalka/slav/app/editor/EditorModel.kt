@@ -52,11 +52,14 @@ class EditorModel(
     private val onCalculated: (UUID) -> Unit,
     private val autosaveDelay: Duration = AUTOSAVE_DELAY,
     private val zone: ZoneId = ZoneId.systemDefault(),
-) {
+) : CalculationEditor {
     private var nextId = 0L
 
     /** The draft as it was opened, or the calculation the last «Рассчитать» saved it as; null for a new one. */
-    private var original: StoredCalculation? = id?.let { requireNotNull(calculations.get(it)) { "No calculation $it" } }
+    private var original: StoredCalculation.Full? = id?.let {
+        val stored = requireNotNull(calculations.get(it)) { "No calculation $it" }
+        requireNotNull(stored as? StoredCalculation.Full) { "Calculation $it is a ${stored.kind} one, not a full one" }
+    }
     private var id: UUID? = original?.id
     private val isNew = original == null
 
@@ -213,7 +216,7 @@ class EditorModel(
         when (val outcome = Calculator(prices).calculate(read.input)) {
             is CalcOutcome.Failed -> {
                 flush()
-                calcErrors = outcome.errors.map { it.readable(onSnapshot = snapshot != null) }
+                calcErrors = outcome.errors.map { it.readable(onSnapshot = snapshot != null, currency = prices.general.currencySymbol) }
                 refresh()
             }
             is CalcOutcome.Ok -> {
@@ -222,7 +225,7 @@ class EditorModel(
                 // A revision draft keeps the date of the snapshot it was made with: the prices are the same.
                 val saved = calculations.saveCalculated(read.input, prices, outcome.result, id, snapshotAt = original?.snapshotAt.takeIf { snapshot != null })
                 id = saved
-                original = calculations.get(saved)
+                original = calculations.get(saved) as StoredCalculation.Full
                 stored = read.input
                 unsaved = false
                 calcErrors = emptyList()
@@ -233,7 +236,7 @@ class EditorModel(
     }
 
     /** Writes the pending draft now. */
-    fun flush() {
+    override fun flush() {
         pendingSave?.cancel()
         pendingSave = null
         saveDraft()
@@ -243,13 +246,13 @@ class EditorModel(
      * Saves what is pending before the editor is left. A revision draft nothing was changed in
      * is an automatic copy of its source and is deleted silently, without a password.
      */
-    fun leave() {
+    override fun leave() {
         flush()
         if (original?.sourceId != null) id?.let { calculations.deleteUntouchedRevisionDraft(it) }
     }
 
     /** Back from the settings: a calculation on current prices sees what was changed there. */
-    fun resume() {
+    override fun resume() {
         if (snapshot != null) return
         book = settings.load()
         calcErrors = emptyList()

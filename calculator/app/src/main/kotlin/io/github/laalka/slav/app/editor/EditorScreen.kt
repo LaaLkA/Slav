@@ -53,9 +53,9 @@ import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.SectionCard
 
-private val NUMBER_WIDTH = 168.dp
-private val CHOICE_WIDTH = 208.dp
-private val WIDE_NUMBER_WIDTH = 208.dp
+internal val NUMBER_WIDTH = 168.dp
+internal val CHOICE_WIDTH = 208.dp
+internal val WIDE_NUMBER_WIDTH = 208.dp
 
 // Segments share the row's width equally; this fits «Труба профильная» on one line.
 private val KIND_ROW_WIDTH = 960.dp
@@ -73,7 +73,11 @@ private val FIELD_TEXT_OFFSET = 18.dp
 fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        Header(state, onBack)
+        Header(
+            title = if (state.isNew) "Новый расчёт" else "Редактирование расчёта",
+            subtitle = state.priceSource,
+            onBack = onBack,
+        )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val scroll = rememberScrollState()
             Column(
@@ -102,13 +106,14 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
             VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
         HorizontalDivider()
-        CalculateBar(state, model::calculate)
+        CalculateBar(state.canCalculate, state.missingCount, state.calcErrors, state.calcErrorsHint, model::calculate)
     }
     EditorLibraryDialogs(model.library)
 }
 
+/** The title of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK]. */
 @Composable
-private fun Header(state: EditorState, onBack: () -> Unit) {
+internal fun Header(title: String, subtitle: String, onBack: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = Spacing.small, end = Spacing.large, top = Spacing.medium, bottom = Spacing.small),
         verticalAlignment = Alignment.CenterVertically,
@@ -118,8 +123,8 @@ private fun Header(state: EditorState, onBack: () -> Unit) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "К расчётам")
         }
         Column(Modifier.weight(1f)) {
-            Text(if (state.isNew) "Новый расчёт" else "Редактирование расчёта", style = MaterialTheme.typography.headlineSmall)
-            Text(state.priceSource, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -196,7 +201,8 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                 }
             }
         }
-        ExtraRow(part.materialExtra, currency, LineRef.MaterialOf(part.id), model)
+        val material = LineRef.MaterialOf(part.id)
+        ExtraRow(part.materialExtra, currency, { model.onExtraAmountChange(material, it) }, { model.onExtraCommentChange(material, it) })
 
         Subheader("Операции")
         part.operations.forEach { op -> key(op.ref) { OperationBlock(op, currency, model) } }
@@ -218,7 +224,9 @@ private fun OperationBlock(op: OperationView, currency: String, model: EditorMod
         if (params != null) {
             Column(Modifier.padding(start = PARAMS_INDENT), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
                 Params(op.ref, params, model)
-                op.extra?.let { ExtraRow(it, currency, op.ref, model) }
+                op.extra?.let { extra ->
+                    ExtraRow(extra, currency, { model.onExtraAmountChange(op.ref, it) }, { model.onExtraCommentChange(op.ref, it) })
+                }
             }
         }
     }
@@ -333,32 +341,37 @@ private fun DeleteRowButton(tag: String, onDelete: () -> Unit) {
     }
 }
 
+/** «Доп. операции» of one line: the amount and its comment. */
 @Composable
-private fun ExtraRow(extra: ExtraView, currency: String, line: LineRef, model: EditorModel) {
+internal fun ExtraRow(extra: ExtraView, currency: String, onAmountChange: (String) -> Unit, onCommentChange: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-        NumberInput(extra.amount, "Доп. операции, $currency", { model.onExtraAmountChange(line, it) }, WIDE_NUMBER_WIDTH)
-        TextInput(extra.comment, "Комментарий к доп. операциям", { model.onExtraCommentChange(line, it) }, Modifier.weight(1f))
+        NumberInput(extra.amount, "Доп. операции, $currency", onAmountChange, WIDE_NUMBER_WIDTH)
+        TextInput(extra.comment, "Комментарий к доп. операциям", onCommentChange, Modifier.weight(1f))
     }
 }
 
+/**
+ * The bar under an editor, shared by both kinds of calculation: why «Рассчитать» is disabled, the errors of the
+ * last attempt (spec 7.3) and the button itself, tagged [EditorTags.CALCULATE].
+ */
 @Composable
-private fun CalculateBar(state: EditorState, onCalculate: () -> Unit) {
+internal fun CalculateBar(canCalculate: Boolean, missingCount: Int, calcErrors: List<ReadableError>, calcErrorsHint: String?, onCalculate: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.large, vertical = Spacing.medium),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
         ) {
-            if (state.calcErrors.isNotEmpty()) {
-                CalcErrors(state.calcErrors, state.calcErrorsHint, modifier = Modifier.testTag(EditorTags.ERRORS))
+            if (calcErrors.isNotEmpty()) {
+                CalcErrors(calcErrors, calcErrorsHint, modifier = Modifier.testTag(EditorTags.ERRORS))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
                 Text(
-                    if (state.canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: ${state.missingCount}",
+                    if (canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: $missingCount",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (state.canCalculate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    color = if (canCalculate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
-                Button(onClick = onCalculate, enabled = state.canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
+                Button(onClick = onCalculate, enabled = canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
                     Text("Рассчитать")
                 }
             }
@@ -414,17 +427,17 @@ fun CalcErrors(
 }
 
 @Composable
-private fun TextInput(field: FieldView, label: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun TextInput(field: FieldView, label: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
     InputField(field.text, onChange, modifier.testTag(field.tag), label = label, error = field.error)
 }
 
 @Composable
-private fun NumberInput(field: FieldView, label: String, onChange: (String) -> Unit, width: Dp = NUMBER_WIDTH) {
+internal fun NumberInput(field: FieldView, label: String, onChange: (String) -> Unit, width: Dp = NUMBER_WIDTH) {
     InputField(field.text, onChange, Modifier.width(width).testTag(field.tag), label = label, error = field.error, numeric = true)
 }
 
 @Composable
-private fun Choice(choice: ChoiceView, modifier: Modifier, onSelect: (Int) -> Unit) {
+internal fun Choice(choice: ChoiceView, modifier: Modifier, onSelect: (Int) -> Unit) {
     ChoiceField(choice.label, choice.selected, choice.options, onSelect, modifier, error = choice.error, testTag = choice.tag)
 }
 
@@ -439,7 +452,7 @@ private fun Subheader(text: String) {
 }
 
 @Composable
-private fun Hint(text: String, modifier: Modifier = Modifier) {
+internal fun Hint(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier = modifier, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

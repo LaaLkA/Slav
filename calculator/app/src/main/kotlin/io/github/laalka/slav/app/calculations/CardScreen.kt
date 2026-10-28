@@ -148,7 +148,10 @@ private fun DraftNotice() {
     SectionCard("Черновик", subtitle = "У черновика нет цены. Откройте его в редакторе и нажмите «Рассчитать».") {}
 }
 
-/** Spec 8.2: every line of every part, the product lines and the unit price they add up to. */
+/**
+ * Spec 8.2: every line of every part, the product lines and the unit price they add up to. A
+ * simplified calculation has no parts: its material and cut are the product lines.
+ */
 @Composable
 private fun BreakdownCard(state: CardState) {
     SectionCard("Разбивка") {
@@ -160,8 +163,10 @@ private fun BreakdownCard(state: CardState) {
             AmountLine("Цена детали", part.cost, strong = true)
         }
         if (state.productLines.isNotEmpty()) {
-            HorizontalDivider(Modifier.padding(vertical = Spacing.small))
-            Text("Операции изделия", style = MaterialTheme.typography.titleSmall)
+            if (state.parts.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(vertical = Spacing.small))
+                Text("Операции изделия", style = MaterialTheme.typography.titleSmall)
+            }
             state.productLines.forEach { LineRow(it) }
         }
         HorizontalDivider(Modifier.padding(vertical = Spacing.small))

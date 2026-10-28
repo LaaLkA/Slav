@@ -4,6 +4,8 @@ import io.github.laalka.slav.core.CalcResult
 import io.github.laalka.slav.core.CalculationInput
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.PriceBook
+import io.github.laalka.slav.core.QuickCalculationInput
+import io.github.laalka.slav.core.QuickResult
 import io.github.laalka.slav.data.db.Calculation
 import io.github.laalka.slav.data.db.SelectSummaries
 import java.math.BigDecimal
@@ -28,36 +30,85 @@ enum class CalculationStatus(val title: String) {
 }
 
 /**
- * A saved calculation. A draft has no [result]; every other status has one, with the [snapshot]
- * of the prices it was calculated on (spec 8.4).
+ * What a calculation is: a full one with parts and operations, or the simplified one, a sheet and
+ * the laser time. The kind is chosen when the calculation is started and never changes.
  */
-data class StoredCalculation(
-    val id: UUID,
-    val status: CalculationStatus,
-    val input: CalculationInput,
+enum class CalculationKind(val title: String) {
+    FULL("Полный расчёт"),
+    QUICK("Упрощённый расчёт"),
+}
+
+/**
+ * A saved calculation of either [kind]: [Full] holds a [CalculationInput] and a [CalcResult],
+ * [Quick] a [QuickCalculationInput] and a [QuickResult]. A draft has no result; every other status
+ * has one, with the [snapshot] of the prices it was calculated on (spec 8.4).
+ */
+sealed interface StoredCalculation {
+    val id: UUID
+    val kind: CalculationKind
+    val status: CalculationStatus
+
     /**
      * The prices of the last calculation; null until the first one and for a copy, which takes
      * the current prices (spec 8.3). A draft saved over a calculated one keeps it, so finishing
      * the edit recalculates on the same prices.
      */
-    val snapshot: PriceBook?,
+    val snapshot: PriceBook?
+
     /** When [snapshot] was taken, the «дата снимка цен» of the card. */
-    val snapshotAt: Instant?,
-    val result: CalcResult?,
-    val createdAt: Instant,
-    val updatedAt: Instant,
+    val snapshotAt: Instant?
+    val createdAt: Instant
+    val updatedAt: Instant
+
     /** The calculation this one was made from; null for an original and for a plain copy (spec 8.3). */
-    val sourceId: UUID?,
-) {
-    val name: String get() = input.name
-    val quantity: Int get() = input.quantity
-    val unitPrice: Money? get() = result?.unitPrice
+    val sourceId: UUID?
+    val name: String
+    val quantity: Int
+    val unitPrice: Money?
+
+    /** A draft is not: it has no price to show, export or recalculate. */
+    val isPriced: Boolean get() = unitPrice != null
+
+    data class Full(
+        override val id: UUID,
+        override val status: CalculationStatus,
+        val input: CalculationInput,
+        override val snapshot: PriceBook?,
+        override val snapshotAt: Instant?,
+        val result: CalcResult?,
+        override val createdAt: Instant,
+        override val updatedAt: Instant,
+        override val sourceId: UUID?,
+    ) : StoredCalculation {
+        override val kind: CalculationKind get() = CalculationKind.FULL
+        override val name: String get() = input.name
+        override val quantity: Int get() = input.quantity
+        override val unitPrice: Money? get() = result?.unitPrice
+    }
+
+    data class Quick(
+        override val id: UUID,
+        override val status: CalculationStatus,
+        val input: QuickCalculationInput,
+        override val snapshot: PriceBook?,
+        override val snapshotAt: Instant?,
+        val result: QuickResult?,
+        override val createdAt: Instant,
+        override val updatedAt: Instant,
+        override val sourceId: UUID?,
+    ) : StoredCalculation {
+        override val kind: CalculationKind get() = CalculationKind.QUICK
+        override val name: String get() = input.name
+        override val quantity: Int get() = input.quantity
+        override val unitPrice: Money? get() = result?.unitPrice
+    }
 }
 
 /** A row of the calculation list (spec 8.1). */
 data class CalculationSummary(
     val id: UUID,
     val name: String,
+    val kind: CalculationKind,
     val status: CalculationStatus,
     val quantity: Int,
     /** Null for a draft. */
@@ -86,6 +137,9 @@ data class CalculationSort(val column: CalculationSortColumn, val descending: Bo
  * [createRevisionDraft]) that points to its source. Only the workflow status of such a row can
  * be set ([setStatus]); writing its input, price or run size throws [IllegalStateException].
  *
+ * The same holds for both kinds of calculation ([CalculationKind]). Saving takes an input and the
+ * result of its own kind, and a row is never written with the other kind's input.
+ *
  * The drawings of a calculation ([AttachmentRepository]) follow it: a copy or a revision gets
  * copies of its source's files, and deleting the calculation deletes them. That is done here, so
  * no screen has to remember it.
@@ -101,23 +155,27 @@ class CalculationRepository(
      * Saves [input] as a draft (spec 7.2): a new one when [id] is null or unknown, otherwise over
      * the draft [id], which keeps its snapshot. Throws when [id] is not a draft.
      */
-    fun saveDraft(input: CalculationInput, id: UUID? = null): UUID {
+    fun saveDraft(input: CalculationInput, id: UUID? = null): UUID = saveDraft(Content.of(input), id)
+
+    /** [saveDraft] of a simplified calculation; throws as well when [id] is a draft of the other kind. */
+    fun saveDraft(input: QuickCalculationInput, id: UUID? = null): UUID = saveDraft(Content.of(input), id)
+
+    private fun saveDraft(content: Content, id: UUID?): UUID {
         val key = id ?: UUID.randomUUID()
         val now = clock.millis()
-        val inputJson = encode(input)
         queries.transaction {
-            requireDraftOrAbsent(key)
+            requireDraftOrAbsent(key, content.kind)
             val updated = queries.updateDraft(
-                name = input.name,
-                nameSearch = searchForm(input.name),
+                name = content.name,
+                nameSearch = searchForm(content.name),
                 status = CalculationStatus.DRAFT.name,
-                quantity = input.quantity.toLong(),
+                quantity = content.quantity.toLong(),
                 updatedAt = now,
-                inputJson = inputJson,
+                inputJson = content.inputJson,
                 id = key.toString(),
             ).value
             if (updated == 0L) {
-                insert(key, input, inputJson, CalculationStatus.DRAFT, now, priced = null)
+                insert(key, content, CalculationStatus.DRAFT, now, priced = null)
             }
         }
         return key
@@ -129,29 +187,34 @@ class CalculationRepository(
      * The status becomes «Рассчитан». Throws when [id] is not a draft. [snapshotAt] is when
      * [snapshot] was taken; now, unless the prices are an older snapshot.
      */
-    fun saveCalculated(input: CalculationInput, snapshot: PriceBook, result: CalcResult, id: UUID? = null, snapshotAt: Instant? = null): UUID {
+    fun saveCalculated(input: CalculationInput, snapshot: PriceBook, result: CalcResult, id: UUID? = null, snapshotAt: Instant? = null): UUID =
+        saveCalculated(Content.of(input), pricing(snapshot, result), id, snapshotAt)
+
+    /** [saveCalculated] of a simplified calculation. */
+    fun saveCalculated(input: QuickCalculationInput, snapshot: PriceBook, result: QuickResult, id: UUID? = null, snapshotAt: Instant? = null): UUID =
+        saveCalculated(Content.of(input), pricing(snapshot, result), id, snapshotAt)
+
+    private fun saveCalculated(content: Content, priced: Priced, id: UUID?, snapshotAt: Instant?): UUID {
         val key = id ?: UUID.randomUUID()
         val now = clock.millis()
-        val inputJson = encode(input)
-        val priced = pricing(snapshot, result)
         val takenAt = snapshotAt?.toEpochMilli() ?: now
         queries.transaction {
-            requireDraftOrAbsent(key)
+            requireDraftOrAbsent(key, content.kind)
             val updated = queries.updateCalculated(
-                name = input.name,
-                nameSearch = searchForm(input.name),
+                name = content.name,
+                nameSearch = searchForm(content.name),
                 status = CalculationStatus.CALCULATED.name,
-                quantity = input.quantity.toLong(),
+                quantity = content.quantity.toLong(),
                 unitPrice = priced.unitPrice,
                 updatedAt = now,
                 snapshotAt = takenAt,
-                inputJson = inputJson,
+                inputJson = content.inputJson,
                 snapshotJson = priced.snapshotJson,
                 resultJson = priced.resultJson,
                 id = key.toString(),
             ).value
             if (updated == 0L) {
-                insert(key, input, inputJson, CalculationStatus.CALCULATED, now, priced, snapshotAt = takenAt)
+                insert(key, content, CalculationStatus.CALCULATED, now, priced, snapshotAt = takenAt)
             }
         }
         return key
@@ -165,23 +228,25 @@ class CalculationRepository(
         val source = existing(sourceId)
         check(source.status != CalculationStatus.DRAFT) { "Draft $sourceId is edited in place, it has no revisions" }
         val snapshot = checkNotNull(source.snapshot) { "Calculation $sourceId has no price snapshot" }
+        val content = source.content()
         val key = UUID.randomUUID()
         val now = clock.millis()
         queries.transaction {
             queries.insert(
                 id = key.toString(),
-                name = source.input.name,
-                nameSearch = searchForm(source.input.name),
+                name = content.name,
+                nameSearch = searchForm(content.name),
                 status = CalculationStatus.DRAFT.name,
-                quantity = source.input.quantity.toLong(),
+                quantity = content.quantity.toLong(),
                 unitPrice = null,
                 createdAt = now,
                 updatedAt = now,
                 snapshotAt = source.snapshotAt?.toEpochMilli(),
-                inputJson = encode(source.input),
+                inputJson = content.inputJson,
                 snapshotJson = encodeSnapshot(snapshot),
                 resultJson = null,
                 sourceId = sourceId.toString(),
+                kind = content.kind.name,
             )
             attachments.copyAll(sourceId, key)
         }
@@ -194,12 +259,20 @@ class CalculationRepository(
      * size. The source stays as it was. [snapshotAt] is when [snapshot] was taken; now, unless
      * the prices are the source's snapshot.
      */
-    fun createRevision(sourceId: UUID, input: CalculationInput, snapshot: PriceBook, result: CalcResult, snapshotAt: Instant? = null): UUID {
-        existing(sourceId)
+    fun createRevision(sourceId: UUID, input: CalculationInput, snapshot: PriceBook, result: CalcResult, snapshotAt: Instant? = null): UUID =
+        createRevision(sourceId, Content.of(input), pricing(snapshot, result), snapshotAt)
+
+    /** [createRevision] of a simplified calculation; [sourceId] must be one as well. */
+    fun createRevision(sourceId: UUID, input: QuickCalculationInput, snapshot: PriceBook, result: QuickResult, snapshotAt: Instant? = null): UUID =
+        createRevision(sourceId, Content.of(input), pricing(snapshot, result), snapshotAt)
+
+    private fun createRevision(sourceId: UUID, content: Content, priced: Priced, snapshotAt: Instant?): UUID {
+        val source = existing(sourceId)
+        check(source.kind == content.kind) { "Calculation $sourceId is a ${source.kind} one, its revision cannot be a ${content.kind} one" }
         val key = UUID.randomUUID()
         val now = clock.millis()
         queries.transaction {
-            insert(key, input, encode(input), CalculationStatus.CALCULATED, now, pricing(snapshot, result), snapshotAt = snapshotAt?.toEpochMilli() ?: now, sourceId = sourceId)
+            insert(key, content, CalculationStatus.CALCULATED, now, priced, snapshotAt = snapshotAt?.toEpochMilli() ?: now, sourceId = sourceId)
             attachments.copyAll(sourceId, key)
         }
         return key
@@ -207,10 +280,11 @@ class CalculationRepository(
 
     /** The calculations made from [id], the newest first; every status, a draft in progress included. */
     fun revisionsOf(id: UUID): List<CalculationSummary> =
-        queries.selectRevisions(id.toString()) { rowId, name, status, quantity, unitPrice, createdAt, updatedAt ->
+        queries.selectRevisions(id.toString()) { rowId, name, status, quantity, unitPrice, createdAt, updatedAt, kind ->
             CalculationSummary(
                 id = UUID.fromString(rowId),
                 name = name,
+                kind = CalculationKind.valueOf(kind),
                 status = CalculationStatus.valueOf(status),
                 quantity = quantity.toInt(),
                 unitPrice = unitPrice?.let { Money(BigDecimal(it)) },
@@ -227,7 +301,7 @@ class CalculationRepository(
     fun deleteUntouchedRevisionDraft(id: UUID): Boolean = queries.transactionWithResult {
         val draft = get(id)
         val source = draft?.takeIf { it.status == CalculationStatus.DRAFT }?.sourceId?.let { get(it) }
-        if (draft == null || source == null || draft.input != source.input || !attachments.hasSameFiles(id, source.id)) {
+        if (draft == null || source == null || draft.content() != source.content() || !attachments.hasSameFiles(id, source.id)) {
             return@transactionWithResult false
         }
         remove(id)
@@ -237,9 +311,9 @@ class CalculationRepository(
     fun get(id: UUID): StoredCalculation? = queries.selectById(id.toString()).executeAsOneOrNull()?.toStored()
 
     /**
-     * The list of spec 8.1. [query] matches a part of the name in any letter case, Cyrillic
-     * included; an empty [statuses] means every status; [from] and [to] bound the date of the
-     * last change, both days inclusive.
+     * The list of spec 8.1, calculations of both kinds. [query] matches a part of the name in any
+     * letter case, Cyrillic included; an empty [statuses] means every status; [from] and [to] bound
+     * the date of the last change, both days inclusive.
      */
     fun list(
         query: String = "",
@@ -264,7 +338,7 @@ class CalculationRepository(
         val source = existing(id)
         val key = UUID.randomUUID()
         queries.transaction {
-            insert(key, source.input, encode(source.input), CalculationStatus.DRAFT, clock.millis(), priced = null)
+            insert(key, source.content(), CalculationStatus.DRAFT, clock.millis(), priced = null)
             attachments.copyAll(id, key)
         }
         return key
@@ -293,7 +367,11 @@ class CalculationRepository(
         queries.transaction {
             val current = existing(id)
             check(current.status == CalculationStatus.DRAFT) { notChangedInPlace(id, current.status) }
-            queries.updateQuantity(quantity.toLong(), encode(current.input.copy(quantity = quantity)), clock.millis(), id.toString())
+            val inputJson = when (current) {
+                is StoredCalculation.Full -> encode(current.input.copy(quantity = quantity))
+                is StoredCalculation.Quick -> encode(current.input.copy(quantity = quantity))
+            }
+            queries.updateQuantity(quantity.toLong(), inputJson, clock.millis(), id.toString())
         }
     }
 
@@ -306,10 +384,14 @@ class CalculationRepository(
         }
     }
 
-    /** A write over [id] is allowed when there is no such row yet (it is inserted) or the row is a draft. */
-    private fun requireDraftOrAbsent(id: UUID) {
-        val status = queries.selectStatus(id.toString()).executeAsOneOrNull() ?: return
-        check(status == CalculationStatus.DRAFT.name) { notChangedInPlace(id, CalculationStatus.valueOf(status)) }
+    /**
+     * A write over [id] is allowed when there is no such row yet (it is inserted) or the row is a
+     * draft of the same [kind]: an input of the other kind would be read wrongly from then on.
+     */
+    private fun requireDraftOrAbsent(id: UUID, kind: CalculationKind) {
+        val row = queries.selectStatusAndKind(id.toString()).executeAsOneOrNull() ?: return
+        check(row.status == CalculationStatus.DRAFT.name) { notChangedInPlace(id, CalculationStatus.valueOf(row.status)) }
+        check(row.kind == kind.name) { "Calculation $id is a ${row.kind} one, it cannot be written with a $kind input" }
     }
 
     private fun notChangedInPlace(id: UUID, status: CalculationStatus) =
@@ -321,10 +403,15 @@ class CalculationRepository(
         resultJson = storageJson.encodeToString(StoredResult.serializer(), StoredResult.of(result)),
     )
 
+    private fun pricing(snapshot: PriceBook, result: QuickResult) = Priced(
+        unitPrice = result.unitPrice.amount.toPlainString(),
+        snapshotJson = encodeSnapshot(snapshot),
+        resultJson = storageJson.encodeToString(StoredQuickResult.serializer(), StoredQuickResult.of(result)),
+    )
+
     private fun insert(
         id: UUID,
-        input: CalculationInput,
-        inputJson: String,
+        content: Content,
         status: CalculationStatus,
         now: Long,
         priced: Priced?,
@@ -333,25 +420,46 @@ class CalculationRepository(
     ) {
         queries.insert(
             id = id.toString(),
-            name = input.name,
-            nameSearch = searchForm(input.name),
+            name = content.name,
+            nameSearch = searchForm(content.name),
             status = status.name,
-            quantity = input.quantity.toLong(),
+            quantity = content.quantity.toLong(),
             unitPrice = priced?.unitPrice,
             createdAt = now,
             updatedAt = now,
             snapshotAt = snapshotAt,
-            inputJson = inputJson,
+            inputJson = content.inputJson,
             snapshotJson = priced?.snapshotJson,
             resultJson = priced?.resultJson,
             sourceId = sourceId?.toString(),
+            kind = content.kind.name,
         )
     }
 
     private class Priced(val unitPrice: String, val snapshotJson: String, val resultJson: String)
 
+    /**
+     * An input of either kind as the row holds it: the columns the list reads and the input JSON.
+     * Two contents are equal when they are of one kind and their JSON is the same text, which is
+     * what a row would be written with.
+     */
+    private data class Content(val kind: CalculationKind, val name: String, val quantity: Int, val inputJson: String) {
+        companion object {
+            fun of(input: CalculationInput) = Content(CalculationKind.FULL, input.name, input.quantity, encode(input))
+
+            fun of(input: QuickCalculationInput) = Content(CalculationKind.QUICK, input.name, input.quantity, encode(input))
+        }
+    }
+
+    private fun StoredCalculation.content(): Content = when (this) {
+        is StoredCalculation.Full -> Content.of(input)
+        is StoredCalculation.Quick -> Content.of(input)
+    }
+
     private companion object {
         fun encode(input: CalculationInput) = storageJson.encodeToString(CalculationInput.serializer(), input)
+
+        fun encode(input: QuickCalculationInput) = storageJson.encodeToString(QuickCalculationInput.serializer(), input)
 
         fun encodeSnapshot(snapshot: PriceBook) = storageJson.encodeToString(PriceBook.serializer(), snapshot)
 
@@ -366,21 +474,35 @@ class CalculationRepository(
             upgradeResultJson(storageJson.parseToJsonElement(text)),
         ).toResult()
 
-        fun Calculation.toStored() = StoredCalculation(
-            id = UUID.fromString(id),
-            status = CalculationStatus.valueOf(status),
-            input = decodeInput(input_json),
-            snapshot = snapshot_json?.let { storageJson.decodeFromString(PriceBook.serializer(), it) },
-            snapshotAt = snapshot_at?.let(Instant::ofEpochMilli),
-            result = result_json?.let(::decodeResult),
-            createdAt = Instant.ofEpochMilli(created_at),
-            updatedAt = Instant.ofEpochMilli(updated_at),
-            sourceId = source_id?.let(UUID::fromString),
-        )
+        fun Calculation.toStored(): StoredCalculation = when (CalculationKind.valueOf(kind)) {
+            CalculationKind.FULL -> StoredCalculation.Full(
+                id = UUID.fromString(id),
+                status = CalculationStatus.valueOf(status),
+                input = decodeInput(input_json),
+                snapshot = snapshot_json?.let { storageJson.decodeFromString(PriceBook.serializer(), it) },
+                snapshotAt = snapshot_at?.let(Instant::ofEpochMilli),
+                result = result_json?.let(::decodeResult),
+                createdAt = Instant.ofEpochMilli(created_at),
+                updatedAt = Instant.ofEpochMilli(updated_at),
+                sourceId = source_id?.let(UUID::fromString),
+            )
+            CalculationKind.QUICK -> StoredCalculation.Quick(
+                id = UUID.fromString(id),
+                status = CalculationStatus.valueOf(status),
+                input = storageJson.decodeFromString(QuickCalculationInput.serializer(), input_json),
+                snapshot = snapshot_json?.let { storageJson.decodeFromString(PriceBook.serializer(), it) },
+                snapshotAt = snapshot_at?.let(Instant::ofEpochMilli),
+                result = result_json?.let { storageJson.decodeFromString(StoredQuickResult.serializer(), it).toResult() },
+                createdAt = Instant.ofEpochMilli(created_at),
+                updatedAt = Instant.ofEpochMilli(updated_at),
+                sourceId = source_id?.let(UUID::fromString),
+            )
+        }
 
         fun SelectSummaries.toSummary() = CalculationSummary(
             id = UUID.fromString(id),
             name = name,
+            kind = CalculationKind.valueOf(kind),
             status = CalculationStatus.valueOf(status),
             quantity = quantity.toInt(),
             unitPrice = unit_price?.let { Money(BigDecimal(it)) },

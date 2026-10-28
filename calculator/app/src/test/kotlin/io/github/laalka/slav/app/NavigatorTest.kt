@@ -2,7 +2,10 @@ package io.github.laalka.slav.app
 
 import io.github.laalka.slav.app.editor.EditorModel
 import io.github.laalka.slav.app.editor.fillGoldenCase
+import io.github.laalka.slav.app.quick.QuickEditorModel
+import io.github.laalka.slav.app.quick.fillQuickGoldenCase
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationStatus
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -34,6 +37,8 @@ class NavigatorTest {
     fun close() = deps.close()
 
     private val Navigator.editor: EditorModel get() = assertIs<Page.Editor>(page.value).model
+
+    private val Navigator.quickEditor: QuickEditorModel get() = assertIs<Page.QuickEditor>(page.value).model
 
     /** The golden case calculated through «Новый расчёт»; the navigator is left on its card. */
     private fun TestScope.calculated(): Pair<Navigator, UUID> {
@@ -211,5 +216,81 @@ class NavigatorTest {
         assertSame(editor, navigator.editor)
         assertEquals("Рама", editor.state.value.name.text)
         assertEquals("руб.", editor.state.value.currency)
+    }
+
+    @Test
+    fun `Новый расчёт of each kind opens the editor of that kind`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+
+        navigator.navigate(Screen.Editor(null))
+        assertIs<Page.Editor>(navigator.page.value)
+        navigator.navigate(Screen.Editor(null, CalculationKind.QUICK))
+        assertIs<Page.QuickEditor>(navigator.page.value)
+        navigator.navigate(Screen.Editor(null, CalculationKind.FULL))
+        assertIs<Page.Editor>(navigator.page.value)
+    }
+
+    @Test
+    fun `a simplified calculation goes from its editor to its card, and Изменить opens its revision draft in the quick editor`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null, CalculationKind.QUICK))
+        navigator.quickEditor.fillQuickGoldenCase()
+        navigator.quickEditor.calculate()
+        val card = assertIs<Page.Card>(navigator.page.value).model
+        assertEquals("54 000,00 ₽", card.state.value.total)
+        val before = assertNotNull(deps.calculations.get(card.id))
+
+        // The kind of the saved calculation, not the one the screen names, picks the editor.
+        navigator.navigate(Screen.Editor(card.edit(), CalculationKind.FULL))
+        navigator.quickEditor.onNameChange("Лист с припуском")
+        navigator.quickEditor.calculate()
+
+        val revision = assertIs<Page.Card>(navigator.page.value).model.id
+        assertNotEquals(card.id, revision)
+        assertEquals(before, deps.calculations.get(card.id))
+        assertEquals("Лист с припуском", assertNotNull(deps.calculations.get(revision)).name)
+        assertEquals(card.id, assertNotNull(deps.calculations.get(revision)).sourceId)
+        assertEquals(2, deps.calculations.list().size)
+    }
+
+    @Test
+    fun `a quick draft opens in the quick editor from the list and from a copy, and leaving the editor saves it`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null, CalculationKind.QUICK))
+        navigator.quickEditor.onNameChange("Лист")
+        navigator.quickEditor.onSheetAreaChange("2")
+
+        navigator.navigate(Screen.Calculations)
+
+        val row = navigator.calculationList.state.value.rows.single()
+        assertEquals(CalculationKind.QUICK, row.kind)
+        assertEquals("Лист", row.name)
+        navigator.open(row)
+        assertEquals("2", navigator.quickEditor.state.value.sheetArea.text)
+
+        navigator.navigate(Screen.Calculations)
+        navigator.copy(row.id)
+        assertEquals("Лист", navigator.quickEditor.state.value.name.text)
+        assertEquals(2, deps.calculations.list().size)
+        assertEquals(setOf(CalculationKind.QUICK), deps.calculations.list().map { it.kind }.toSet())
+    }
+
+    @Test
+    fun `Детали and the settings save the open quick editor, and the rail returns to it`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null, CalculationKind.QUICK))
+        val editor = navigator.quickEditor
+        editor.onNameChange("Лист")
+
+        navigator.navigate(Screen.Settings)
+        assertEquals("Лист", deps.calculations.list().single().name, "the draft is saved on the way to the settings")
+        deps.settings.save(deps.settings.load().let { it.copy(general = it.general.copy(currencySymbol = "руб.")) })
+        navigator.selectCalculations()
+
+        assertSame(editor, navigator.quickEditor)
+        assertEquals("руб.", editor.state.value.currency)
+        var exited = false
+        navigator.requestExit { exited = true }
+        assertEquals(true, exited)
     }
 }

@@ -55,7 +55,7 @@ class EditorLibraryTest {
     /** The part of the golden case as the first part of a new editor holds it. */
     private val goldenPart: Part = goldenInput().parts.single().copy(name = "Деталь 1")
 
-    private fun stored(id: UUID): StoredCalculation = assertNotNull(deps.calculations.get(id))
+    private fun stored(id: UUID): StoredCalculation.Full = assertIs<StoredCalculation.Full>(deps.calculations.get(id))
 
     private fun written(result: TemplateWriteResult): PartTemplate = assertIs<TemplateWriteResult.Written>(result).template
 
@@ -233,7 +233,7 @@ class EditorLibraryTest {
         assertTrue(inserted.operations.first { (it.ref as LineRef.OfPart).kind == OperationKind.BENDING }.checked)
 
         editor.flush()
-        assertEquals(template.part, deps.calculations.get(deps.calculations.list().single().id)?.input?.parts?.get(1))
+        assertEquals(template.part, stored(deps.calculations.list().single().id).input.parts[1])
     }
 
     @Test

@@ -1,6 +1,9 @@
 package io.github.laalka.slav.app
 
+import io.github.laalka.slav.core.CalcResult
+import io.github.laalka.slav.core.CalculationInput
 import io.github.laalka.slav.data.PasswordSeed
+import io.github.laalka.slav.data.StoredCalculation
 import java.nio.file.Path
 
 /** The administrator password of the tests; the one of the program is not in the repository. */
@@ -39,3 +42,11 @@ class DrawingPicker(var next: Path? = null) : FilePicker {
 
     override fun chooseDrawing(): Path? = next
 }
+
+// The tests that look inside a stored calculation mostly deal with full ones: they read it as such,
+// and a quick one makes them fail with a class cast rather than with a wrong value.
+val StoredCalculation.input: CalculationInput get() = (this as StoredCalculation.Full).input
+
+val StoredCalculation.result: CalcResult? get() = (this as StoredCalculation.Full).result
+
+fun StoredCalculation?.asQuick(): StoredCalculation.Quick = this as StoredCalculation.Quick

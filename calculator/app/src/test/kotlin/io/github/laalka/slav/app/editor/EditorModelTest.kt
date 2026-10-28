@@ -55,9 +55,9 @@ class EditorModelTest {
     private fun TestScope.editor(id: UUID? = null) =
         EditorModel(deps.calculations, deps.settings, deps.attachments, deps.partTemplates, deps.fileOpener, backgroundScope, id, onCalculated = { calculated += it })
 
-    private fun stored(id: UUID): StoredCalculation = assertNotNull(deps.calculations.get(id))
+    private fun stored(id: UUID): StoredCalculation.Full = assertIs<StoredCalculation.Full>(deps.calculations.get(id))
 
-    private fun onlyStored(): StoredCalculation = stored(deps.calculations.list().single().id)
+    private fun onlyStored(): StoredCalculation.Full = stored(deps.calculations.list().single().id)
 
     private fun updateSettings(transform: (PriceBook) -> PriceBook) = deps.settings.save(transform(deps.settings.load()))
 

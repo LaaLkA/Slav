@@ -56,6 +56,9 @@ fun OperationPricesTab(model: PricesModel) {
             SectionCard("Покраска порошковая", subtitle = "${state.paintingUnit} · одно значение") {
                 PriceCellField(state.painting, model::onCellChange, Modifier.width(ROW_HEADER_WIDTH))
             }
+            SectionCard(state.laserCutPerMinuteTitle, subtitle = "Упрощённый расчёт: время реза × ставка · одно значение") {
+                PriceCellField(state.laserCutPerMinute, model::onCellChange, Modifier.width(ROW_HEADER_WIDTH))
+            }
         }
     }
 }
@@ -108,4 +111,5 @@ fun PriceCell.testTag(): String = when (this) {
     is PriceCell.Bending -> "price/bending/$group/${thicknessMm.toPlainString()}/${range.toMm?.toPlainString() ?: "max"}"
     is PriceCell.Welding -> "price/welding/$weldType/$group/${thicknessMm.toPlainString()}"
     PriceCell.Painting -> "price/painting"
+    PriceCell.LaserCutPerMinute -> "price/laser-per-minute"
 }

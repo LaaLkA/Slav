@@ -15,7 +15,7 @@ class PriceBookTest {
     @Test
     fun `default settings follow the specification`() {
         val general = book.general
-        assertEquals(2, PriceBook.FORMAT_VERSION)
+        assertEquals(3, PriceBook.FORMAT_VERSION)
         assertEquals(PriceBook.FORMAT_VERSION, book.formatVersion)
         assertEquals("₽", general.currencySymbol)
         assertEquals(listOf("100", "300", "500", "1000"), general.bendRangeBoundsMm.map { it.toPlainString() })
@@ -111,6 +111,7 @@ class PriceBookTest {
             assertDecimal((semiAutomatic * dec("3")).toPlainString(), book.weldingPerCm.priceFor("лазер", STEEL, t))
         }
         assertDecimal("450", book.paintingPerM2)
+        assertDecimal("50", book.laserCutPerMinute)
     }
 
     @Test

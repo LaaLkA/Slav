@@ -12,7 +12,7 @@ class Calculator(private val priceBook: PriceBook) {
         val errors = Errors()
         val parts = input.parts.mapNotNull { pricePart(it, errors) }
         val productLines = input.productOperations.map { op ->
-            OperationLine(op.kind, line(priceProductOperation(op, input.parts, errors), op.manualExtra), op.manualExtra)
+            OperationLine(op.kind, lineCost(priceProductOperation(op, input.parts, errors), op.manualExtra), op.manualExtra)
         }
         val found = errors.all
         return if (found.isEmpty()) CalcOutcome.Ok(CalcResult(parts, productLines)) else CalcOutcome.Failed(found)
@@ -31,9 +31,9 @@ class Calculator(private val priceBook: PriceBook) {
         return PartResult(
             name = part.name,
             massKg = massKg,
-            material = MaterialLine(line(priceMaterial(material, massKg, grade, priceBook, errors), part.materialExtra), part.materialExtra),
+            material = MaterialLine(lineCost(priceMaterial(material.thicknessMm, massKg, grade, priceBook, errors), part.materialExtra), part.materialExtra),
             operations = operations.map { op ->
-                OperationLine(op.kind, line(pricePartOperation(op, material, grade.group, errors), op.manualExtra), op.manualExtra)
+                OperationLine(op.kind, lineCost(pricePartOperation(op, material, grade.group, errors), op.manualExtra), op.manualExtra)
             },
         )
     }
@@ -67,9 +67,6 @@ class Calculator(private val priceBook: PriceBook) {
                 errors,
             )
         }
-
-    /** Spec 3, 10: a line is its formula value plus the manual extra, rounded half-up to kopecks. */
-    private fun line(cost: Money, extra: ManualExtra?): Money = (if (extra == null) cost else cost + extra.amount).rounded()
 }
 
 sealed interface CalcOutcome {

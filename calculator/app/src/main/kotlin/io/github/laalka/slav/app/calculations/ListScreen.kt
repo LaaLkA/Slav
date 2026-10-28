@@ -59,6 +59,7 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
 import java.util.UUID
@@ -86,7 +87,7 @@ private val ACTIONS_WIDTH = 48.dp
 fun CalculationsScreen(
     model: CalculationListModel,
     filePicker: FilePicker,
-    onNew: () -> Unit,
+    onNew: (CalculationKind) -> Unit,
     onOpen: (ListRow) -> Unit,
     onCopy: (UUID) -> Unit,
 ) {
@@ -97,10 +98,7 @@ fun CalculationsScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Готовые расчёты", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            Button(onClick = onNew, modifier = Modifier.testTag(CalculationTags.NEW)) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Text("Новый расчёт", modifier = Modifier.padding(start = Spacing.small))
-            }
+            NewCalculationButton(onNew)
         }
         state.message?.let { message ->
             Box(Modifier.testTag(CalculationTags.MESSAGE)) { NoticeCard(message.text, message.isError, onDismiss = model::dismissMessage) }
@@ -116,6 +114,30 @@ fun CalculationsScreen(
 
     state.deleteQuestion?.let { question ->
         DeleteDialog(question, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
+    }
+}
+
+/** «Новый расчёт» offers the two kinds: the full calculation with parts, and the simplified one by a sheet and the laser time. */
+@Composable
+private fun NewCalculationButton(onNew: (CalculationKind) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Button(onClick = { expanded = true }, modifier = Modifier.testTag(CalculationTags.NEW)) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Text("Новый расчёт", modifier = Modifier.padding(start = Spacing.small))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            CalculationKind.entries.forEach { kind ->
+                DropdownMenuItem(
+                    text = { Text(kind.title) },
+                    onClick = {
+                        expanded = false
+                        onNew(kind)
+                    },
+                    modifier = Modifier.testTag(CalculationTags.newOf(kind)),
+                )
+            }
+        }
     }
 }
 
@@ -295,13 +317,16 @@ private fun TableRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
-        Text(
-            row.name,
-            modifier = cell(ListColumn.NAME).testTag("$tag/name"),
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(cell(ListColumn.NAME), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+            Text(
+                row.name,
+                modifier = Modifier.weight(1f, fill = false).testTag("$tag/name"),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (row.kind == CalculationKind.QUICK) QuickChip(Modifier.testTag("$tag/quick"))
+        }
         Text(row.updatedAt, modifier = cell(ListColumn.UPDATED), style = MaterialTheme.typography.bodyMedium.tabular(), maxLines = 1)
         Box(cell(ListColumn.STATUS)) { StatusChip(row.status) }
         MoneyCell(row.unitPrice ?: "—", cell(ListColumn.UNIT_PRICE))
