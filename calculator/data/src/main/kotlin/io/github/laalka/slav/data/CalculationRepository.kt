@@ -48,6 +48,8 @@ data class StoredCalculation(
     val result: CalcResult?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** The calculation this one was made from; null for an original and for a plain copy (spec 8.3). */
+    val sourceId: UUID?,
 ) {
     val name: String get() = input.name
     val quantity: Int get() = input.quantity
@@ -78,19 +80,27 @@ data class CalculationSort(val column: CalculationSortColumn, val descending: Bo
     }
 }
 
-/** Calculations (spec 7.2, 8). Dates of the list filter are taken in the zone of [clock]. */
+/**
+ * Calculations (spec 7.2, 8). Dates of the list filter are taken in the zone of [clock].
+ *
+ * A calculation that is not a draft is never changed in place, so the trace of a wrong calculation
+ * stays: a recalculation, a new run size or an edit makes a new row ([createRevision],
+ * [createRevisionDraft]) that points to its source. Only the workflow status of such a row can
+ * be set ([setStatus]); writing its input, price or run size throws [IllegalStateException].
+ */
 class CalculationRepository(database: AppDatabase, private val clock: Clock = Clock.systemDefaultZone()) {
     private val queries = database.database.calculationQueries
 
     /**
-     * Saves [input] as a draft (spec 7.2): a new one when [id] is null, otherwise over the
-     * calculation [id], which loses its price and result but keeps its snapshot.
+     * Saves [input] as a draft (spec 7.2): a new one when [id] is null or unknown, otherwise over
+     * the draft [id], which keeps its snapshot. Throws when [id] is not a draft.
      */
     fun saveDraft(input: CalculationInput, id: UUID? = null): UUID {
         val key = id ?: UUID.randomUUID()
         val now = clock.millis()
         val inputJson = encode(input)
         queries.transaction {
+            requireDraftOrAbsent(key)
             val updated = queries.updateDraft(
                 name = input.name,
                 nameSearch = searchForm(input.name),
@@ -109,18 +119,18 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
 
     /**
      * Saves a successful calculation (spec 7.1, 8.3) with the prices it used: a new one when [id]
-     * is null, otherwise over the calculation [id]. The status becomes «Рассчитан».
+     * is null or unknown, otherwise over the draft [id], which keeps its [StoredCalculation.sourceId].
+     * The status becomes «Рассчитан». Throws when [id] is not a draft. [snapshotAt] is when
+     * [snapshot] was taken; now, unless the prices are an older snapshot.
      */
-    fun saveCalculated(input: CalculationInput, snapshot: PriceBook, result: CalcResult, id: UUID? = null): UUID {
+    fun saveCalculated(input: CalculationInput, snapshot: PriceBook, result: CalcResult, id: UUID? = null, snapshotAt: Instant? = null): UUID {
         val key = id ?: UUID.randomUUID()
         val now = clock.millis()
         val inputJson = encode(input)
-        val priced = Priced(
-            unitPrice = result.unitPrice.amount.toPlainString(),
-            snapshotJson = storageJson.encodeToString(PriceBook.serializer(), snapshot),
-            resultJson = storageJson.encodeToString(StoredResult.serializer(), StoredResult.of(result)),
-        )
+        val priced = pricing(snapshot, result)
+        val takenAt = snapshotAt?.toEpochMilli() ?: now
         queries.transaction {
+            requireDraftOrAbsent(key)
             val updated = queries.updateCalculated(
                 name = input.name,
                 nameSearch = searchForm(input.name),
@@ -128,40 +138,86 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
                 quantity = input.quantity.toLong(),
                 unitPrice = priced.unitPrice,
                 updatedAt = now,
-                snapshotAt = now,
+                snapshotAt = takenAt,
                 inputJson = inputJson,
                 snapshotJson = priced.snapshotJson,
                 resultJson = priced.resultJson,
                 id = key.toString(),
             ).value
             if (updated == 0L) {
-                insert(key, input, inputJson, CalculationStatus.CALCULATED, now, priced)
+                insert(key, input, inputJson, CalculationStatus.CALCULATED, now, priced, snapshotAt = takenAt)
             }
         }
         return key
     }
 
     /**
-     * Writes [calculation] back exactly as it was read, status and dates included: «Отменить
-     * изменения» after an edit of a priced calculation was autosaved over it as a draft (spec 8.3).
+     * A new draft with the input and the price snapshot of the calculation [sourceId], pointing to
+     * it, for «Изменить» (spec 8.3): «Рассчитать» on it uses the same prices. The source stays as it was.
      */
-    fun restore(calculation: StoredCalculation) {
-        val result = requireNotNull(calculation.result) { "Only a priced calculation is restored, ${calculation.id} is a draft" }
-        val snapshot = checkNotNull(calculation.snapshot) { "Priced calculation ${calculation.id} has no snapshot" }
-        val snapshotAt = checkNotNull(calculation.snapshotAt) { "Priced calculation ${calculation.id} has no snapshot date" }
-        queries.updateCalculated(
-            name = calculation.input.name,
-            nameSearch = searchForm(calculation.input.name),
-            status = calculation.status.name,
-            quantity = calculation.input.quantity.toLong(),
-            unitPrice = result.unitPrice.amount.toPlainString(),
-            updatedAt = calculation.updatedAt.toEpochMilli(),
-            snapshotAt = snapshotAt.toEpochMilli(),
-            inputJson = encode(calculation.input),
-            snapshotJson = storageJson.encodeToString(PriceBook.serializer(), snapshot),
-            resultJson = storageJson.encodeToString(StoredResult.serializer(), StoredResult.of(result)),
-            id = calculation.id.toString(),
+    fun createRevisionDraft(sourceId: UUID): UUID {
+        val source = existing(sourceId)
+        check(source.status != CalculationStatus.DRAFT) { "Draft $sourceId is edited in place, it has no revisions" }
+        val snapshot = checkNotNull(source.snapshot) { "Calculation $sourceId has no price snapshot" }
+        val key = UUID.randomUUID()
+        val now = clock.millis()
+        queries.insert(
+            id = key.toString(),
+            name = source.input.name,
+            nameSearch = searchForm(source.input.name),
+            status = CalculationStatus.DRAFT.name,
+            quantity = source.input.quantity.toLong(),
+            unitPrice = null,
+            createdAt = now,
+            updatedAt = now,
+            snapshotAt = source.snapshotAt?.toEpochMilli(),
+            inputJson = encode(source.input),
+            snapshotJson = encodeSnapshot(snapshot),
+            resultJson = null,
+            sourceId = sourceId.toString(),
         )
+        return key
+    }
+
+    /**
+     * A new «Рассчитан» calculation made from [sourceId] with the given [input], [snapshot] and
+     * [result]: a recalculation on current prices, or the same prices and result under a new run
+     * size. The source stays as it was. [snapshotAt] is when [snapshot] was taken; now, unless
+     * the prices are the source's snapshot.
+     */
+    fun createRevision(sourceId: UUID, input: CalculationInput, snapshot: PriceBook, result: CalcResult, snapshotAt: Instant? = null): UUID {
+        existing(sourceId)
+        val key = UUID.randomUUID()
+        val now = clock.millis()
+        insert(key, input, encode(input), CalculationStatus.CALCULATED, now, pricing(snapshot, result), snapshotAt = snapshotAt?.toEpochMilli() ?: now, sourceId = sourceId)
+        return key
+    }
+
+    /** The calculations made from [id], the newest first; every status, a draft in progress included. */
+    fun revisionsOf(id: UUID): List<CalculationSummary> =
+        queries.selectRevisions(id.toString()) { rowId, name, status, quantity, unitPrice, createdAt, updatedAt ->
+            CalculationSummary(
+                id = UUID.fromString(rowId),
+                name = name,
+                status = CalculationStatus.valueOf(status),
+                quantity = quantity.toInt(),
+                unitPrice = unitPrice?.let { Money(BigDecimal(it)) },
+                createdAt = Instant.ofEpochMilli(createdAt),
+                updatedAt = Instant.ofEpochMilli(updatedAt),
+            )
+        }.executeAsList().sortedWith(compareByDescending<CalculationSummary> { it.createdAt }.thenBy { it.id })
+
+    /**
+     * Deletes the draft [id] when it is a revision draft whose input still equals its source's:
+     * an automatic copy nobody changed, which needs no password. True when it was deleted; any
+     * other calculation is left alone.
+     */
+    fun deleteUntouchedRevisionDraft(id: UUID): Boolean = queries.transactionWithResult {
+        val draft = get(id)
+        val source = draft?.takeIf { it.status == CalculationStatus.DRAFT }?.sourceId?.let { get(it) }
+        if (draft == null || source == null || draft.input != source.input) return@transactionWithResult false
+        queries.delete(id.toString())
+        true
     }
 
     fun get(id: UUID): StoredCalculation? = queries.selectById(id.toString()).executeAsOneOrNull()?.toStored()
@@ -197,7 +253,10 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         return key
     }
 
-    /** Does nothing when [id] is already gone. */
+    /**
+     * Removes the calculation [id], whatever its status. Deleting needs the administrator password
+     * ([AdminPassword]), which is asked by the caller; does nothing when [id] is already gone.
+     */
     fun delete(id: UUID) {
         queries.delete(id.toString())
     }
@@ -212,18 +271,43 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         }
     }
 
-    /** Changes the run size on the card: the total follows, the unit price and the snapshot stay (spec 8.2). */
+    /** Changes the run size of a draft. A calculated one gets a new run size as a revision ([createRevision]). */
     fun setQuantity(id: UUID, quantity: Int) {
         require(quantity > 0) { "Quantity must be positive, got $quantity" }
         queries.transaction {
-            val input = existing(id).input.copy(quantity = quantity)
-            queries.updateQuantity(quantity.toLong(), encode(input), clock.millis(), id.toString())
+            val current = existing(id)
+            check(current.status == CalculationStatus.DRAFT) { notChangedInPlace(id, current.status) }
+            queries.updateQuantity(quantity.toLong(), encode(current.input.copy(quantity = quantity)), clock.millis(), id.toString())
         }
     }
 
     private fun existing(id: UUID) = get(id) ?: throw NoSuchElementException("No calculation $id")
 
-    private fun insert(id: UUID, input: CalculationInput, inputJson: String, status: CalculationStatus, now: Long, priced: Priced?) {
+    /** A write over [id] is allowed when there is no such row yet (it is inserted) or the row is a draft. */
+    private fun requireDraftOrAbsent(id: UUID) {
+        val status = queries.selectStatus(id.toString()).executeAsOneOrNull() ?: return
+        check(status == CalculationStatus.DRAFT.name) { notChangedInPlace(id, CalculationStatus.valueOf(status)) }
+    }
+
+    private fun notChangedInPlace(id: UUID, status: CalculationStatus) =
+        "Calculation $id is «${status.title}» and is never changed in place; make a revision of it"
+
+    private fun pricing(snapshot: PriceBook, result: CalcResult) = Priced(
+        unitPrice = result.unitPrice.amount.toPlainString(),
+        snapshotJson = encodeSnapshot(snapshot),
+        resultJson = storageJson.encodeToString(StoredResult.serializer(), StoredResult.of(result)),
+    )
+
+    private fun insert(
+        id: UUID,
+        input: CalculationInput,
+        inputJson: String,
+        status: CalculationStatus,
+        now: Long,
+        priced: Priced?,
+        snapshotAt: Long? = priced?.let { now },
+        sourceId: UUID? = null,
+    ) {
         queries.insert(
             id = id.toString(),
             name = input.name,
@@ -233,10 +317,11 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
             unitPrice = priced?.unitPrice,
             createdAt = now,
             updatedAt = now,
-            snapshotAt = priced?.let { now },
+            snapshotAt = snapshotAt,
             inputJson = inputJson,
             snapshotJson = priced?.snapshotJson,
             resultJson = priced?.resultJson,
+            sourceId = sourceId?.toString(),
         )
     }
 
@@ -247,6 +332,8 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         val nameCollator: Collator = Collator.getInstance(Locale.forLanguageTag("ru")).apply { strength = Collator.SECONDARY }
 
         fun encode(input: CalculationInput) = storageJson.encodeToString(CalculationInput.serializer(), input)
+
+        fun encodeSnapshot(snapshot: PriceBook) = storageJson.encodeToString(PriceBook.serializer(), snapshot)
 
         // Rows written by an older program are brought to the current model on every read (InputJsonUpgrade.kt).
         fun decodeInput(text: String): CalculationInput = storageJson.decodeFromJsonElement(
@@ -271,6 +358,7 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
             result = result_json?.let(::decodeResult),
             createdAt = Instant.ofEpochMilli(created_at),
             updatedAt = Instant.ofEpochMilli(updated_at),
+            sourceId = source_id?.let(UUID::fromString),
         )
 
         fun SelectSummaries.toSummary() = CalculationSummary(

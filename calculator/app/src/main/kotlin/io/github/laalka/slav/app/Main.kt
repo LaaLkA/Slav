@@ -11,9 +11,11 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.laalka.slav.app.theme.SlavTheme
+import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AppPaths
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.DatabaseFactory
+import io.github.laalka.slav.data.PasswordSeed
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.SettingsTransfer
 import java.awt.Desktop
@@ -23,12 +25,14 @@ import kotlin.io.path.Path
 
 /**
  * The composition root: the database of [paths] and everything built on it, created once per
- * start. Opening the database backs up the existing one first (spec 11).
+ * start. Opening the database backs up the existing one first (spec 11). [adminSeed] is the
+ * password hash a new database starts with; a test passes the hash of a password of its own.
  */
-class Deps(paths: AppPaths, appVersion: String) : AutoCloseable {
+class Deps(paths: AppPaths, appVersion: String, adminSeed: PasswordSeed = PasswordSeed.PRODUCTION) : AutoCloseable {
     private val database = DatabaseFactory(paths).open()
     val settings = SettingsRepository(database)
     val calculations = CalculationRepository(database)
+    val adminPassword = AdminPassword(database, adminSeed)
     val settingsTransfer = SettingsTransfer(settings, paths, appVersion)
     val preferences = AppPreferences(paths.root.resolve("preferences.properties"))
 

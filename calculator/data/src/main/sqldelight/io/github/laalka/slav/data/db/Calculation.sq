@@ -15,11 +15,21 @@ CREATE TABLE calculation (
     snapshot_at INTEGER,
     input_json TEXT NOT NULL,
     snapshot_json TEXT,
-    result_json TEXT
+    result_json TEXT,
+    -- The calculation this one was made from (a revision); NULL for an original and for a plain copy.
+    source_id TEXT
 );
 
 selectById:
 SELECT * FROM calculation WHERE id = :id;
+
+selectStatus:
+SELECT status FROM calculation WHERE id = :id;
+
+selectRevisions:
+SELECT id, name, status, quantity, unit_price, created_at, updated_at
+FROM calculation
+WHERE source_id = :sourceId;
 
 -- instr, not LIKE: the search text is literal, so '%' and '_' typed by the user match themselves.
 selectSummaries:
@@ -33,12 +43,15 @@ WHERE instr(name_search, :search) > 0
 insert:
 INSERT INTO calculation(
     id, name, name_search, status, quantity, unit_price, created_at, updated_at,
-    snapshot_at, input_json, snapshot_json, result_json
+    snapshot_at, input_json, snapshot_json, result_json, source_id
 ) VALUES (
     :id, :name, :nameSearch, :status, :quantity, :unitPrice, :createdAt, :updatedAt,
-    :snapshotAt, :inputJson, :snapshotJson, :resultJson
+    :snapshotAt, :inputJson, :snapshotJson, :resultJson, :sourceId
 );
 
+-- The updates below are only run on a draft (CalculationRepository checks it): a calculated row is
+-- never rewritten, apart from its status.
+--
 -- A draft has no price; the snapshot stays, so finishing the edit recalculates on the same prices.
 updateDraft:
 UPDATE calculation

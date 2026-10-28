@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -115,7 +114,9 @@ fun CalculationsScreen(
         }
     }
 
-    state.pendingDelete?.let { row -> DeleteDialog(row, onConfirm = model::confirmDelete, onCancel = model::cancelDelete) }
+    state.deleteQuestion?.let { question ->
+        DeleteDialog(question, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
+    }
 }
 
 @Composable
@@ -369,23 +370,6 @@ private fun RowMenu(
             )
         }
     }
-}
-
-@Composable
-private fun DeleteDialog(row: ListRow, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text("Удалить расчёт?") },
-        text = { Text("Расчёт «${row.name}» будет удалён без возможности восстановления.") },
-        confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.DELETE_CONFIRM)) {
-                Text("Удалить", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.DELETE_CANCEL)) { Text("Отмена") }
-        },
-    )
 }
 
 private fun RowScope.cell(column: ListColumn): Modifier =

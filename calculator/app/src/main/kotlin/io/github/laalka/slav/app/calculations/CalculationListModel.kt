@@ -5,6 +5,7 @@ import io.github.laalka.slav.app.export.exportFileName
 import io.github.laalka.slav.app.ui.formatDateTime
 import io.github.laalka.slav.app.ui.formatMoney
 import io.github.laalka.slav.app.ui.parseDate
+import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationSort
 import io.github.laalka.slav.data.CalculationSortColumn
@@ -49,8 +50,8 @@ data class ListState(
     val hasFilters: Boolean,
     /** Bumped when the filters are cleared: the filter fields are re-created with the cleared texts. */
     val filterEpoch: Int,
-    /** The row waiting for the delete confirmation. */
-    val pendingDelete: ListRow?,
+    /** The calculation waiting for the administrator password to be deleted. */
+    val deleteQuestion: DeleteQuestion?,
     val message: ListMessage?,
 )
 
@@ -62,6 +63,7 @@ data class ListState(
 class CalculationListModel(
     private val calculations: CalculationRepository,
     private val settings: SettingsRepository,
+    adminPassword: AdminPassword,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
     private var query = ""
@@ -70,7 +72,7 @@ class CalculationListModel(
     private var toText = ""
     private var sort = CalculationSort.DEFAULT
     private var filterEpoch = 0
-    private var pendingDelete: UUID? = null
+    private val deletion = DeleteFlow(calculations, adminPassword)
     private var message: ListMessage? = null
 
     private val _state = MutableStateFlow(build())
@@ -122,20 +124,25 @@ class CalculationListModel(
         return copy
     }
 
+    /** Deleting any calculation, whatever its status, asks for the administrator password. */
     fun requestDelete(id: UUID) {
-        pendingDelete = id
+        deletion.request(id)
         refresh()
     }
 
+    fun onDeletePasswordChange(text: String) {
+        deletion.onPasswordChange(text)
+        refresh()
+    }
+
+    /** Deletes the calculation when the password is the administrator's; a wrong one is flagged and nothing is deleted. */
     fun confirmDelete() {
-        val id = pendingDelete ?: return
-        pendingDelete = null
-        calculations.delete(id)
+        deletion.confirm()
         refresh()
     }
 
     fun cancelDelete() {
-        pendingDelete = null
+        deletion.cancel()
         refresh()
     }
 
@@ -192,7 +199,7 @@ class CalculationListModel(
             hasFilters = hasFilters,
             filterEpoch = filterEpoch,
             // The row is asked about from the list itself, whose filters the open question leaves as they are.
-            pendingDelete = pendingDelete?.let { id -> rows.firstOrNull { it.id == id } },
+            deleteQuestion = deletion.pending?.let { id -> rows.firstOrNull { it.id == id } }?.let { DeleteQuestion(it.name, deletion.error) },
             message = message,
         )
     }

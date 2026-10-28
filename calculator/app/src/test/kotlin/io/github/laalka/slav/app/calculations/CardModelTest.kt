@@ -1,6 +1,8 @@
 package io.github.laalka.slav.app.calculations
 
+import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.testAdminSeed
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Material
@@ -31,13 +33,24 @@ class CardModelTest {
 
     @BeforeTest
     fun open() {
-        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test")
+        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test", adminSeed = testAdminSeed())
     }
 
     @AfterTest
     fun close() = deps.close()
 
-    private fun card(id: UUID) = CardModel(deps.calculations, deps.settings, id)
+    /** The ids the card handed over as new versions, and how many times it said the calculation was deleted. */
+    private val revisions = mutableListOf<UUID>()
+    private var deleted = 0
+
+    private fun card(id: UUID) = CardModel(
+        deps.calculations,
+        deps.settings,
+        deps.adminPassword,
+        id,
+        onRevision = { revisions += it },
+        onDeleted = { deleted++ },
+    )
 
     private fun stored(id: UUID): StoredCalculation = assertNotNull(deps.calculations.get(id))
 
@@ -54,7 +67,7 @@ class CardModelTest {
         assertEquals("113 400,00 ₽", state.total)
         assertEquals("16 кг", state.unitMass)
         assertEquals("160 кг", state.runMass)
-        assertEquals("10", state.quantityText)
+        assertEquals("10", state.quantity)
         val part = state.parts.single()
         assertEquals(
             listOf(
@@ -133,45 +146,65 @@ class CardModelTest {
     }
 
     @Test
-    fun `changing the run size updates the total at once and saves it without recalculating`() {
+    fun `a new run size is a new version with the same prices and result, and the original keeps its total`() {
         val id = deps.saveCalculated()
         val before = stored(id)
-        // The current prices change after the calculation: the card must keep the snapshot's unit price.
+        // The current prices change after the calculation: the new version must keep the snapshot's unit price.
         deps.setSt3TwoMillimetrePrice("300")
         val card = card(id)
 
+        card.requestQuantityChange()
+        assertEquals("1", assertNotNull(card.state.value.quantityDialog).text)
         card.onQuantityChange("10")
+        card.confirmQuantityChange()
 
-        assertEquals("113 400,00 ₽", card.state.value.total)
-        assertEquals("11 340,00 ₽", card.state.value.unitPrice)
-        val after = stored(id)
+        val revision = revisions.single()
+        assertNull(card.state.value.quantityDialog)
+        val after = stored(revision)
         assertEquals(10, after.quantity)
-        assertEquals(0, BigDecimal("11340.00").compareTo(assertNotNull(after.unitPrice).amount))
+        assertEquals(before.result, after.result)
         assertEquals(before.snapshot, after.snapshot)
         assertEquals(before.snapshotAt, after.snapshotAt)
-        assertEquals(before.result, after.result)
         assertEquals(CalculationStatus.CALCULATED, after.status)
+        assertEquals(id, after.sourceId)
+        assertEquals("113 400,00 ₽", card(revision).state.value.total)
+        assertEquals("11 340,00 ₽", card(revision).state.value.unitPrice)
+        // The original still shows its own run size and total.
+        assertEquals(before, stored(id))
+        assertEquals("11 340,00 ₽", card(id).state.value.total)
+        assertEquals("1", card(id).state.value.quantity)
+        assertEquals(2, deps.calculations.list().size)
     }
 
     @Test
-    fun `an invalid run size is flagged and nothing is saved`() {
+    fun `an invalid or unchanged run size is flagged and nothing is created`() {
         val id = deps.saveCalculated()
         val card = card(id)
+        card.requestQuantityChange()
 
         card.onQuantityChange("0")
-        assertEquals("Целое число больше нуля", card.state.value.quantityError)
+        assertEquals("Целое число больше нуля", card.state.value.quantityDialog?.error)
         card.onQuantityChange("")
-        assertEquals("Заполните", card.state.value.quantityError)
+        assertEquals("Заполните", card.state.value.quantityDialog?.error)
+        card.onQuantityChange("1")
+        assertEquals("Тираж не изменился", card.state.value.quantityDialog?.error)
+        card.onQuantityChange("1,5")
+        card.confirmQuantityChange()
 
-        assertEquals(1, stored(id).quantity)
-        assertEquals("11 340,00 ₽", card.state.value.total)
+        assertEquals("Целое число больше нуля", card.state.value.quantityDialog?.error)
+        assertEquals(emptyList(), revisions)
+        assertEquals(1, deps.calculations.list().size)
+        card.cancelQuantityChange()
+        assertNull(card.state.value.quantityDialog)
         card.onQuantityChange("3")
-        assertNull(card.state.value.quantityError)
-        assertEquals("34 020,00 ₽", card.state.value.total)
+        assertNull(card.state.value.quantityDialog, "typing without a dialog opens none")
+        card.requestQuantityChange()
+        card.onQuantityChange("3")
+        assertNull(card.state.value.quantityDialog?.error)
     }
 
     @Test
-    fun `recalculating on current prices shows old and new and applies only on confirm`() {
+    fun `recalculating on current prices shows old and new and creates a second row only on confirm`() {
         val id = deps.saveCalculated()
         deps.calculations.setStatus(id, CalculationStatus.SENT)
         val before = stored(id)
@@ -189,16 +222,27 @@ class CardModelTest {
         card.cancelRecalc()
         assertNull(card.state.value.recalc)
         assertEquals(before, stored(id), "cancel changes nothing")
+        assertEquals(1, deps.calculations.list().size)
 
         card.prepareRecalc()
         card.confirmRecalc()
 
-        val after = stored(id)
-        assertEquals(0, BigDecimal("12940.00").compareTo(assertNotNull(after.unitPrice).amount))
-        assertEquals(0, BigDecimal("300").compareTo(assertNotNull(after.st3TwoMillimetrePrice())), "the snapshot holds the current prices")
-        assertEquals(CalculationStatus.CALCULATED, after.status)
+        // A second row holds the new result on the current prices ...
+        assertEquals(2, deps.calculations.list().size)
+        val revision = stored(revisions.single())
+        assertEquals(0, BigDecimal("12940.00").compareTo(assertNotNull(revision.unitPrice).amount))
+        assertEquals(0, BigDecimal("300").compareTo(assertNotNull(revision.st3TwoMillimetrePrice())), "the snapshot holds the current prices")
+        assertEquals(CalculationStatus.CALCULATED, revision.status)
+        assertEquals(id, revision.sourceId)
         assertNull(card.state.value.recalc)
-        assertEquals("12 940,00 ₽", card.state.value.unitPrice)
+        assertEquals("12 940,00 ₽", card(revision.id).state.value.unitPrice)
+        // ... and the original is the row it was: its unit price, snapshot, status and every column.
+        val original = stored(id)
+        assertEquals(0, BigDecimal("11340.00").compareTo(assertNotNull(original.unitPrice).amount))
+        assertEquals(0, BigDecimal("200").compareTo(assertNotNull(original.st3TwoMillimetrePrice())))
+        assertEquals(CalculationStatus.SENT, original.status)
+        assertEquals(before.copy(status = CalculationStatus.SENT), stored(id))
+        assertEquals("11 340,00 ₽", card(id).state.value.unitPrice)
     }
 
     @Test
@@ -216,6 +260,7 @@ class CardModelTest {
         assertEquals(listOf("Нет цены в таблице «Цены материала»: строка «Ст3», столбец «2»"), errors.map { it.message })
         assertNull(card.state.value.recalc)
         assertEquals(before, stored(id))
+        assertEquals(1, deps.calculations.list().size)
         card.dismissRecalcErrors()
         assertTrue(card.state.value.recalcErrors.isEmpty())
     }
@@ -229,5 +274,142 @@ class CardModelTest {
 
         assertEquals(CalculationStatus.IN_WORK, card.state.value.status)
         assertEquals(CalculationStatus.IN_WORK, stored(id).status)
+    }
+
+    @Test
+    fun `the status is still set in place, it is workflow and not content`() {
+        val id = deps.saveCalculated()
+        val before = stored(id)
+        val card = card(id)
+
+        card.setStatus(CalculationStatus.ARCHIVED)
+
+        val after = stored(id)
+        assertEquals(CalculationStatus.ARCHIVED, after.status)
+        assertEquals(before.input, after.input)
+        assertEquals(before.result, after.result)
+        assertEquals(before.snapshot, after.snapshot)
+    }
+
+    @Test
+    fun `edit hands over a revision draft with the prices of the calculation, and the original stays`() {
+        val id = deps.saveCalculated(goldenInput(quantity = 4))
+        val before = stored(id)
+        deps.setSt3TwoMillimetrePrice("300")
+
+        val draft = stored(card(id).edit())
+
+        assertEquals(CalculationStatus.DRAFT, draft.status)
+        assertEquals(id, draft.sourceId)
+        assertEquals(goldenInput(quantity = 4), draft.input)
+        assertEquals(before.snapshot, draft.snapshot)
+        assertEquals(before.snapshotAt, draft.snapshotAt)
+        assertEquals(before, stored(id))
+    }
+
+    @Test
+    fun `a draft card is edited as it is`() {
+        val id = deps.calculations.saveDraft(goldenInput())
+
+        assertEquals(id, card(id).edit())
+        assertEquals(1, deps.calculations.list().size)
+        card(id).requestQuantityChange()
+        assertNull(card(id).state.value.quantityDialog, "a draft changes its run size in the editor")
+    }
+
+    @Test
+    fun `the card links to the calculation it was made from and to its newer versions`() {
+        val id = deps.saveCalculated(goldenInput("Кронштейн"))
+        val original = card(id)
+        assertNull(original.state.value.source)
+        assertEquals(emptyList(), original.state.value.revisions)
+
+        original.requestQuantityChange()
+        original.onQuantityChange("5")
+        original.confirmQuantityChange()
+        val quantityRevision = revisions.single()
+        val draft = card(id).edit()
+
+        val source = assertNotNull(card(quantityRevision).state.value.source)
+        assertEquals(id, source.id)
+        assertEquals("Кронштейн от ${formatDate(LocalDate.now())}", source.title)
+        assertEquals(false, source.isDraft)
+        val links = card(id).state.value.revisions
+        assertEquals(listOf(draft, quantityRevision).toSet(), links.map { it.id }.toSet())
+        assertEquals(setOf(true, false), links.map { it.isDraft }.toSet())
+        val calculatedLink = links.single { it.id == quantityRevision }
+        assertEquals("Рассчитан, 11 340,00 ₽ × 5", calculatedLink.details)
+        assertEquals("Черновик, без цены × 1", links.single { it.id == draft }.details)
+        assertEquals(1, links.count { it.isDraft })
+    }
+
+    @Test
+    fun `a revision whose source was deleted shows no link`() {
+        val id = deps.saveCalculated()
+        val original = card(id)
+        original.requestQuantityChange()
+        original.onQuantityChange("2")
+        original.confirmQuantityChange()
+        val revision = revisions.single()
+        deps.calculations.delete(id)
+
+        assertNull(card(revision).state.value.source)
+    }
+
+    @Test
+    fun `deleting with a wrong password keeps the calculation and says so`() {
+        val id = deps.saveCalculated()
+        val card = card(id)
+
+        card.requestDelete()
+        assertEquals("Кронштейн", card.state.value.deleteQuestion?.name)
+        card.onDeletePasswordChange("not-the-password")
+        card.confirmDelete()
+
+        assertEquals("Неверный пароль", card.state.value.deleteQuestion?.error)
+        assertNotNull(deps.calculations.get(id))
+        assertEquals(0, deleted)
+        // Typing again clears the error; an empty password is wrong as well.
+        card.onDeletePasswordChange("")
+        assertNull(card.state.value.deleteQuestion?.error)
+        card.confirmDelete()
+        assertEquals("Неверный пароль", card.state.value.deleteQuestion?.error)
+        assertNotNull(deps.calculations.get(id))
+        card.cancelDelete()
+        assertNull(card.state.value.deleteQuestion)
+        assertNotNull(deps.calculations.get(id))
+    }
+
+    @Test
+    fun `deleting with the administrator password removes the calculation of any status`() {
+        for (status in listOf(null) + CalculationStatus.MANUAL) {
+            val id = deps.saveCalculated()
+            status?.let { deps.calculations.setStatus(id, it) }
+            val card = card(id)
+
+            card.requestDelete()
+            card.onDeletePasswordChange(ADMIN_PASSWORD)
+            card.confirmDelete()
+
+            assertNull(deps.calculations.get(id), "$status")
+            assertNull(card.state.value.deleteQuestion)
+        }
+        assertEquals(4, deleted)
+    }
+
+    @Test
+    fun `a draft is deleted with the password too`() {
+        val id = deps.calculations.saveDraft(goldenInput())
+        val card = card(id)
+
+        card.requestDelete()
+        card.onDeletePasswordChange("wrong")
+        card.confirmDelete()
+        assertNotNull(deps.calculations.get(id))
+
+        card.onDeletePasswordChange(ADMIN_PASSWORD)
+        card.confirmDelete()
+        assertNull(deps.calculations.get(id))
+        assertEquals(1, deleted)
     }
 }

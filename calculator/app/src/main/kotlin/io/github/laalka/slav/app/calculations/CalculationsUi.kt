@@ -23,12 +23,19 @@ object CalculationTags {
     const val MESSAGE = "calculations/message"
     const val DELETE_CONFIRM = "calculations/delete/confirm"
     const val DELETE_CANCEL = "calculations/delete/cancel"
+    const val DELETE_PASSWORD = "calculations/delete/password"
 
     const val CARD_NAME = "card/name"
     const val CARD_STATUS = "card/status"
     const val CARD_SNAPSHOT_DATE = "card/snapshot-date"
     const val CARD_UNIT_PRICE = "card/unit-price"
     const val CARD_QUANTITY = "card/quantity"
+    const val CARD_QUANTITY_CHANGE = "card/quantity/change"
+    const val CARD_QUANTITY_FIELD = "card/quantity/field"
+    const val CARD_QUANTITY_CONFIRM = "card/quantity/confirm"
+    const val CARD_QUANTITY_CANCEL = "card/quantity/cancel"
+    const val CARD_SOURCE = "card/source"
+    const val CARD_DELETE = "card/delete"
     const val CARD_TOTAL = "card/total"
     const val CARD_UNIT_MASS = "card/unit-mass"
     const val CARD_RUN_MASS = "card/run-mass"
@@ -40,6 +47,9 @@ object CalculationTags {
     const val CARD_BACK = "card/back"
 
     fun status(status: CalculationStatus) = "calculations/status/${status.name}"
+
+    /** A link to a newer version of the card's calculation, by its position. */
+    fun cardRevision(index: Int) = "card/revision/$index"
 
     fun sort(column: CalculationSortColumn) = "calculations/sort/${column.name}"
 

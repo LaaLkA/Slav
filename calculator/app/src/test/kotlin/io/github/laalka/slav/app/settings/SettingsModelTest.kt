@@ -1,7 +1,9 @@
 package io.github.laalka.slav.app.settings
 
 import io.github.laalka.slav.app.AppPreferences
+import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.testAdminSeed
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.core.GroupPrice
 import io.github.laalka.slav.core.MaterialGroup
@@ -34,8 +36,8 @@ class SettingsModelTest {
 
     @BeforeTest
     fun open() {
-        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test")
-        model = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences)
+        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test", adminSeed = testAdminSeed())
+        model = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences, deps.adminPassword)
     }
 
     @AfterTest
@@ -268,6 +270,80 @@ class SettingsModelTest {
         assertTrue(message.isError)
         assertTrue("Обновите программу" in message.text, message.text)
         assertNull(model.transfer.state.value.pending)
+    }
+
+    private fun GeneralModel.fillPassword(current: String, new: String, repeat: String) {
+        onCurrentPasswordChange(current)
+        onNewPasswordChange(new)
+        onRepeatPasswordChange(repeat)
+    }
+
+    private val passwordForm get() = model.general.state.value.password
+
+    @Test
+    fun `the administrator password is changed with the current one, a new one of eight characters and its repeat`() {
+        model.general.fillPassword(ADMIN_PASSWORD, "brand-new-pass", "brand-new-pass")
+
+        model.general.changePassword()
+
+        assertEquals(PasswordFormState(success = PASSWORD_CHANGED), passwordForm)
+        assertTrue(deps.adminPassword.verify("brand-new-pass".toCharArray()))
+        assertTrue(!deps.adminPassword.verify(ADMIN_PASSWORD.toCharArray()), "the old password no longer works")
+        // The fields are re-created empty: the old texts are not asked for again.
+        assertEquals(1, model.general.state.value.epoch)
+        model.general.changePassword()
+        assertEquals(PASSWORD_TOO_SHORT, passwordForm.newError, "the cleared form is not submitted again")
+    }
+
+    @Test
+    fun `a wrong current password is flagged and the password stays`() {
+        model.general.fillPassword("not-the-password", "brand-new-pass", "brand-new-pass")
+
+        model.general.changePassword()
+
+        assertEquals(PasswordFormState(currentError = WRONG_CURRENT_PASSWORD), passwordForm)
+        assertTrue(deps.adminPassword.verify(ADMIN_PASSWORD.toCharArray()))
+        assertTrue(!deps.adminPassword.verify("brand-new-pass".toCharArray()))
+        // The next try with the right one works, and typing clears the error.
+        model.general.onCurrentPasswordChange(ADMIN_PASSWORD)
+        assertNull(passwordForm.currentError)
+        model.general.changePassword()
+        assertEquals(PASSWORD_CHANGED, passwordForm.success)
+    }
+
+    @Test
+    fun `a mismatching repeat and a new password shorter than eight are flagged and change nothing`() {
+        model.general.fillPassword(ADMIN_PASSWORD, "brand-new-pass", "brand-new-pasS")
+        model.general.changePassword()
+        assertEquals(PasswordFormState(repeatError = PASSWORDS_DIFFER), passwordForm)
+
+        model.general.fillPassword(ADMIN_PASSWORD, "1234567", "1234567")
+        model.general.changePassword()
+        assertEquals(PasswordFormState(newError = PASSWORD_TOO_SHORT), passwordForm)
+
+        model.general.fillPassword(ADMIN_PASSWORD, "1234567", "12345678")
+        model.general.changePassword()
+        assertEquals(PasswordFormState(newError = PASSWORD_TOO_SHORT, repeatError = PASSWORDS_DIFFER), passwordForm)
+
+        assertTrue(deps.adminPassword.verify(ADMIN_PASSWORD.toCharArray()))
+        assertEquals("Не короче 8 символов", PASSWORD_TOO_SHORT)
+        // Exactly eight characters are enough.
+        model.general.fillPassword(ADMIN_PASSWORD, "12345678", "12345678")
+        model.general.changePassword()
+        assertEquals(PASSWORD_CHANGED, passwordForm.success)
+    }
+
+    @Test
+    fun `the password is not part of the settings that are exported`() {
+        model.general.fillPassword(ADMIN_PASSWORD, "brand-new-pass", "brand-new-pass")
+        model.general.changePassword()
+        val file = temp.root.toPath().resolve("export.json")
+
+        deps.settingsTransfer.export(file)
+
+        val text = file.toFile().readText()
+        assertTrue("brand-new-pass" !in text && ADMIN_PASSWORD !in text)
+        assertTrue("password" !in text.lowercase() && "пароль" !in text.lowercase())
     }
 
     /** Settings exported by another installation: laser 2 mm costs 99 and there is a copper group. */

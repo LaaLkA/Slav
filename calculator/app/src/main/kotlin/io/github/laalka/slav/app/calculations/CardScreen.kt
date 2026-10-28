@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -45,12 +46,15 @@ import io.github.laalka.slav.app.ui.SectionCard
 private val SUMMARY_WIDTH = 400.dp
 private val STATUS_WIDTH = 200.dp
 
-/** The calculation card (spec 8.2, 8.3): the breakdown on the left, the price, run size and actions on the right. */
+/**
+ * The calculation card (spec 8.2, 8.3): the breakdown on the left, the price, run size and actions
+ * on the right. [onOpenLink] opens the calculation this one was made from, or a newer version of it.
+ */
 @Composable
-fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit) {
+fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit, onOpenLink: (CardLink) -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
-        Header(state, model, onBack)
+        Header(state, model, onBack, onOpenLink)
         Row(
             modifier = Modifier.weight(1f).fillMaxWidth().padding(start = Spacing.large, end = Spacing.large, bottom = Spacing.large),
             horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
@@ -59,6 +63,7 @@ fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit) {
                 val scroll = rememberScrollState()
                 Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(end = Spacing.medium)) {
                     if (state.isPriced) BreakdownCard(state) else DraftNotice()
+                    if (state.revisions.isNotEmpty()) Revisions(state.revisions, onOpenLink)
                 }
                 VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
             }
@@ -82,10 +87,16 @@ fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit) {
     }
 
     state.recalc?.let { RecalcDialog(it, onConfirm = model::confirmRecalc, onCancel = model::cancelRecalc) }
+    state.quantityDialog?.let {
+        QuantityDialogView(it, model::onQuantityChange, onConfirm = model::confirmQuantityChange, onCancel = model::cancelQuantityChange)
+    }
+    state.deleteQuestion?.let {
+        DeleteDialog(it, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
+    }
 }
 
 @Composable
-private fun Header(state: CardState, model: CardModel, onBack: () -> Unit) {
+private fun Header(state: CardState, model: CardModel, onBack: () -> Unit, onOpenLink: (CardLink) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = Spacing.small, end = Spacing.large, top = Spacing.medium, bottom = Spacing.small),
         verticalAlignment = Alignment.CenterVertically,
@@ -109,6 +120,12 @@ private fun Header(state: CardState, model: CardModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag(CalculationTags.CARD_SNAPSHOT_DATE),
                 )
+            }
+            state.source?.let { source ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Создан на основе:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { onOpenLink(source) }, modifier = Modifier.testTag(CalculationTags.CARD_SOURCE)) { Text(source.title) }
+                }
             }
         }
         // «Черновик» and «Рассчитан» are set by the program and shown as they are; the rest are chosen here (spec 8.1).
@@ -173,15 +190,13 @@ private fun AmountLine(label: String, value: String, strong: Boolean = false) {
 private fun Summary(state: CardState, model: CardModel) {
     SectionCard("Стоимость") {
         SummaryRow("Цена изделия", state.unitPrice ?: "—", CalculationTags.CARD_UNIT_PRICE, emphasized = true)
-        // Spec 8.2: the run size changes here, the total follows from the stored unit price without recalculating.
-        InputField(
-            value = state.quantityText,
-            onValueChange = model::onQuantityChange,
-            modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY),
-            label = "Тираж, шт",
-            error = state.quantityError,
-            numeric = true,
-        )
+        // The run size of a calculated record is not edited in place: a new run size is a new version.
+        SummaryRow("Тираж, шт", state.quantity, CalculationTags.CARD_QUANTITY)
+        if (state.isPriced) {
+            OutlinedButton(onClick = model::requestQuantityChange, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_CHANGE)) {
+                Text("Изменить тираж")
+            }
+        }
         SummaryRow("Итог", state.total ?: "—", CalculationTags.CARD_TOTAL, emphasized = true)
         if (state.isPriced) {
             HorizontalDivider(Modifier.padding(vertical = Spacing.small))
@@ -203,6 +218,7 @@ private fun SummaryRow(label: String, value: String, tag: String, emphasized: Bo
 @Composable
 private fun Actions(state: CardState, model: CardModel, onEdit: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        // A calculated record is not changed itself: «Изменить» opens a copy of it with the same prices.
         OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
             Icon(Icons.Filled.Edit, contentDescription = null)
             Text("Изменить", modifier = Modifier.padding(start = Spacing.small))
@@ -213,7 +229,57 @@ private fun Actions(state: CardState, model: CardModel, onEdit: () -> Unit) {
                 Text("Пересчитать по текущим ценам", modifier = Modifier.padding(start = Spacing.small))
             }
         }
+        OutlinedButton(onClick = model::requestDelete, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_DELETE)) {
+            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+            Text("Удалить", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = Spacing.small))
+        }
     }
+}
+
+/** «Новые версии»: what was made from this calculation, each a link to its card or, for a draft, its editor. */
+@Composable
+private fun Revisions(revisions: List<CardLink>, onOpenLink: (CardLink) -> Unit) {
+    SectionCard("Новые версии", modifier = Modifier.padding(top = Spacing.medium)) {
+        revisions.forEachIndexed { index, revision ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                TextButton(onClick = { onOpenLink(revision) }, modifier = Modifier.testTag(CalculationTags.cardRevision(index))) { Text(revision.title) }
+                revision.details?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        }
+    }
+}
+
+/** «Изменить тираж»: the new run size makes a new version with the same prices and result. */
+@Composable
+private fun QuantityDialogView(dialog: QuantityDialog, onChange: (String) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Изменить тираж") },
+        text = {
+            Column(Modifier.width(380.dp), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                Text(
+                    "Расчёт не изменится: будет создана его новая версия с тем же снимком цен и тем же результатом. Цена изделия останется прежней.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                InputField(
+                    value = dialog.text,
+                    onValueChange = onChange,
+                    modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_FIELD),
+                    label = "Тираж, шт",
+                    error = dialog.error,
+                    numeric = true,
+                    onEnter = onConfirm,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CONFIRM)) { Text("Создать новую версию") }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CANCEL)) { Text("Отмена") }
+        },
+    )
 }
 
 /** Spec 8.3: the old and the new unit price side by side; nothing changes until confirmed. */
@@ -229,14 +295,14 @@ private fun RecalcDialog(preview: RecalcPreview, onConfirm: () -> Unit, onCancel
                 AmountLine("Итог за тираж", "${preview.oldTotal} → ${preview.newTotal}")
                 Text(
                     (if (preview.unchanged) "Цена не изменится. " else "") +
-                        "Снимок цен расчёта будет заменён текущими ценами из настроек, статус станет «Рассчитан».",
+                        "Будет создана новая версия расчёта по текущим ценам из настроек, этот расчёт останется как есть.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CONFIRM)) { Text("Применить новые цены") }
+            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CONFIRM)) { Text("Создать новую версию") }
         },
         dismissButton = {
             TextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CANCEL)) { Text("Отмена") }

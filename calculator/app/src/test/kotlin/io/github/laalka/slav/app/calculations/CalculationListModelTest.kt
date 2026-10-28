@@ -1,6 +1,8 @@
 package io.github.laalka.slav.app.calculations
 
+import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.testAdminSeed
 import io.github.laalka.slav.app.export.ExportFormat
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.data.AppPaths
@@ -32,7 +34,7 @@ class CalculationListModelTest {
 
     @BeforeTest
     fun open() {
-        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test")
+        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test", adminSeed = testAdminSeed())
     }
 
     @AfterTest
@@ -45,7 +47,7 @@ class CalculationListModelTest {
         frame = deps.calculations.saveDraft(goldenInput("Рама").copy(parts = emptyList()))
     }
 
-    private fun model() = CalculationListModel(deps.calculations, deps.settings)
+    private fun model() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
 
     private val CalculationListModel.names: List<String> get() = state.value.rows.map { it.name }
 
@@ -147,20 +149,55 @@ class CalculationListModelTest {
     }
 
     @Test
-    fun `delete asks first and removes only on confirm`() {
+    fun `delete asks for the administrator password and removes only with the right one`() {
         stored()
         val list = model()
 
         list.requestDelete(bracket)
-        assertEquals("Кронштейн", list.state.value.pendingDelete?.name)
+        assertEquals("Кронштейн", list.state.value.deleteQuestion?.name)
         list.cancelDelete()
-        assertNull(list.state.value.pendingDelete)
+        assertNull(list.state.value.deleteQuestion)
         assertNotNull(deps.calculations.get(bracket))
 
+        // A wrong password, an empty one, and the confirmation without typing anything: nothing is deleted.
         list.requestDelete(bracket)
+        list.onDeletePasswordChange("not-the-password")
+        list.confirmDelete()
+        assertEquals("Неверный пароль", list.state.value.deleteQuestion?.error)
+        assertNotNull(deps.calculations.get(bracket))
+        list.onDeletePasswordChange("")
+        assertNull(list.state.value.deleteQuestion?.error, "typing clears the error")
+        list.confirmDelete()
+        assertEquals("Неверный пароль", list.state.value.deleteQuestion?.error)
+        assertEquals(3, list.names.size)
+
+        list.onDeletePasswordChange(ADMIN_PASSWORD)
         list.confirmDelete()
         assertNull(deps.calculations.get(bracket))
+        assertNull(list.state.value.deleteQuestion)
         assertEquals(setOf("Опора", "Рама"), list.names.toSet())
+    }
+
+    @Test
+    fun `a calculation of any status and a draft are deleted with the password, a new question starts clean`() {
+        stored()
+        deps.calculations.setStatus(support, CalculationStatus.ARCHIVED)
+        val list = model()
+
+        for (id in listOf(support, frame)) {
+            list.requestDelete(id)
+            list.onDeletePasswordChange("wrong")
+            list.confirmDelete()
+            assertNotNull(deps.calculations.get(id))
+            list.cancelDelete()
+
+            list.requestDelete(id)
+            assertNull(list.state.value.deleteQuestion?.error, "the error of the earlier question is gone")
+            list.onDeletePasswordChange(ADMIN_PASSWORD)
+            list.confirmDelete()
+            assertNull(deps.calculations.get(id))
+        }
+        assertEquals(listOf("Кронштейн"), list.names)
     }
 
     @Test

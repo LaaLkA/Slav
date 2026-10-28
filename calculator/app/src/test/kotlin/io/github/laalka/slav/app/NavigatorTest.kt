@@ -14,6 +14,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -26,7 +27,7 @@ class NavigatorTest {
 
     @BeforeTest
     fun open() {
-        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test")
+        deps = Deps(AppPaths(temp.newFolder("data").toPath()), appVersion = "test", adminSeed = testAdminSeed())
     }
 
     @AfterTest
@@ -45,38 +46,92 @@ class NavigatorTest {
     }
 
     @Test
-    fun `leaving an edited calculated calculation asks first, and discarding restores it`() = runTest {
+    fun `Изменить on a calculated card opens a revision draft in the editor and leaves the original alone`() = runTest {
         val (navigator, id) = calculated()
         val before = assertNotNull(deps.calculations.get(id))
-        navigator.navigate(Screen.Editor(id))
+        val card = assertIs<Page.Card>(navigator.page.value).model
+
+        navigator.navigate(Screen.Editor(card.edit()))
         val editor = navigator.editor
         editor.onNameChange("Кронштейн с ребром")
+        editor.calculate()
 
-        navigator.navigate(Screen.Calculations)
-
-        assertEquals("Кронштейн с ребром", navigator.leaveQuestion.value)
-        assertSame(editor, navigator.editor, "the editor stays open while the question is asked")
-        navigator.answerLeave(LeaveAnswer.DISCARD)
-        assertEquals(Page.Calculations, navigator.page.value)
-        assertNull(navigator.leaveQuestion.value)
+        // The new version is calculated on its own row and shown as its own card; the original is as it was.
+        val revision = assertIs<Page.Card>(navigator.page.value).model.id
+        assertNotEquals(id, revision)
         assertEquals(before, deps.calculations.get(id))
+        val stored = assertNotNull(deps.calculations.get(revision))
+        assertEquals("Кронштейн с ребром", stored.name)
+        assertEquals(CalculationStatus.CALCULATED, stored.status)
+        assertEquals(id, stored.sourceId)
+        assertEquals(before.snapshot, stored.snapshot)
+        assertEquals(before.snapshotAt, stored.snapshotAt, "the same prices, so the same date of the snapshot")
+        assertEquals(2, deps.calculations.list().size)
     }
 
     @Test
-    fun `closing the window waits for the answer and keeps the edit as a draft`() = runTest {
+    fun `leaving an untouched revision draft deletes it silently, a changed one stays a draft`() = runTest {
         val (navigator, id) = calculated()
-        navigator.navigate(Screen.Editor(id))
+        val card = assertIs<Page.Card>(navigator.page.value).model
+
+        val untouched = card.edit()
+        navigator.navigate(Screen.Editor(untouched))
+        navigator.navigate(Screen.Calculations)
+
+        assertEquals(Page.Calculations, navigator.page.value)
+        assertNull(deps.calculations.get(untouched), "an automatic copy nobody changed is not kept")
+        assertEquals(listOf(id), deps.calculations.list().map { it.id })
+
+        val edited = card.edit()
+        navigator.navigate(Screen.Editor(edited))
         navigator.editor.onQuantityChange("4")
+        navigator.navigate(Screen.Calculations)
+
+        val draft = assertNotNull(deps.calculations.get(edited))
+        assertEquals(CalculationStatus.DRAFT, draft.status)
+        assertEquals(4, draft.quantity)
+        assertEquals(id, draft.sourceId)
+        assertEquals(1, assertNotNull(deps.calculations.get(id)).quantity)
+    }
+
+    @Test
+    fun `closing the window drops an untouched revision draft`() = runTest {
+        val (navigator, id) = calculated()
+        val card = assertIs<Page.Card>(navigator.page.value).model
+        val untouched = card.edit()
+        navigator.navigate(Screen.Editor(untouched))
         var exited = false
 
         navigator.requestExit { exited = true }
-        assertEquals(false, exited)
-        navigator.answerLeave(LeaveAnswer.KEEP_DRAFT)
 
         assertEquals(true, exited)
-        val draft = assertNotNull(deps.calculations.get(id))
-        assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertEquals(4, draft.quantity)
+        assertNull(deps.calculations.get(untouched))
+        assertNotNull(deps.calculations.get(id))
+    }
+
+    @Test
+    fun `a new version from the card opens as its own card, and a deleted one returns to the list`() = runTest {
+        val (navigator, id) = calculated()
+        val card = assertIs<Page.Card>(navigator.page.value).model
+        card.requestQuantityChange()
+        card.onQuantityChange("10")
+        card.confirmQuantityChange()
+
+        val revisionCard = assertIs<Page.Card>(navigator.page.value).model
+        assertNotEquals(id, revisionCard.id)
+        assertEquals("113 400,00 ₽", revisionCard.state.value.total)
+        assertEquals(id, revisionCard.state.value.source?.id)
+
+        navigator.open(assertNotNull(revisionCard.state.value.source))
+        assertEquals(id, assertIs<Page.Card>(navigator.page.value).model.id)
+        assertEquals(listOf(revisionCard.id), assertIs<Page.Card>(navigator.page.value).model.state.value.revisions.map { it.id })
+
+        val original = assertIs<Page.Card>(navigator.page.value).model
+        original.requestDelete()
+        original.onDeletePasswordChange(ADMIN_PASSWORD)
+        original.confirmDelete()
+        assertEquals(Page.Calculations, navigator.page.value)
+        assertNull(deps.calculations.get(id))
     }
 
     @Test

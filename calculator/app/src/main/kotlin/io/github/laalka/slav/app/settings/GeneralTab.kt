@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -18,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.RemovableChips
 import io.github.laalka.slav.app.ui.SectionCard
@@ -28,6 +30,11 @@ private val FIELD_WIDTH = 240.dp
 /** Test tags of «Общие». */
 object GeneralTags {
     const val MIN_PAINT_AREA = "settings/general/min-paint-area"
+    const val PASSWORD_CURRENT = "settings/general/password-current"
+    const val PASSWORD_NEW = "settings/general/password-new"
+    const val PASSWORD_REPEAT = "settings/general/password-repeat"
+    const val PASSWORD_SAVE = "settings/general/password-save"
+    const val PASSWORD_SUCCESS = "settings/general/password-success"
 }
 
 @Composable
@@ -83,6 +90,32 @@ fun GeneralTab(model: GeneralModel) {
                     state.minPaintAreaPerPart.text, model::onMinPaintAreaChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.MIN_PAINT_AREA),
                     label = "Мин. площадь окраски детали, м²", error = state.minPaintAreaPerPart.error, numeric = true,
                 )
+            }
+            SectionCard(
+                "Пароль администратора",
+                subtitle = "Нужен, чтобы удалить расчёт. Не короче ${AdminPassword.MIN_LENGTH} символов.",
+            ) {
+                InputField(
+                    "", model::onCurrentPasswordChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.PASSWORD_CURRENT),
+                    label = "Текущий пароль", error = state.password.currentError, password = true,
+                )
+                InputField(
+                    "", model::onNewPasswordChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.PASSWORD_NEW),
+                    label = "Новый пароль", error = state.password.newError, password = true,
+                )
+                InputField(
+                    "", model::onRepeatPasswordChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.PASSWORD_REPEAT),
+                    label = "Повторите новый пароль", error = state.password.repeatError, password = true, onEnter = model::changePassword,
+                )
+                Button(onClick = model::changePassword, modifier = Modifier.testTag(GeneralTags.PASSWORD_SAVE)) { Text("Сменить пароль") }
+                state.password.success?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag(GeneralTags.PASSWORD_SUCCESS),
+                    )
+                }
             }
             SectionCard("Тема оформления") {
                 SingleChoiceSegmentedButtonRow {

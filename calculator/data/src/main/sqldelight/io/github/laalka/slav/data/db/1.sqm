@@ -1,0 +1,11 @@
+-- The calculation this one was made from: a revision (recalculation, new run size, edit) never
+-- changes its source, it is a new row. NULL for an original and for a plain copy.
+ALTER TABLE calculation ADD COLUMN source_id TEXT;
+
+-- The administrator password as a PBKDF2 hash, a single row; see AdminPassword.
+CREATE TABLE admin_password (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    salt TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    iterations INTEGER NOT NULL
+);

@@ -2,9 +2,23 @@ package io.github.laalka.slav.app.settings
 
 import io.github.laalka.slav.app.AppPreferences
 import io.github.laalka.slav.app.ThemeMode
+import io.github.laalka.slav.data.AdminPassword
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** What is wrong with the password form, field by field; [success] confirms the last change. */
+data class PasswordFormState(
+    val currentError: String? = null,
+    val newError: String? = null,
+    val repeatError: String? = null,
+    val success: String? = null,
+)
+
+const val WRONG_CURRENT_PASSWORD = "Неверный текущий пароль"
+const val PASSWORD_TOO_SHORT = "Не короче ${AdminPassword.MIN_LENGTH} символов"
+const val PASSWORDS_DIFFER = "Пароли не совпадают"
+const val PASSWORD_CHANGED = "Пароль администратора изменён"
 
 data class GeneralState(
     val currency: FieldState,
@@ -18,12 +32,20 @@ data class GeneralState(
     /** The least painted area a part is charged for in product painting, m². */
     val minPaintAreaPerPart: FieldState,
     val theme: ThemeMode,
+    val password: PasswordFormState,
     /** Grows when the fields must show the model's text again, dropping what was typed. */
     val epoch: Int,
 )
 
-/** «Общие» (spec 4.6) and the colour theme (spec 11). */
-class GeneralModel(private val store: SettingsStore, private val preferences: AppPreferences) {
+/**
+ * «Общие» (spec 4.6), the colour theme (spec 11) and the administrator password, which deleting
+ * a calculation asks for. The password is not part of the settings: it is not exported, imported or saved with them.
+ */
+class GeneralModel(
+    private val store: SettingsStore,
+    private val preferences: AppPreferences,
+    private val adminPassword: AdminPassword,
+) {
     /** Text of a field that cannot be saved as it is, null while the field shows the saved value. */
     private var currencyEdit: String? = null
     private var maxSectionEdit: String? = null
@@ -31,6 +53,12 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
     private var boundForm = FieldState()
     private var weldTypeForm = FieldState()
     private var epoch = 0
+
+    // The texts of the password fields are kept only until the form is submitted.
+    private var currentPassword = ""
+    private var newPassword = ""
+    private var repeatPassword = ""
+    private var passwordForm = PasswordFormState()
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<GeneralState> = _state.asStateFlow()
@@ -139,6 +167,43 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
         refresh()
     }
 
+    fun onCurrentPasswordChange(text: String) {
+        currentPassword = text
+        passwordForm = passwordForm.copy(currentError = null, success = null)
+        refresh()
+    }
+
+    fun onNewPasswordChange(text: String) {
+        newPassword = text
+        passwordForm = passwordForm.copy(newError = null, repeatError = null, success = null)
+        refresh()
+    }
+
+    fun onRepeatPasswordChange(text: String) {
+        repeatPassword = text
+        passwordForm = passwordForm.copy(repeatError = null, success = null)
+        refresh()
+    }
+
+    /** Every wrong field is flagged at once; nothing is changed until the new password is long enough, repeated and the current one is right. */
+    fun changePassword() {
+        val newError = if (newPassword.length < AdminPassword.MIN_LENGTH) PASSWORD_TOO_SHORT else null
+        val repeatError = if (repeatPassword != newPassword) PASSWORDS_DIFFER else null
+        if (newError != null || repeatError != null) {
+            passwordForm = PasswordFormState(newError = newError, repeatError = repeatError)
+        } else if (!adminPassword.change(currentPassword.toCharArray(), newPassword.toCharArray())) {
+            passwordForm = PasswordFormState(currentError = WRONG_CURRENT_PASSWORD)
+        } else {
+            currentPassword = ""
+            newPassword = ""
+            repeatPassword = ""
+            passwordForm = PasswordFormState(success = PASSWORD_CHANGED)
+            // The fields are re-created empty.
+            epoch++
+        }
+        refresh()
+    }
+
     fun setTheme(mode: ThemeMode) {
         preferences.setThemeMode(mode)
         refresh()
@@ -171,6 +236,7 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
                 FieldState(general.minPaintAreaPerPartM2.toInputText())
             },
             theme = preferences.themeMode.value,
+            password = passwordForm,
             epoch = epoch,
         )
     }

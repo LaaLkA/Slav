@@ -29,6 +29,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -160,7 +161,7 @@ class EditorModelTest {
 
         // Typed just before leaving: the pending save is written on the way out.
         editor.fillGoldenCase()
-        assertFalse(editor.leave())
+        editor.leave()
 
         val reopened = editor(draft.id)
         val state = reopened.state.value
@@ -206,7 +207,7 @@ class EditorModelTest {
 
     @Test
     fun `opening and leaving without a change stores nothing`() = runTest {
-        assertFalse(editor().leave())
+        editor().leave()
         assertEquals(emptyList(), deps.calculations.list())
     }
 
@@ -291,23 +292,29 @@ class EditorModelTest {
     }
 
     @Test
-    fun `editing a calculated calculation recalculates on its snapshot, a copy on the current prices`() = runTest {
+    fun `a revision draft is calculated on the snapshot of its source, a copy on the current prices`() = runTest {
         val id = calculateGoldenCase()
+        val source = stored(id)
         // Laser 2 mm goes from 20 to 30 ₽/cm: 4000 mm of cut costs 4000 more on the current prices.
         updateSettings { book ->
             book.copy(laserSheetCutPerCm = book.laserSheetCutPerCm.map { if (it.thicknessMm.compareTo(dec("2")) == 0) it.copy(price = dec("30")) else it })
         }
 
-        val editor = editor(id)
+        val revision = deps.calculations.createRevisionDraft(id)
+        val editor = editor(revision)
         assertTrue(editor.state.value.priceSource.startsWith("Цены — снимок от"), editor.state.value.priceSource)
         editor.onQuantityChange("5")
         editor.calculate()
 
-        assertEquals(listOf(id, id), calculated)
-        val recalculated = stored(id)
+        assertEquals(listOf(id, revision), calculated)
+        val recalculated = stored(revision)
+        assertEquals(CalculationStatus.CALCULATED, recalculated.status)
         assertEquals(0, BigDecimal("11340.00").compareTo(assertNotNull(recalculated.unitPrice).amount))
         assertEquals(5, recalculated.quantity)
         assertEquals(PriceBook.default(), recalculated.snapshot)
+        assertEquals(source.snapshotAt, recalculated.snapshotAt, "the prices are the source's, so is their date")
+        assertEquals(id, recalculated.sourceId)
+        assertEquals(source, stored(id), "the source is as it was calculated")
 
         val copy = deps.calculations.copy(id)
         val copyEditor = editor(copy)
@@ -317,49 +324,79 @@ class EditorModelTest {
     }
 
     @Test
-    fun `leaving an edited calculated calculation asks, and discarding restores the previous result`() = runTest {
+    fun `a calculated record is not opened in the editor, only a draft is`() = runTest {
         val id = calculateGoldenCase()
-        val before = stored(id)
-        val editor = editor(id)
-        editor.onNameChange("Кронштейн изменённый")
 
-        assertTrue(editor.leave())
-        val draft = stored(id)
-        assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertEquals("Кронштейн изменённый", draft.name)
+        assertFailsWith<IllegalArgumentException> { editor(id) }
 
-        editor.discardChanges()
-
-        assertEquals(before, stored(id))
+        assertEquals(CalculationStatus.CALCULATED, stored(id).status)
     }
 
     @Test
-    fun `keeping the edit leaves a draft that recalculates on the old snapshot`() = runTest {
+    fun `leaving an untouched revision draft deletes it`() = runTest {
         val id = calculateGoldenCase()
-        val editor = editor(id)
+        val revision = deps.calculations.createRevisionDraft(id)
+
+        editor(revision).leave()
+
+        assertNull(deps.calculations.get(revision))
+        assertEquals(listOf(id), deps.calculations.list().map { it.id })
+    }
+
+    @Test
+    fun `leaving a changed revision draft keeps it as a draft that calculates on the old snapshot`() = runTest {
+        val id = calculateGoldenCase()
+        val revision = deps.calculations.createRevisionDraft(id)
+        val editor = editor(revision)
         editor.onQuantityChange("3")
 
-        assertTrue(editor.leave())
+        editor.leave()
 
-        val draft = stored(id)
+        val draft = stored(revision)
         assertEquals(CalculationStatus.DRAFT, draft.status)
         assertEquals(3, draft.quantity)
         assertEquals(PriceBook.default(), draft.snapshot)
-        assertEquals(false, editor(id).leave(), "a draft is left without a question")
+        assertEquals(id, draft.sourceId)
+        editor(revision).leave()
+        assertNotNull(deps.calculations.get(revision), "a reopened draft nobody changed again is still not a copy of its source")
+        assertEquals(1, stored(id).quantity)
     }
 
     @Test
-    fun `an edit undone by hand restores the calculation without asking`() = runTest {
+    fun `an edit undone by hand makes the revision draft an untouched copy again`() = runTest {
         val id = calculateGoldenCase()
-        val before = stored(id)
-        val editor = editor(id)
+        val revision = deps.calculations.createRevisionDraft(id)
+        val editor = editor(revision)
         editor.onNameChange("Кронштейн 2")
         editor.flush()
+        assertEquals("Кронштейн 2", stored(revision).name)
         editor.onNameChange("Кронштейн")
 
-        assertFalse(editor.leave())
+        editor.leave()
 
-        assertEquals(before, stored(id))
+        assertNull(deps.calculations.get(revision))
+    }
+
+    @Test
+    fun `a revision calculated in the editor is not deleted by leaving it`() = runTest {
+        val id = calculateGoldenCase()
+        val revision = deps.calculations.createRevisionDraft(id)
+        val editor = editor(revision)
+
+        editor.calculate()
+        editor.leave()
+
+        assertEquals(CalculationStatus.CALCULATED, stored(revision).status)
+        assertEquals(id, stored(revision).sourceId)
+    }
+
+    @Test
+    fun `a plain draft is never deleted by leaving it`() = runTest {
+        val draft = deps.calculations.saveDraft(deps.calculations.copy(calculateGoldenCase()).let { stored(it).input })
+
+        editor(draft).leave()
+
+        assertNotNull(deps.calculations.get(draft))
     }
 
     @Test
@@ -548,7 +585,8 @@ class EditorModelTest {
         assertEquals("2000.00", result.parts.single().material.cost.amount.toPlainString())
         assertEquals("10140.00", result.unitPrice.amount.toPlainString())
 
-        val reopened = editor(saved.id).state.value.parts.single()
+        // «Изменить» opens a revision draft with the same input.
+        val reopened = editor(deps.calculations.createRevisionDraft(saved.id)).state.value.parts.single()
         assertEquals("10", reopened.massOverride.text)
         assertEquals("10 кг", reopened.mass)
     }

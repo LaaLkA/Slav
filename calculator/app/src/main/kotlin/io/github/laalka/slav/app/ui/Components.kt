@@ -52,6 +52,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,7 +101,8 @@ fun SectionCard(
  * A single-line field whose error is shown under it. What is typed lives in the field's own state
  * and every change is reported: typing never waits for a model round trip, which would move the
  * caret. [value] is therefore read only when the field enters the composition; a screen whose
- * model replaces the text itself re-creates the field (a `key` on the model's epoch).
+ * model replaces the text itself re-creates the field (a `key` on the model's epoch). A [password]
+ * field shows dots instead of the text.
  */
 @Composable
 fun InputField(
@@ -112,6 +115,7 @@ fun InputField(
     onEnter: (() -> Unit)? = null,
     placeholder: String? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
+    password: Boolean = false,
 ) {
     var text by remember { mutableStateOf(value) }
     val style = LocalTextStyle.current
@@ -132,6 +136,7 @@ fun InputField(
         isError = error != null,
         supportingText = error?.let { { Text(it) } },
         singleLine = true,
+        visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
         textStyle = if (numeric) style.tabular().copy(textAlign = TextAlign.End) else style,
     )
 }

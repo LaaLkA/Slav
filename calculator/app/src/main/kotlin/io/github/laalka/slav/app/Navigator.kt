@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import io.github.laalka.slav.app.calculations.CalculationListModel
+import io.github.laalka.slav.app.calculations.CardLink
 import io.github.laalka.slav.app.calculations.CardModel
 import io.github.laalka.slav.app.calculations.ListRow
 import io.github.laalka.slav.app.editor.EditorModel
@@ -37,30 +38,22 @@ sealed interface Page {
     data object Settings : Page
 }
 
-enum class LeaveAnswer { KEEP_DRAFT, DISCARD, STAY }
-
 /**
  * The navigation of the window. «Расчёты» keeps its page while «Настройки» is open, so a price
  * filled in there is one click away from the calculation that needed it. Leaving the editor in
- * any other way, closing the window included, goes through [EditorModel.leave] and may first ask
- * whether to keep the edit as a draft (spec 8.3).
+ * any other way, closing the window included, goes through [EditorModel.leave], which saves the
+ * draft and drops a revision draft nothing was changed in (spec 8.3).
  */
 class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Created once: the settings tabs keep their state while the user visits other screens. */
-    val settings = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences)
+    val settings = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences, deps.adminPassword)
 
     /** Created once as well: search, filters and sorting stay while calculations are opened. */
-    val calculationList = CalculationListModel(deps.calculations, deps.settings)
+    val calculationList = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
 
     private var calculationsPage: Page = Page.Calculations
     private val _page = MutableStateFlow<Page>(Page.Calculations)
     val page: StateFlow<Page> = _page.asStateFlow()
-
-    private var afterLeave: (() -> Unit)? = null
-    private val _leaveQuestion = MutableStateFlow<String?>(null)
-
-    /** The name of the calculation the user is asked about, while the question is open. */
-    val leaveQuestion: StateFlow<String?> = _leaveQuestion.asStateFlow()
 
     fun navigate(to: Screen) {
         when (to) {
@@ -76,6 +69,9 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
 
     /** A row of the list: a priced calculation opens its card, a draft its editor, since a draft has no price (spec 7.2). */
     fun open(row: ListRow) = navigate(if (row.isDraft) Screen.Editor(row.id) else Screen.Card(row.id))
+
+    /** A link of a card: the calculation it was made from, or a newer version of it; opened like a row of the list. */
+    fun open(link: CardLink) = navigate(if (link.isDraft) Screen.Editor(link.id) else Screen.Card(link.id))
 
     /** Spec 8.3: the copy is a draft, opened in the editor, and is priced on the current settings. */
     fun copy(id: UUID) = navigate(Screen.Editor(calculationList.copy(id)))
@@ -98,28 +94,9 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Closes the window through [exit] once the open editor, if any, has been left. */
     fun requestExit(exit: () -> Unit) = leaveThen(exit)
 
-    fun answerLeave(answer: LeaveAnswer) {
-        val action = afterLeave ?: return
-        afterLeave = null
-        _leaveQuestion.value = null
-        when (answer) {
-            LeaveAnswer.KEEP_DRAFT -> action()
-            LeaveAnswer.DISCARD -> {
-                openEditor()?.discardChanges()
-                action()
-            }
-            LeaveAnswer.STAY -> Unit
-        }
-    }
-
     private fun leaveThen(action: () -> Unit) {
-        val editor = openEditor()
-        if (editor == null || !editor.leave()) {
-            action()
-        } else {
-            afterLeave = action
-            _leaveQuestion.value = editor.name
-        }
+        openEditor()?.leave()
+        action()
     }
 
     private fun openEditor(): EditorModel? = (calculationsPage as? Page.Editor)?.model
@@ -139,7 +116,17 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         onCalculated = { saved -> show(card(saved)) },
     )
 
-    private fun card(id: UUID) = Page.Card(CardModel(deps.calculations, deps.settings, id))
+    // A new version (recalculation, new run size) opens as its own card; a deleted calculation leaves nothing to show.
+    private fun card(id: UUID): Page.Card = Page.Card(
+        CardModel(
+            deps.calculations,
+            deps.settings,
+            deps.adminPassword,
+            id,
+            onRevision = { revision -> show(card(revision)) },
+            onDeleted = { show(Page.Calculations) },
+        ),
+    )
 }
 
 /** One navigator per [deps]; its autosaves run in the composition's scope, on the UI thread. */

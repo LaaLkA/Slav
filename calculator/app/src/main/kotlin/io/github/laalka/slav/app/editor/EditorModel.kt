@@ -9,6 +9,7 @@ import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.applicability
 import io.github.laalka.slav.data.CalculationRepository
+import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.StoredCalculation
 import kotlinx.coroutines.CoroutineScope
@@ -26,10 +27,12 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * The calculation editor (spec 7.1–7.3, 8.3). Every change is saved as a draft [autosaveDelay]
- * after the last one, and at once when the editor is left. «Рассчитать» prices the input on the
- * current settings for a new calculation or a copy, and on the calculation's snapshot when it was
- * calculated before; [onCalculated] receives the id of the saved calculation.
+ * The calculation editor (spec 7.1–7.3, 8.3). It edits a draft: a new one, one left unfinished, a
+ * copy, or the revision draft that «Изменить» makes of a calculated record, which is never edited
+ * itself. Every change is saved as a draft [autosaveDelay] after the last one, and at once when the
+ * editor is left. «Рассчитать» prices the input on the current settings for a new calculation or a
+ * copy, and on the snapshot of the revision draft's source; [onCalculated] receives the id of the
+ * saved calculation.
  */
 class EditorModel(
     private val calculations: CalculationRepository,
@@ -42,12 +45,16 @@ class EditorModel(
 ) {
     private var nextId = 0L
 
-    /** The calculation as it was opened, or as the last «Рассчитать» saved it; null for a new one. */
+    /** The draft as it was opened, or the calculation the last «Рассчитать» saved it as; null for a new one. */
     private var original: StoredCalculation? = id?.let { requireNotNull(calculations.get(it)) { "No calculation $it" } }
     private var id: UUID? = original?.id
     private val isNew = original == null
 
-    /** Set when the calculation was priced before: it is recalculated on the same prices (spec 8.3). */
+    init {
+        original?.let { require(it.status == CalculationStatus.DRAFT) { "Only a draft is edited, ${it.id} is «${it.status.title}»" } }
+    }
+
+    /** Set for a revision draft: it is calculated on the prices of its source (spec 8.3). */
     private val snapshot: PriceBook? = original?.snapshot
     private var book: PriceBook = snapshot ?: settings.load()
 
@@ -58,17 +65,11 @@ class EditorModel(
 
     /** The form was changed since the last draft save; opening and leaving without a change writes nothing. */
     private var unsaved = false
-
-    /** A draft was written over a priced calculation, which has lost its result until restored or recalculated. */
-    private var overwritten = false
     private var pendingSave: Job? = null
     private var calcErrors: List<ReadableError> = emptyList()
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<EditorState> = _state.asStateFlow()
-
-    /** The name of the calculation as typed, for the question asked on leaving. */
-    val name: String get() = form.name.trim()
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }
 
@@ -195,12 +196,12 @@ class EditorModel(
             is CalcOutcome.Ok -> {
                 pendingSave?.cancel()
                 pendingSave = null
-                val saved = calculations.saveCalculated(read.input, prices, outcome.result, id)
+                // A revision draft keeps the date of the snapshot it was made with: the prices are the same.
+                val saved = calculations.saveCalculated(read.input, prices, outcome.result, id, snapshotAt = original?.snapshotAt.takeIf { snapshot != null })
                 id = saved
                 original = calculations.get(saved)
                 stored = read.input
                 unsaved = false
-                overwritten = false
                 calcErrors = emptyList()
                 refresh()
                 onCalculated(saved)
@@ -216,30 +217,12 @@ class EditorModel(
     }
 
     /**
-     * Saves what is pending before the editor is left. True when the user must choose between
-     * keeping the edit as a draft and [discardChanges] (spec 8.3): a priced calculation was
-     * changed and not recalculated. An edit undone by hand restores the calculation silently.
+     * Saves what is pending before the editor is left. A revision draft nothing was changed in
+     * is an automatic copy of its source and is deleted silently, without a password.
      */
-    fun leave(): Boolean {
+    fun leave() {
         flush()
-        val priced = original?.takeIf { it.result != null } ?: return false
-        if (!overwritten) return false
-        if (stored == priced.input) {
-            discardChanges()
-            return false
-        }
-        return true
-    }
-
-    /** «Отменить изменения»: the calculation gets back its input, result and snapshot as they were. */
-    fun discardChanges() {
-        val priced = original?.takeIf { it.result != null } ?: return
-        pendingSave?.cancel()
-        pendingSave = null
-        if (overwritten) calculations.restore(priced)
-        unsaved = false
-        overwritten = false
-        stored = priced.input
+        if (original?.sourceId != null) id?.let { calculations.deleteUntouchedRevisionDraft(it) }
     }
 
     /** Back from the settings: a calculation on current prices sees what was changed there. */
@@ -273,7 +256,6 @@ class EditorModel(
         if (draft == stored) return
         id = calculations.saveDraft(draft, id)
         stored = draft
-        if (original?.result != null) overwritten = true
     }
 
     private fun refresh() {

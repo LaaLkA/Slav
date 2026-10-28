@@ -82,6 +82,7 @@ class Beta1UpgradeTest {
             inputJson = input,
             snapshotJson = snapshot,
             resultJson = result,
+            sourceId = null,
         )
         return id
     }
@@ -207,16 +208,27 @@ class Beta1UpgradeTest {
     }
 
     @Test
-    fun `a calculation upgraded on reading is saved in the current form when it is changed`() {
+    fun `a revision of an upgraded calculation is stored in the current form and the old row stays as written`() {
         val id = insertCalculation()
+        val written = db.database.calculationQueries.selectById(id.toString()).executeAsOne()
+        val source = assertNotNull(calculations.get(id))
 
-        calculations.setQuantity(id, 40)
+        val revision = calculations.createRevision(
+            id,
+            source.input.copy(quantity = 40),
+            assertNotNull(source.snapshot),
+            assertNotNull(source.result),
+            snapshotAt = source.snapshotAt,
+        )
 
-        val row = db.database.calculationQueries.selectById(id.toString()).executeAsOne()
+        val row = db.database.calculationQueries.selectById(revision.toString()).executeAsOne()
         assertTrue(LEGACY_PART_QUANTITY !in row.input_json && "\"seamLengthMm\":\"561\"" in row.input_json, row.input_json)
-        // The quantity is the only thing that changed: the result stays the one beta.1 calculated.
-        assertEquals(fixture("calculation-result.json"), row.result_json)
-        assertEquals(0, oldUnitPrice.compareTo(assertNotNull(calculations.get(id)).result?.unitPrice?.amount))
+        // The run size is the only thing that changed: the result stays the one beta.1 calculated.
+        val stored = assertNotNull(calculations.get(revision))
+        assertEquals(40, stored.quantity)
+        assertEquals(source.result, stored.result)
+        assertEquals(0, oldUnitPrice.compareTo(assertNotNull(stored.result).unitPrice.amount))
+        assertEquals(written, db.database.calculationQueries.selectById(id.toString()).executeAsOne(), "the beta.1 row is not rewritten")
     }
 
     @Test

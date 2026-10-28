@@ -14,9 +14,11 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CalculationRepositoryTest {
     @TempDir
@@ -40,6 +42,9 @@ class CalculationRepositoryTest {
         calculations.saveCalculated(input, prices, prices.priced(input), id)
 
     private fun names(list: List<CalculationSummary>) = list.map { it.name }
+
+    /** The row as the table holds it: the JSON columns are compared as text, not as decoded values. */
+    private fun row(id: UUID) = db.database.calculationQueries.selectById(id.toString()).executeAsOne()
 
     @Test
     fun `a draft has no price, result or snapshot`() {
@@ -88,51 +93,189 @@ class CalculationRepositoryTest {
     }
 
     @Test
-    fun `an edit saved as a draft drops the price and keeps the snapshot to recalculate on`() {
+    fun `every status but draft refuses a write over it and the row stays byte for byte`() {
         val old = book.copy(paintingPerM2 = dec("300"))
-        val id = calculated(sheetInput("Кронштейн"), prices = old)
-        val takenAt = clock.now
+        val other = book.copy(paintingPerM2 = dec("400"))
+        val changed = sheetInput("Другой", quantity = 5)
+        for (status in listOf(CalculationStatus.CALCULATED, CalculationStatus.SENT, CalculationStatus.IN_WORK, CalculationStatus.ARCHIVED)) {
+            val id = calculated(sheetInput("Кронштейн", quantity = 3), prices = old)
+            if (status != CalculationStatus.CALCULATED) calculations.setStatus(id, status)
+            val before = row(id)
+            clock.advance(Duration.ofHours(1))
+
+            assertFailsWith<IllegalStateException>("$status: saveDraft") { calculations.saveDraft(changed, id) }
+            assertFailsWith<IllegalStateException>("$status: saveCalculated") {
+                calculations.saveCalculated(changed, other, other.priced(changed), id)
+            }
+            assertFailsWith<IllegalStateException>("$status: setQuantity") { calculations.setQuantity(id, 10) }
+
+            assertEquals(before, row(id), "$status: the row changed")
+        }
+    }
+
+    @Test
+    fun `the status of a calculated one is set in place and nothing else changes`() {
+        val id = calculated(sheetInput("Кронштейн", quantity = 3))
+        val before = row(id)
         clock.advance(Duration.ofHours(1))
 
-        calculations.saveDraft(sheetInput("Кронштейн", quantity = 2), id)
+        calculations.setStatus(id, CalculationStatus.IN_WORK)
 
-        val draft = assertNotNull(calculations.get(id))
+        val after = row(id)
+        assertEquals(CalculationStatus.IN_WORK.name, after.status)
+        assertEquals(before.copy(status = after.status, updated_at = after.updated_at), after)
+    }
+
+    @Test
+    fun `a revision draft carries the input and the snapshot of its source and points to it`() {
+        val old = book.copy(paintingPerM2 = dec("300"))
+        val input = sheetInput("Кронштейн", quantity = 3)
+        val source = calculated(input, prices = old)
+        calculations.setStatus(source, CalculationStatus.SENT)
+        val takenAt = clock.now
+        val before = row(source)
+        clock.advance(Duration.ofDays(2))
+
+        val revision = calculations.createRevisionDraft(source)
+
+        val draft = assertNotNull(calculations.get(revision))
         assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertNull(draft.result)
-        assertNull(draft.unitPrice)
+        assertEquals(input, draft.input)
         assertEquals(old, draft.snapshot)
         assertEquals(takenAt, draft.snapshotAt)
-        assertEquals(2, draft.quantity)
+        assertEquals(source, draft.sourceId)
+        assertNull(draft.result)
+        assertNull(draft.unitPrice)
+        assertEquals(before, row(source), "the source is untouched")
+        assertEquals(listOf(revision), calculations.revisionsOf(source).map { it.id })
+        assertNull(assertNotNull(calculations.get(source)).sourceId)
     }
 
     @Test
-    fun `restoring a priced calculation undoes a draft saved over it, dates included`() {
+    fun `only a calculated one has revisions`() {
+        val draft = calculations.saveDraft(sheetInput("Рама"))
+
+        assertFailsWith<IllegalStateException> { calculations.createRevisionDraft(draft) }
+        assertFailsWith<NoSuchElementException> { calculations.createRevisionDraft(UUID.randomUUID()) }
+        assertFailsWith<NoSuchElementException> {
+            calculations.createRevision(UUID.randomUUID(), sheetInput("Рама"), book, book.priced(sheetInput("Рама")))
+        }
+        assertEquals(listOf(draft), calculations.list().map { it.id })
+    }
+
+    @Test
+    fun `a revision draft is autosaved and calculated in place on the snapshot of its source`() {
         val old = book.copy(paintingPerM2 = dec("300"))
-        val id = calculated(sheetInput("Кронштейн"), prices = old)
-        calculations.setStatus(id, CalculationStatus.SENT)
-        val original = assertNotNull(calculations.get(id))
-        clock.advance(Duration.ofHours(1))
-        calculations.saveDraft(sheetInput("Кронштейн изменённый", quantity = 2), id)
+        val source = calculated(sheetInput("Кронштейн"), prices = old)
+        val takenAt = clock.now
+        val revision = calculations.createRevisionDraft(source)
         clock.advance(Duration.ofHours(1))
 
-        calculations.restore(original)
+        calculations.saveDraft(sheetInput("Кронштейн", quantity = 2), revision)
+        assertEquals(old, assertNotNull(calculations.get(revision)).snapshot, "an autosave keeps the snapshot")
 
-        assertEquals(original, calculations.get(id))
-        assertEquals(listOf("Кронштейн"), names(calculations.list(query = "кронштейн")))
+        val edited = sheetInput("Кронштейн", quantity = 2, cutExtra = "0")
+        calculations.saveCalculated(edited, old, old.priced(edited), revision, snapshotAt = takenAt)
+
+        val stored = assertNotNull(calculations.get(revision))
+        assertEquals(CalculationStatus.CALCULATED, stored.status)
+        assertEquals(source, stored.sourceId)
+        assertEquals(old, stored.snapshot)
+        assertEquals(takenAt, stored.snapshotAt, "the prices are the old ones, so is their date")
+        assertEquals(old.priced(edited), stored.result)
+        assertEquals(old.priced(sheetInput("Кронштейн")), assertNotNull(calculations.get(source)).result)
     }
 
     @Test
-    fun `recalculating on current prices replaces the snapshot`() {
-        val id = calculated(sheetInput("Кронштейн"))
+    fun `a revision on current prices is a new calculation and the source stays as it was`() {
+        val source = calculated(sheetInput("Кронштейн", quantity = 3))
+        calculations.setStatus(source, CalculationStatus.SENT)
+        val before = row(source)
         clock.advance(Duration.ofDays(1))
         val current = book.copy(materialPricesPerKg = book.materialPricesPerKg.map { it.copy(pricePerKg = it.pricePerKg + dec("10")) })
+        val input = sheetInput("Кронштейн", quantity = 3)
 
-        calculated(sheetInput("Кронштейн"), id, prices = current)
+        val revision = calculations.createRevision(source, input, current, current.priced(input))
 
-        val stored = assertNotNull(calculations.get(id))
+        assertEquals(before, row(source))
+        val stored = assertNotNull(calculations.get(revision))
+        assertEquals(CalculationStatus.CALCULATED, stored.status)
+        assertEquals(source, stored.sourceId)
         assertEquals(current, stored.snapshot)
         assertEquals(clock.now, stored.snapshotAt)
-        assertEquals(current.priced(sheetInput("Кронштейн")).unitPrice, stored.unitPrice)
+        assertEquals(current.priced(input).unitPrice, stored.unitPrice)
+        assertNotEquals(assertNotNull(calculations.get(source)).unitPrice, stored.unitPrice)
+        assertEquals(2, calculations.list().size)
+    }
+
+    @Test
+    fun `a revision with a new run size keeps the snapshot, its date and the result`() {
+        val source = calculated(sheetInput("Кронштейн", quantity = 1))
+        val original = assertNotNull(calculations.get(source))
+        clock.advance(Duration.ofDays(3))
+
+        val revision = calculations.createRevision(
+            source,
+            original.input.copy(quantity = 10),
+            assertNotNull(original.snapshot),
+            assertNotNull(original.result),
+            snapshotAt = original.snapshotAt,
+        )
+
+        val stored = assertNotNull(calculations.get(revision))
+        assertEquals(10, stored.quantity)
+        assertEquals(original.result, stored.result)
+        assertEquals(original.snapshot, stored.snapshot)
+        assertEquals(original.snapshotAt, stored.snapshotAt)
+        assertEquals("79505.00", calculations.list().single { it.id == revision }.total?.amount?.toPlainString())
+        assertEquals(1, assertNotNull(calculations.get(source)).quantity)
+    }
+
+    @Test
+    fun `revisions of a calculation are listed newest first, drafts in progress included`() {
+        val source = calculated(sheetInput("Кронштейн"))
+        val input = sheetInput("Кронштейн")
+        val first = calculations.createRevision(source, input, book, book.priced(input))
+        clock.advance(Duration.ofMinutes(5))
+        val draft = calculations.createRevisionDraft(source)
+        clock.advance(Duration.ofMinutes(5))
+        val third = calculations.createRevision(source, input, book, book.priced(input))
+        calculations.createRevision(first, input, book, book.priced(input))
+
+        assertEquals(listOf(third, draft, first), calculations.revisionsOf(source).map { it.id })
+        assertEquals(1, calculations.revisionsOf(first).size)
+        assertEquals(emptyList(), calculations.revisionsOf(third))
+    }
+
+    @Test
+    fun `an untouched revision draft is deleted, a changed one or anything else is not`() {
+        val source = calculated(sheetInput("Кронштейн"))
+        val untouched = calculations.createRevisionDraft(source)
+        val changed = calculations.createRevisionDraft(source)
+        calculations.saveDraft(sheetInput("Кронштейн", quantity = 2), changed)
+        val plain = calculations.saveDraft(sheetInput("Рама"))
+        val input = sheetInput("Кронштейн")
+        val revision = calculations.createRevision(source, input, book, book.priced(input))
+
+        assertTrue(calculations.deleteUntouchedRevisionDraft(untouched))
+        assertFalse(calculations.deleteUntouchedRevisionDraft(changed))
+        assertFalse(calculations.deleteUntouchedRevisionDraft(plain))
+        assertFalse(calculations.deleteUntouchedRevisionDraft(revision))
+        assertFalse(calculations.deleteUntouchedRevisionDraft(source))
+        assertFalse(calculations.deleteUntouchedRevisionDraft(untouched), "already gone")
+
+        assertNull(calculations.get(untouched))
+        assertEquals(setOf(source, changed, plain, revision), calculations.list().map { it.id }.toSet())
+    }
+
+    @Test
+    fun `a revision draft whose source was deleted is kept`() {
+        val source = calculated(sheetInput("Кронштейн"))
+        val revision = calculations.createRevisionDraft(source)
+        calculations.delete(source)
+
+        assertFalse(calculations.deleteUntouchedRevisionDraft(revision))
+        assertNotNull(calculations.get(revision))
     }
 
     @Test
@@ -149,6 +292,7 @@ class CalculationRepositoryTest {
         assertEquals(input, stored.input)
         assertNull(stored.snapshot)
         assertNull(stored.result)
+        assertNull(stored.sourceId)
         assertEquals(CalculationStatus.SENT, calculations.get(source)?.status)
         assertEquals(2, calculations.list().size)
     }
@@ -260,28 +404,29 @@ class CalculationRepositoryTest {
     }
 
     @Test
-    fun `changing the quantity on the card changes the total and keeps the unit price and the snapshot`() {
-        val id = calculated(sheetInput("Кронштейн", quantity = 1))
-        val before = assertNotNull(calculations.get(id))
+    fun `the run size of a draft is changed in place`() {
+        val id = calculations.saveDraft(sheetInput("Кронштейн", quantity = 1))
 
         calculations.setQuantity(id, 10)
 
-        val after = assertNotNull(calculations.get(id))
-        assertEquals(10, after.quantity)
-        assertEquals(before.result, after.result)
-        assertEquals(before.snapshot, after.snapshot)
-        assertEquals("79505.00", calculations.list().single().total?.amount?.toPlainString())
+        assertEquals(10, assertNotNull(calculations.get(id)).quantity)
+        assertEquals(10, assertNotNull(calculations.get(id)).input.quantity)
         assertFailsWith<IllegalArgumentException> { calculations.setQuantity(id, 0) }
+        assertFailsWith<NoSuchElementException> { calculations.setQuantity(UUID.randomUUID(), 2) }
     }
 
     @Test
-    fun `delete removes the calculation`() {
+    fun `delete removes the calculation whatever its status`() {
         val kept = calculations.saveDraft(sheetInput("Рама"))
         val deleted = calculated(sheetInput("Кронштейн"))
+        calculations.setStatus(deleted, CalculationStatus.ARCHIVED)
 
         calculations.delete(deleted)
 
         assertNull(calculations.get(deleted))
         assertEquals(listOf(kept), calculations.list().map { it.id })
+        calculations.delete(deleted)
+        calculations.delete(kept)
+        assertEquals(emptyList(), calculations.list())
     }
 }
