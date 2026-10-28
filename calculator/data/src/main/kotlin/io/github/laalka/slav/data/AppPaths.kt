@@ -7,14 +7,18 @@ import java.time.format.DateTimeFormatter
 import kotlin.io.path.Path
 
 /**
- * Where the application keeps its data (spec 11): the database and the backups folder under
- * [root]. Nothing is created until the database is opened. Tests pass a temporary [root].
+ * Where the application keeps its data (spec 11): the database, the backups folder and the
+ * attached drawings under [root]. Nothing is created until the database is opened. Tests pass a
+ * temporary [root].
  */
 class AppPaths(val root: Path) {
     val databaseFile: Path get() = root.resolve("slav.db")
 
     /** Startup copies of the database and the settings saved before a full import replace. */
     val backupsDir: Path get() = root.resolve("backups")
+
+    /** The drawings attached to calculations, a folder per calculation; created with the first file. */
+    val attachmentsDir: Path get() = root.resolve("attachments")
 
     companion object {
         /** The per-user data folder of the current OS; uninstalling or updating the app leaves it in place. */

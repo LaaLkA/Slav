@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.laalka.slav.app.FilePicker
+import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
@@ -65,7 +67,7 @@ private val PARAMS_INDENT = 48.dp
 private val FIELD_TEXT_OFFSET = 18.dp
 
 @Composable
-fun EditorScreen(model: EditorModel, onBack: () -> Unit) {
+fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(state, onBack)
@@ -82,6 +84,7 @@ fun EditorScreen(model: EditorModel, onBack: () -> Unit) {
                         NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
                     }
                 }
+                AttachmentsBlock(model.attachments, filePicker)
                 state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
                 state.partsError?.let { ErrorText(it) }
                 OutlinedButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {

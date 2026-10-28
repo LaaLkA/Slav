@@ -59,11 +59,12 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
                 )
                 // Keyed by the model: another calculation's editor starts with fresh fields.
                 is Page.Editor -> key(current.model) {
-                    EditorScreen(current.model, onBack = { navigator.navigate(Screen.Calculations) })
+                    EditorScreen(current.model, filePicker, onBack = { navigator.navigate(Screen.Calculations) })
                 }
                 is Page.Card -> key(current.model) {
                     CardScreen(
                         current.model,
+                        filePicker,
                         onBack = { navigator.navigate(Screen.Calculations) },
                         // A calculated record is not edited itself: its revision draft is.
                         onEdit = { navigator.navigate(Screen.Editor(current.model.edit())) },

@@ -1,5 +1,7 @@
 package io.github.laalka.slav.app.calculations
 
+import io.github.laalka.slav.app.FileOpener
+import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.editor.ReadableError
 import io.github.laalka.slav.app.editor.readable
 import io.github.laalka.slav.app.ui.formatDate
@@ -13,6 +15,7 @@ import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.data.AdminPassword
+import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.CalculationSummary
@@ -88,6 +91,8 @@ class CardModel(
     private val calculations: CalculationRepository,
     private val settings: SettingsRepository,
     adminPassword: AdminPassword,
+    attachmentRepository: AttachmentRepository,
+    fileOpener: FileOpener,
     val id: UUID,
     private val onRevision: (UUID) -> Unit,
     private val onDeleted: () -> Unit,
@@ -98,7 +103,19 @@ class CardModel(
     private var quantityDialog: QuantityDialog? = null
     private var source: StoredCalculation? = null
     private var revisions: List<CalculationSummary> = emptyList()
-    private val deletion = DeleteFlow(calculations, adminPassword)
+    private val deletion = DeleteFlow(adminPassword, calculations::delete)
+
+    /**
+     * The drawings of the card (spec 8.2). Adding one does not change the price, so it is always
+     * allowed; removing one from a calculated record needs the administrator password, from a draft it is free.
+     */
+    val attachments = AttachmentsModel(
+        attachmentRepository,
+        fileOpener,
+        calculationId = { id },
+        storedCalculationId = { id },
+        passwordGuard = adminPassword.takeIf { calculation.status != CalculationStatus.DRAFT },
+    )
 
     /** The prices and result of the pending «Пересчитать по текущим ценам», applied as previewed. */
     private var pendingRecalc: Pair<PriceBook, CalcResult>? = null
@@ -121,6 +138,7 @@ class CardModel(
         recalcErrors = emptyList()
         deletion.cancel()
         readLinks()
+        attachments.reload()
         refresh()
     }
 

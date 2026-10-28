@@ -14,4 +14,28 @@ object NoFilePicker : FilePicker {
     override fun chooseSaveTarget(title: String, suggestedName: String, extension: String): Path? = error("The test opens no file dialogs")
 
     override fun chooseImportSource(): Path? = error("The test opens no file dialogs")
+
+    override fun chooseDrawing(): Path? = error("The test opens no file dialogs")
+}
+
+/** Starts no program: remembers the files it was asked to open, or fails the way the system can. */
+class RecordingOpener : FileOpener {
+    val opened = mutableListOf<Path>()
+
+    /** Thrown by the next and every later [open] until it is set back to null. */
+    var failure: Exception? = null
+
+    override fun open(file: Path) {
+        failure?.let { throw it }
+        opened.add(file)
+    }
+}
+
+/** A picker of drawings that hands out [next] and opens no other dialog. */
+class DrawingPicker(var next: Path? = null) : FilePicker {
+    override fun chooseSaveTarget(title: String, suggestedName: String, extension: String): Path? = error("The test opens no save dialog")
+
+    override fun chooseImportSource(): Path? = error("The test opens no import dialog")
+
+    override fun chooseDrawing(): Path? = next
 }

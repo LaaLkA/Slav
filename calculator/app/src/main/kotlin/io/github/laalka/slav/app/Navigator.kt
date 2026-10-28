@@ -110,6 +110,8 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     private fun editor(id: UUID?) = EditorModel(
         calculations = deps.calculations,
         settings = deps.settings,
+        attachmentRepository = deps.attachments,
+        fileOpener = deps.fileOpener,
         scope = scope,
         id = id,
         // The editor has saved the calculation and has nothing left to ask.
@@ -122,6 +124,8 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             deps.calculations,
             deps.settings,
             deps.adminPassword,
+            deps.attachments,
+            deps.fileOpener,
             id,
             onRevision = { revision -> show(card(revision)) },
             onDeleted = { show(Page.Calculations) },

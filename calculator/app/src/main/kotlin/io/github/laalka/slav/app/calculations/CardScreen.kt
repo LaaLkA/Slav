@@ -36,6 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.laalka.slav.app.FilePicker
+import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.editor.CalcErrors
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
@@ -51,7 +53,7 @@ private val STATUS_WIDTH = 200.dp
  * on the right. [onOpenLink] opens the calculation this one was made from, or a newer version of it.
  */
 @Composable
-fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit, onOpenLink: (CardLink) -> Unit) {
+fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onEdit: () -> Unit, onOpenLink: (CardLink) -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(state, model, onBack, onOpenLink)
@@ -73,6 +75,7 @@ fun CardScreen(model: CardModel, onBack: () -> Unit, onEdit: () -> Unit, onOpenL
             ) {
                 Summary(state, model)
                 Actions(state, model, onEdit)
+                AttachmentsBlock(model.attachments, filePicker)
                 if (state.recalcErrors.isNotEmpty()) {
                     CalcErrors(
                         state.recalcErrors,

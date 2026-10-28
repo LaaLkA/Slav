@@ -1,0 +1,30 @@
+-- A drawing attached to a calculation: the row says which file it is, the file itself lives under
+-- attachments/<calculation_id>/<stored_name> in the data folder. Instants are epoch milliseconds.
+CREATE TABLE attachment (
+    id TEXT PRIMARY KEY,
+    calculation_id TEXT NOT NULL,
+    -- The name the user's file had, shown as it was.
+    file_name TEXT NOT NULL,
+    -- The name on disk: the attachment id and the file name cleaned for every file system.
+    stored_name TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    added_at INTEGER NOT NULL
+);
+
+CREATE INDEX attachment_calculation_id ON attachment(calculation_id);
+
+selectById:
+SELECT * FROM attachment WHERE id = :id;
+
+selectByCalculation:
+SELECT * FROM attachment WHERE calculation_id = :calculationId ORDER BY added_at, id;
+
+insert:
+INSERT INTO attachment(id, calculation_id, file_name, stored_name, size_bytes, added_at)
+VALUES (:id, :calculationId, :fileName, :storedName, :sizeBytes, :addedAt);
+
+delete:
+DELETE FROM attachment WHERE id = :id;
+
+deleteByCalculation:
+DELETE FROM attachment WHERE calculation_id = :calculationId;

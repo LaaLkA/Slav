@@ -72,7 +72,7 @@ class CalculationListModel(
     private var toText = ""
     private var sort = CalculationSort.DEFAULT
     private var filterEpoch = 0
-    private val deletion = DeleteFlow(calculations, adminPassword)
+    private val deletion = DeleteFlow(adminPassword, calculations::delete)
     private var message: ListMessage? = null
 
     private val _state = MutableStateFlow(build())

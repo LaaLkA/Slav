@@ -1,20 +1,21 @@
 package io.github.laalka.slav.app.calculations
 
 import io.github.laalka.slav.data.AdminPassword
-import io.github.laalka.slav.data.CalculationRepository
 import java.util.UUID
 
 const val WRONG_PASSWORD = "Неверный пароль"
 
-/** The question in front of a delete: which calculation, and what is wrong with the password typed so far. */
+/** The question in front of a delete: which calculation or drawing, and what is wrong with the password typed so far. */
 data class DeleteQuestion(val name: String, val error: String?)
 
 /**
- * Deleting any calculation, whatever its status, needs the administrator password. A wrong
- * password deletes nothing and leaves the question open with an error under the field.
+ * Deleting any calculation, whatever its status, needs the administrator password, and so does
+ * removing a drawing from a calculated one. A wrong password deletes nothing and leaves the
+ * question open with an error under the field; [delete] is called with the id asked about once
+ * the password is right.
  */
-class DeleteFlow(private val calculations: CalculationRepository, private val adminPassword: AdminPassword) {
-    /** The calculation waiting for the password, null while nothing is being deleted. */
+class DeleteFlow(private val adminPassword: AdminPassword, private val delete: (UUID) -> Unit) {
+    /** The id waiting for the password, null while nothing is being deleted. */
     var pending: UUID? = null
         private set
 
@@ -40,14 +41,14 @@ class DeleteFlow(private val calculations: CalculationRepository, private val ad
         error = null
     }
 
-    /** True when the password was right and the calculation is deleted. */
+    /** True when the password was right and the id is deleted. */
     fun confirm(): Boolean {
         val id = pending ?: return false
         if (!adminPassword.verify(password.toCharArray())) {
             error = WRONG_PASSWORD
             return false
         }
-        calculations.delete(id)
+        delete(id)
         cancel()
         return true
     }

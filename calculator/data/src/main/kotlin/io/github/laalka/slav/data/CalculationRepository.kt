@@ -87,8 +87,16 @@ data class CalculationSort(val column: CalculationSortColumn, val descending: Bo
  * stays: a recalculation, a new run size or an edit makes a new row ([createRevision],
  * [createRevisionDraft]) that points to its source. Only the workflow status of such a row can
  * be set ([setStatus]); writing its input, price or run size throws [IllegalStateException].
+ *
+ * The drawings of a calculation ([AttachmentRepository]) follow it: a copy or a revision gets
+ * copies of its source's files, and deleting the calculation deletes them. That is done here, so
+ * no screen has to remember it.
  */
-class CalculationRepository(database: AppDatabase, private val clock: Clock = Clock.systemDefaultZone()) {
+class CalculationRepository(
+    database: AppDatabase,
+    private val clock: Clock = Clock.systemDefaultZone(),
+    private val attachments: AttachmentRepository = AttachmentRepository(database, clock),
+) {
     private val queries = database.database.calculationQueries
 
     /**
@@ -161,21 +169,24 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         val snapshot = checkNotNull(source.snapshot) { "Calculation $sourceId has no price snapshot" }
         val key = UUID.randomUUID()
         val now = clock.millis()
-        queries.insert(
-            id = key.toString(),
-            name = source.input.name,
-            nameSearch = searchForm(source.input.name),
-            status = CalculationStatus.DRAFT.name,
-            quantity = source.input.quantity.toLong(),
-            unitPrice = null,
-            createdAt = now,
-            updatedAt = now,
-            snapshotAt = source.snapshotAt?.toEpochMilli(),
-            inputJson = encode(source.input),
-            snapshotJson = encodeSnapshot(snapshot),
-            resultJson = null,
-            sourceId = sourceId.toString(),
-        )
+        queries.transaction {
+            queries.insert(
+                id = key.toString(),
+                name = source.input.name,
+                nameSearch = searchForm(source.input.name),
+                status = CalculationStatus.DRAFT.name,
+                quantity = source.input.quantity.toLong(),
+                unitPrice = null,
+                createdAt = now,
+                updatedAt = now,
+                snapshotAt = source.snapshotAt?.toEpochMilli(),
+                inputJson = encode(source.input),
+                snapshotJson = encodeSnapshot(snapshot),
+                resultJson = null,
+                sourceId = sourceId.toString(),
+            )
+            attachments.copyAll(sourceId, key)
+        }
         return key
     }
 
@@ -189,7 +200,10 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         existing(sourceId)
         val key = UUID.randomUUID()
         val now = clock.millis()
-        insert(key, input, encode(input), CalculationStatus.CALCULATED, now, pricing(snapshot, result), snapshotAt = snapshotAt?.toEpochMilli() ?: now, sourceId = sourceId)
+        queries.transaction {
+            insert(key, input, encode(input), CalculationStatus.CALCULATED, now, pricing(snapshot, result), snapshotAt = snapshotAt?.toEpochMilli() ?: now, sourceId = sourceId)
+            attachments.copyAll(sourceId, key)
+        }
         return key
     }
 
@@ -208,15 +222,17 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
         }.executeAsList().sortedWith(compareByDescending<CalculationSummary> { it.createdAt }.thenBy { it.id })
 
     /**
-     * Deletes the draft [id] when it is a revision draft whose input still equals its source's:
-     * an automatic copy nobody changed, which needs no password. True when it was deleted; any
-     * other calculation is left alone.
+     * Deletes the draft [id] when it is a revision draft whose input and drawings still equal its
+     * source's: an automatic copy nobody changed, which needs no password. True when it was
+     * deleted; any other calculation is left alone.
      */
     fun deleteUntouchedRevisionDraft(id: UUID): Boolean = queries.transactionWithResult {
         val draft = get(id)
         val source = draft?.takeIf { it.status == CalculationStatus.DRAFT }?.sourceId?.let { get(it) }
-        if (draft == null || source == null || draft.input != source.input) return@transactionWithResult false
-        queries.delete(id.toString())
+        if (draft == null || source == null || draft.input != source.input || !attachments.hasSameFiles(id, source.id)) {
+            return@transactionWithResult false
+        }
+        remove(id)
         true
     }
 
@@ -249,17 +265,19 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
     fun copy(id: UUID): UUID {
         val source = existing(id)
         val key = UUID.randomUUID()
-        insert(key, source.input, encode(source.input), CalculationStatus.DRAFT, clock.millis(), priced = null)
+        queries.transaction {
+            insert(key, source.input, encode(source.input), CalculationStatus.DRAFT, clock.millis(), priced = null)
+            attachments.copyAll(id, key)
+        }
         return key
     }
 
     /**
-     * Removes the calculation [id], whatever its status. Deleting needs the administrator password
-     * ([AdminPassword]), which is asked by the caller; does nothing when [id] is already gone.
+     * Removes the calculation [id] and its attachments, whatever its status. Deleting needs the
+     * administrator password ([AdminPassword]), which is asked by the caller; does nothing when
+     * [id] is already gone.
      */
-    fun delete(id: UUID) {
-        queries.delete(id.toString())
-    }
+    fun delete(id: UUID) = remove(id)
 
     /** Sets one of the [CalculationStatus.MANUAL] statuses; a draft has no price and cannot get one. */
     fun setStatus(id: UUID, status: CalculationStatus) {
@@ -282,6 +300,13 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
     }
 
     private fun existing(id: UUID) = get(id) ?: throw NoSuchElementException("No calculation $id")
+
+    private fun remove(id: UUID) {
+        queries.transaction {
+            queries.delete(id.toString())
+            attachments.removeAll(id)
+        }
+    }
 
     /** A write over [id] is allowed when there is no such row yet (it is inserted) or the row is a draft. */
     private fun requireDraftOrAbsent(id: UUID) {

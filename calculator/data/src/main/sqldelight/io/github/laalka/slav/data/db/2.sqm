@@ -1,0 +1,12 @@
+-- Drawings attached to a calculation; see Attachment.sq. The files themselves are in the
+-- attachments folder of the data folder, so there is nothing to move for an existing database.
+CREATE TABLE attachment (
+    id TEXT PRIMARY KEY,
+    calculation_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    added_at INTEGER NOT NULL
+);
+
+CREATE INDEX attachment_calculation_id ON attachment(calculation_id);

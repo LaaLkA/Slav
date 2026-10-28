@@ -1,5 +1,7 @@
 package io.github.laalka.slav.app.editor
 
+import io.github.laalka.slav.app.FileOpener
+import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.core.Applicability
 import io.github.laalka.slav.core.CalcOutcome
@@ -8,6 +10,7 @@ import io.github.laalka.slav.core.CalculationInput
 import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.applicability
+import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.SettingsRepository
@@ -37,6 +40,8 @@ import kotlin.time.Duration.Companion.milliseconds
 class EditorModel(
     private val calculations: CalculationRepository,
     private val settings: SettingsRepository,
+    attachmentRepository: AttachmentRepository,
+    fileOpener: FileOpener,
     private val scope: CoroutineScope,
     id: UUID?,
     private val onCalculated: (UUID) -> Unit,
@@ -70,6 +75,16 @@ class EditorModel(
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<EditorState> = _state.asStateFlow()
+
+    /** The drawings of the calculation; the editor only edits drafts, so removing one needs no password. */
+    val attachments = AttachmentsModel(
+        attachmentRepository,
+        fileOpener,
+        // this.id is the property, which follows the saves; a bare id here would be the constructor parameter.
+        calculationId = { this.id },
+        storedCalculationId = ::storedId,
+        passwordGuard = null,
+    )
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }
 
@@ -246,6 +261,17 @@ class EditorModel(
             delay(autosaveDelay)
             pendingSave = null
             saveDraft()
+        }
+    }
+
+    /** The id drawings are attached under: a calculation never saved yet is saved as a draft first. */
+    private fun storedId(): UUID {
+        flush()
+        id?.let { return it }
+        val draft = form.read().input
+        return calculations.saveDraft(draft).also {
+            id = it
+            stored = draft
         }
     }
 

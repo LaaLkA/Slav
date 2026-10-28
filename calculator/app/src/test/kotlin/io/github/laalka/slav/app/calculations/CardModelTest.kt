@@ -47,6 +47,8 @@ class CardModelTest {
         deps.calculations,
         deps.settings,
         deps.adminPassword,
+        deps.attachments,
+        deps.fileOpener,
         id,
         onRevision = { revisions += it },
         onDeleted = { deleted++ },

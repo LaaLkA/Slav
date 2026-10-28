@@ -33,6 +33,15 @@ fun formatMoney(money: Money, currency: String): String = "${formatMoney(money)}
 fun formatMeasure(value: BigDecimal, fractionDigits: Int = 3): String =
     decimalFormat("#,##0." + "#".repeat(fractionDigits)).format(value)
 
+/** The size of a file: "812 Б", "345,6 КБ", "12,3 МБ". */
+fun formatFileSize(bytes: Long): String = when {
+    bytes < KILOBYTE -> "$bytes Б"
+    bytes < KILOBYTE * KILOBYTE -> "${formatMeasure(BigDecimal(bytes).divide(BigDecimal(KILOBYTE), 4, RoundingMode.HALF_UP), 1)} КБ"
+    else -> "${formatMeasure(BigDecimal(bytes).divide(BigDecimal(KILOBYTE * KILOBYTE), 4, RoundingMode.HALF_UP), 1)} МБ"
+}
+
+private const val KILOBYTE = 1024L
+
 // Strict: "31.02.2026" is not a date rather than the 28th.
 private val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT)
 private val dateTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")

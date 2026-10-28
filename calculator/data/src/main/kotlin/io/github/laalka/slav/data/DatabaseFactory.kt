@@ -23,7 +23,7 @@ class DatabaseFactory(private val paths: AppPaths, private val clock: Clock = Cl
         paths.root.createDirectories()
         val backup = if (paths.databaseFile.exists()) backUp() else null
         val driver = JdbcSqliteDriver(jdbcUrl(paths.databaseFile), Properties(), SlavDatabase.Schema)
-        return AppDatabase(SlavDatabase(driver), driver, backup)
+        return AppDatabase(SlavDatabase(driver), driver, paths, backup)
     }
 
     // Taken before migrating, so a failed migration leaves the previous version restorable.
@@ -55,6 +55,8 @@ class DatabaseFactory(private val paths: AppPaths, private val clock: Clock = Cl
 class AppDatabase internal constructor(
     internal val database: SlavDatabase,
     private val driver: SqlDriver,
+    /** The data folder the database was opened in; the attached files live next to it. */
+    internal val paths: AppPaths,
     /** The copy made at this start; null on the first start, when there was nothing to back up. */
     val startupBackup: Path?,
 ) : AutoCloseable {

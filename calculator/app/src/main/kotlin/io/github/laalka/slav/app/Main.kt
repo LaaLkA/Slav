@@ -13,6 +13,7 @@ import androidx.compose.ui.window.rememberWindowState
 import io.github.laalka.slav.app.theme.SlavTheme
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.DatabaseFactory
 import io.github.laalka.slav.data.PasswordSeed
@@ -28,10 +29,19 @@ import kotlin.io.path.Path
  * start. Opening the database backs up the existing one first (spec 11). [adminSeed] is the
  * password hash a new database starts with; a test passes the hash of a password of its own.
  */
-class Deps(paths: AppPaths, appVersion: String, adminSeed: PasswordSeed = PasswordSeed.PRODUCTION) : AutoCloseable {
+class Deps(
+    paths: AppPaths,
+    appVersion: String,
+    adminSeed: PasswordSeed = PasswordSeed.PRODUCTION,
+    /** How «Открыть» shows a drawing; a test passes one that records the file instead of starting a program. */
+    val fileOpener: FileOpener = DesktopFileOpener,
+) : AutoCloseable {
     private val database = DatabaseFactory(paths).open()
     val settings = SettingsRepository(database)
-    val calculations = CalculationRepository(database)
+
+    // The calculations copy and delete the drawings with themselves, so they share this one.
+    val attachments = AttachmentRepository(database)
+    val calculations = CalculationRepository(database, attachments = attachments)
     val adminPassword = AdminPassword(database, adminSeed)
     val settingsTransfer = SettingsTransfer(settings, paths, appVersion)
     val preferences = AppPreferences(paths.root.resolve("preferences.properties"))
