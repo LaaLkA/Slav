@@ -25,8 +25,8 @@ import java.util.UUID
 /** A breakdown line as the card draws it; [extra] names the manual amount and its comment. */
 data class CardLine(val title: String, val extra: String?, val cost: String)
 
-/** [perProduct] is shown when the product takes more than one piece. */
-data class CardPart(val title: String, val details: String, val lines: List<CardLine>, val cost: String, val perProduct: String?)
+/** One part, one piece of the product; [details] says its mass. */
+data class CardPart(val title: String, val details: String, val lines: List<CardLine>, val cost: String)
 
 /** «Пересчитать по текущим ценам» before the user's answer (spec 8.3). */
 data class RecalcPreview(
@@ -183,10 +183,9 @@ class CardModel(
             parts = breakdown?.parts.orEmpty().map { part ->
                 CardPart(
                     title = part.name,
-                    details = "${part.qtyPerProduct} шт на изделие · ${kg(part.massKg)} за шт",
+                    details = "Масса: ${kg(part.massKg)}",
                     lines = part.lines.map(::line),
                     cost = money(part.cost),
-                    perProduct = if (part.qtyPerProduct > 1) "× ${part.qtyPerProduct} шт = ${money(part.costPerProduct)}" else null,
                 )
             },
             productLines = breakdown?.productLines.orEmpty().map(::line),

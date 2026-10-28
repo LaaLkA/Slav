@@ -40,7 +40,7 @@ class CalculationsUiTest {
     private fun deps() = Deps(AppPaths(temp.root.toPath()), appVersion = "test")
 
     @Test
-    fun `the golden card opened from the list shows 112 800,00 once the run size is 10`() {
+    fun `the golden card opened from the list shows 113 400,00 once the run size is 10`() {
         deps().use { deps ->
             val id = deps.saveCalculated(goldenInput(quantity = 1))
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
@@ -48,22 +48,22 @@ class CalculationsUiTest {
             cell(0, "name").assertTextEquals("Кронштейн")
             node(CalculationTags.row(0)).performClick()
             compose.waitForIdle()
-            node(CalculationTags.CARD_UNIT_PRICE).assertTextEquals("11 280,00 ₽")
-            node(CalculationTags.CARD_TOTAL).assertTextEquals("11 280,00 ₽")
+            node(CalculationTags.CARD_UNIT_PRICE).assertTextEquals("11 340,00 ₽")
+            node(CalculationTags.CARD_TOTAL).assertTextEquals("11 340,00 ₽")
 
             node(CalculationTags.CARD_QUANTITY).performTextReplacement("10")
             compose.waitForIdle()
 
-            node(CalculationTags.CARD_TOTAL).assertTextEquals("112 800,00 ₽")
-            node(CalculationTags.CARD_RUN_MASS).assertTextEquals("157 кг")
+            node(CalculationTags.CARD_TOTAL).assertTextEquals("113 400,00 ₽")
+            node(CalculationTags.CARD_RUN_MASS).assertTextEquals("160 кг")
             val saved = assertNotNull(deps.calculations.get(id))
             assertEquals(10, saved.quantity)
-            assertEquals(0, BigDecimal("11280.00").compareTo(assertNotNull(saved.unitPrice).amount))
+            assertEquals(0, BigDecimal("11340.00").compareTo(assertNotNull(saved.unitPrice).amount))
 
             // Back on the list, the row shows the new run size and total.
             node(CalculationTags.CARD_BACK).performClick()
             compose.waitForIdle()
-            cell(0, "total").assertTextEquals("112 800,00 ₽")
+            cell(0, "total").assertTextEquals("113 400,00 ₽")
         }
     }
 

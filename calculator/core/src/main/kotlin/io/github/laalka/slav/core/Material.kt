@@ -25,19 +25,20 @@ sealed interface Material {
     /** Mass by the part's overall dimensions (spec 5). Angle, channel and I-beam use the GOST mass of one metre. */
     fun massKg(densityKgM3: BigDecimal): BigDecimal
 
+    /** A sheet part: its flat [shape] cut from a sheet [thicknessMm] thick. */
     @Serializable
     @SerialName("sheet")
     data class Sheet(
         override val grade: String,
         override val thicknessMm: Decimal,
-        val lengthMm: Decimal,
-        val widthMm: Decimal,
+        val shape: SheetShape,
     ) : Material {
-        // All six faces, as in the spreadsheet: 2 × (L × W + W × t + L × t).
+        // Both faces and the cut edges: 2 × area + cut length × t. For a rectangle this is the
+        // spreadsheet's 2 × (L × W + W × t + L × t).
         override val paintAreaM2: BigDecimal
-            get() = (TWO * (lengthMm * widthMm + widthMm * thicknessMm + lengthMm * thicknessMm)).mm2ToM2()
+            get() = (TWO * shape.areaMm2 + shape.cutLengthMm * thicknessMm).mm2ToM2()
 
-        override fun massKg(densityKgM3: BigDecimal) = (lengthMm * widthMm * thicknessMm).mm3ToM3() * densityKgM3
+        override fun massKg(densityKgM3: BigDecimal) = (shape.areaMm2 * thicknessMm).mm3ToM3() * densityKgM3
     }
 
     /** Tubes and sections: the kinds the tube laser cuts (spec 6.3). */
@@ -122,3 +123,53 @@ sealed interface Material {
 
 /** 2 × h + 4 × b − 2 × s (spec 6.3). */
 private fun BeamSize.sectionPerimeterMm() = TWO * heightMm + FOUR * flangeWidthMm - TWO * thicknessMm
+
+/**
+ * The flat outline of a sheet part, mm. [areaMm2] is the area of the part itself (holes of the
+ * drawing are not subtracted from it, as before), [cutLengthMm] the length of all its contours and
+ * [pierces] the number of contours, each of which the laser starts with a pierce.
+ */
+@Serializable
+sealed interface SheetShape {
+    val areaMm2: BigDecimal
+    val cutLengthMm: BigDecimal
+    val pierces: Int
+
+    /** A rectangle or a strip: L × W. */
+    @Serializable
+    @SerialName("rectangle")
+    data class Rectangle(val lengthMm: Decimal, val widthMm: Decimal) : SheetShape {
+        override val areaMm2: BigDecimal get() = lengthMm * widthMm
+        override val cutLengthMm: BigDecimal get() = TWO * (lengthMm + widthMm)
+        override val pierces: Int get() = 1
+    }
+
+    /** A disc of radius R. */
+    @Serializable
+    @SerialName("circle")
+    data class Circle(val radiusMm: Decimal) : SheetShape {
+        override val areaMm2: BigDecimal get() = PI * radiusMm * radiusMm
+        override val cutLengthMm: BigDecimal get() = TWO * PI * radiusMm
+        override val pierces: Int get() = 1
+    }
+
+    /**
+     * A disc of radius R with a concentric hole of radius r, where r < R. The editor refuses a
+     * ring whose inner radius is not smaller; an unfilled draft holds zeros.
+     */
+    @Serializable
+    @SerialName("ring")
+    data class Ring(val outerRadiusMm: Decimal, val innerRadiusMm: Decimal) : SheetShape {
+        override val areaMm2: BigDecimal get() = PI * (outerRadiusMm * outerRadiusMm - innerRadiusMm * innerRadiusMm)
+        override val cutLengthMm: BigDecimal get() = TWO * PI * (outerRadiusMm + innerRadiusMm)
+        override val pierces: Int get() = 2
+    }
+
+    /** Any other outline: the area and the total cut length of all contours are typed from the drawing. */
+    @Serializable
+    @SerialName("free")
+    data class Free(override val areaMm2: Decimal, val perimeterMm: Decimal) : SheetShape {
+        override val cutLengthMm: BigDecimal get() = perimeterMm
+        override val pierces: Int get() = 1
+    }
+}

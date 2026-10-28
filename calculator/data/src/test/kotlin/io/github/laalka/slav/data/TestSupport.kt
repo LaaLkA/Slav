@@ -11,6 +11,7 @@ import io.github.laalka.slav.core.Part
 import io.github.laalka.slav.core.PartOperation
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.SheetCutMode
+import io.github.laalka.slav.core.SheetShape
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
@@ -47,10 +48,9 @@ fun sheetInput(name: String, quantity: Int = 1, cutExtra: String = "150") = Calc
     parts = listOf(
         Part(
             name = "Пластина",
-            qtyPerProduct = 2,
-            material = Material.Sheet("Ст3", thicknessMm = dec("2"), lengthMm = dec("1000"), widthMm = dec("500")),
+            material = Material.Sheet("Ст3", thicknessMm = dec("2"), shape = SheetShape.Rectangle(dec("1000"), dec("500"))),
             operations = listOf(
-                PartOperation.LaserSheet(SheetCutMode.Rectangle, ManualExtra(Money(dec(cutExtra)), "Снятие фаски")),
+                PartOperation.LaserSheet(SheetCutMode.ByShape, ManualExtra(Money(dec(cutExtra)), "Снятие фаски")),
             ),
             materialExtra = ManualExtra(Money(dec("200.50")), "Доставка листа"),
         ),

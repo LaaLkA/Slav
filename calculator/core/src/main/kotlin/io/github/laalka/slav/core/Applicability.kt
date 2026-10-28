@@ -10,7 +10,10 @@ enum class Applicability {
     SECTION_TOO_LARGE,
 }
 
-/** The matrix of spec 6.1, including the tube-laser section limit (spec 4.6). */
+/**
+ * The matrix of spec 6.1 for the operations of a part, including the tube-laser section limit
+ * (spec 4.6). Welding and painting are operations of the assembled product, never of a part.
+ */
 fun applicability(kind: OperationKind, material: Material, priceBook: PriceBook): Applicability {
     fun onTubeLaser(product: Material.LongProduct) =
         if (product.maxSectionMm <= priceBook.general.tubeLaserMaxSectionMm) Applicability.APPLICABLE
@@ -27,7 +30,7 @@ fun applicability(kind: OperationKind, material: Material, priceBook: PriceBook)
             is Material.Sheet -> Applicability.APPLICABLE
             is Material.LongProduct -> onTubeLaser(material)
         }
-        OperationKind.WELDING, OperationKind.PAINTING -> Applicability.APPLICABLE
+        OperationKind.WELDING, OperationKind.PAINTING -> Applicability.NOT_APPLICABLE
     }
 }
 

@@ -12,17 +12,16 @@ import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 
-// Breakdown columns: part, line, quantity per product, mass of one piece, manual extra, its comment, amount.
+// Breakdown columns: part, line, mass of the part, manual extra, its comment, amount.
 private const val PART = 0
 private const val LINE = 1
-private const val QTY = 2
-private const val MASS = 3
-private const val EXTRA = 4
-private const val COMMENT = 5
-private const val AMOUNT = 6
+private const val MASS = 2
+private const val EXTRA = 3
+private const val COMMENT = 4
+private const val AMOUNT = 5
 
 // Widths in characters.
-private val COLUMN_WIDTHS = listOf(28, 52, 14, 14, 18, 36, 18)
+private val COLUMN_WIDTHS = listOf(28, 52, 14, 18, 36, 18)
 
 /** The labels of the summary at the top of the sheet; the value is in the next column. */
 object XlsxLabels {
@@ -77,31 +76,22 @@ fun writeBreakdownXlsx(breakdown: Breakdown, currency: String, target: Path) {
 
         rows.skip()
         rows.next().apply {
-            listOf("Деталь", "Строка", "Кол-во на изделие, шт", "Масса 1 шт, кг", "Доп. операции, $currency", "Комментарий к доп. операциям", "Сумма, $currency")
+            listOf("Деталь", "Строка", "Масса, кг", "Доп. операции, $currency", "Комментарий к доп. операциям", "Сумма, $currency")
                 .forEachIndexed { column, header -> text(column, header, styles.header) }
         }
         breakdown.parts.forEach { part ->
             part.lines.forEach { rows.line(part.name, it, styles) }
             rows.next().apply {
                 text(PART, part.name, styles.bold)
-                text(LINE, "Цена детали, 1 шт", styles.bold)
-                number(QTY, part.qtyPerProduct.toBigDecimal(), styles.count)
+                text(LINE, "Цена детали", styles.bold)
                 number(MASS, part.massKg, styles.mass)
                 money(AMOUNT, part.cost, styles.boldMoney)
-            }
-            if (part.qtyPerProduct > 1) {
-                rows.next().apply {
-                    text(PART, part.name)
-                    text(LINE, "Детали на изделие, × ${part.qtyPerProduct}")
-                    money(AMOUNT, part.costPerProduct, styles.money)
-                }
             }
         }
         breakdown.productLines.forEach { rows.line("Изделие", it, styles) }
         rows.next().apply {
             text(PART, "Изделие", styles.total)
             text(LINE, XlsxLabels.UNIT_PRICE, styles.total)
-            text(QTY, "", styles.total)
             number(MASS, breakdown.unitMassKg, styles.totalMass)
             text(EXTRA, "", styles.total)
             text(COMMENT, "", styles.total)

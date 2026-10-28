@@ -1,5 +1,6 @@
 package io.github.laalka.slav.core
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 
@@ -12,6 +13,11 @@ data class GeneralSettings(
     val weldTypes: List<String>,
     /** Largest section the tube laser takes (spec 6.1). */
     val tubeLaserMaxSectionMm: Decimal,
+    /**
+     * The least painted area a part is charged for in product painting, m² (spec 6.7). Settings
+     * saved before it existed have no such field and take the default.
+     */
+    @EncodeDefault val minPaintAreaPerPartM2: Decimal = DEFAULT_MIN_PAINT_AREA_PER_PART_M2,
 ) {
     /** Ranges in ascending order: «до b1», «b1–b2», …, «свыше bN». */
     fun bendRanges(): List<BendRange> {
@@ -23,6 +29,8 @@ data class GeneralSettings(
         bendRanges().first { it.toMm == null || lengthMm <= it.toMm }
 
     companion object {
+        private val DEFAULT_MIN_PAINT_AREA_PER_PART_M2 = BigDecimal("0.1")
+
         fun default() = GeneralSettings(
             currencySymbol = "₽",
             bendRangeBoundsMm = listOf(100, 300, 500, 1000).map(Int::toBigDecimal),

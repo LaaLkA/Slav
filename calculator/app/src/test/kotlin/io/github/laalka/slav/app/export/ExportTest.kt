@@ -29,6 +29,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+// The columns of the breakdown sheet: part, line, mass of the part, manual extra, its comment, amount.
+private const val MASS = 2
+private const val EXTRA = 3
+private const val COMMENT = 4
+private const val AMOUNT = 5
+
 class ExportTest {
     @get:Rule
     val temp = TemporaryFolder()
@@ -60,8 +66,8 @@ class ExportTest {
         assertTrue("Кронштейн" in text, text)
         assertTrue("Дата: ${formatDate(LocalDate.now())}" in text, text)
         assertTrue("Тираж 10 шт" in text, text)
-        assertTrue("Цена изделия 11 280,00 ₽" in text, text)
-        assertTrue("Итог 112 800,00 ₽" in text, text)
+        assertTrue("Цена изделия 11 340,00 ₽" in text, text)
+        assertTrue("Итог 113 400,00 ₽" in text, text)
         // For the client: no breakdown lines.
         assertFalse("Гибка" in text, text)
     }
@@ -80,7 +86,7 @@ class ExportTest {
     }
 
     @Test
-    fun `the xlsx breakdown keeps money as numbers, the golden unit price is numeric 11280,00`() {
+    fun `the xlsx breakdown keeps money as numbers, the golden unit price is numeric 11340,00`() {
         val target = temp.root.toPath().resolve("breakdown.xlsx")
 
         ExportFormat.XLSX.write(golden(), "₽", target)
@@ -89,19 +95,60 @@ class ExportTest {
             val sheet = workbook.getSheetAt(0)
             val unitPrice = sheet.rowLabelled("Цена изделия, ₽").getCell(1)
             assertEquals(CellType.NUMERIC, unitPrice.cellType)
-            assertEquals(11280.00, unitPrice.numericCellValue)
-            assertEquals(112800.00, sheet.rowLabelled("Итог, ₽").getCell(1).numericCellValue)
+            assertEquals(11340.00, unitPrice.numericCellValue)
+            assertEquals(113400.00, sheet.rowLabelled("Итог, ₽").getCell(1).numericCellValue)
             assertEquals(10.0, sheet.rowLabelled("Тираж, шт").getCell(1).numericCellValue)
             assertEquals(LocalDate.now(), sheet.rowLabelled("Дата снимка цен").getCell(1).localDateTimeCellValue.toLocalDate())
 
             // The breakdown: each line's amount is a number, and they add up to the unit price in the last row.
-            val lines = sheet.filter { it.cell(1) in listOf("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "Лазер: рез листа", "Гибка", "Сварка (полуавтомат)") }
-            assertEquals(listOf(3140.0, 8000.0, 100.0, 40.0), lines.map { it.getCell(6).numericCellValue })
+            val lines = sheet.filter { it.cell(1) in listOf("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "Лазер: рез листа", "Гибка", "Сварка сборки (полуавтомат)") }
+            assertEquals(listOf(3200.0, 8000.0, 100.0, 40.0), lines.map { it.getCell(AMOUNT).numericCellValue })
             val last = sheet.getRow(sheet.lastRowNum)
             assertEquals("Цена изделия", last.cell(1))
-            assertEquals(CellType.NUMERIC, last.getCell(6).cellType)
-            assertEquals(11280.00, last.getCell(6).numericCellValue)
-            assertEquals(15.7, last.getCell(3).numericCellValue, 1e-9)
+            assertEquals(CellType.NUMERIC, last.getCell(AMOUNT).cellType)
+            assertEquals(11340.00, last.getCell(AMOUNT).numericCellValue)
+            assertEquals(16.0, last.getCell(MASS).numericCellValue, 1e-9)
+        }
+    }
+
+    @Test
+    fun `the xlsx has no quantity-per-product column or row`() {
+        val target = temp.root.toPath().resolve("columns.xlsx")
+
+        ExportFormat.XLSX.write(golden(), "₽", target)
+
+        XSSFWorkbook(target.toFile()).use { workbook ->
+            val sheet = workbook.getSheetAt(0)
+            val header = sheet.first { it.cell(0) == "Деталь" }
+            assertEquals(
+                listOf("Деталь", "Строка", "Масса, кг", "Доп. операции, ₽", "Комментарий к доп. операциям", "Сумма, ₽"),
+                (0 until header.lastCellNum).map { header.cell(it) },
+            )
+            val text = sheet.flatMap { row -> (0 until row.lastCellNum.coerceAtLeast(0)).map { row.cell(it) } }
+            assertFalse(text.any { "на изделие" in it || "1 шт" in it }, text.filter { it.isNotEmpty() }.toString())
+            // "Цена детали" is the only row of a part's total, with its mass.
+            val partTotal = sheet.first { it.cell(1) == "Цена детали" }
+            assertEquals(16.0, partTotal.getCell(MASS).numericCellValue, 1e-9)
+            assertEquals(11300.0, partTotal.getCell(AMOUNT).numericCellValue)
+        }
+    }
+
+    @Test
+    fun `the mass from the drawing is the mass of the part in the xlsx and the unit mass`() {
+        val golden = goldenInput(quantity = 10)
+        val input = golden.copy(parts = golden.parts.map { it.copy(massOverrideKg = BigDecimal("12.5")) })
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(deps.saveCalculated(input))).breakdown(ZoneId.systemDefault()))
+        val target = temp.root.toPath().resolve("override.xlsx")
+
+        ExportFormat.XLSX.write(breakdown, "₽", target)
+
+        XSSFWorkbook(target.toFile()).use { workbook ->
+            val sheet = workbook.getSheetAt(0)
+            assertEquals(12.5, sheet.first { it.cell(1) == "Цена детали" }.getCell(MASS).numericCellValue, 1e-9)
+            assertEquals(12.5, sheet.rowLabelled("Масса изделия, кг").getCell(1).numericCellValue, 1e-9)
+            assertEquals(125.0, sheet.rowLabelled("Масса тиража, кг").getCell(1).numericCellValue, 1e-9)
+            // 12.5 kg × 200 ₽/kg: the material line is priced by the mass from the drawing.
+            assertEquals(2500.0, sheet.first { it.cell(1).startsWith("Материал:") }.getCell(AMOUNT).numericCellValue)
         }
     }
 
@@ -117,10 +164,10 @@ class ExportTest {
         XSSFWorkbook(target.toFile()).use { workbook ->
             val sheet = workbook.getSheetAt(0)
             val material = sheet.first { it.cell(1).startsWith("Материал:") }
-            assertEquals(500.0, material.getCell(4).numericCellValue)
-            assertEquals("срочно", material.cell(5))
-            assertEquals(3640.0, material.getCell(6).numericCellValue)
-            assertEquals(11780.0, sheet.rowLabelled("Цена изделия, руб.").getCell(1).numericCellValue)
+            assertEquals(500.0, material.getCell(EXTRA).numericCellValue)
+            assertEquals("срочно", material.cell(COMMENT))
+            assertEquals(3700.0, material.getCell(AMOUNT).numericCellValue)
+            assertEquals(11840.0, sheet.rowLabelled("Цена изделия, руб.").getCell(1).numericCellValue)
         }
     }
 

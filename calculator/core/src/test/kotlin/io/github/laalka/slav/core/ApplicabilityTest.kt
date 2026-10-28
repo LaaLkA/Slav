@@ -31,8 +31,9 @@ class ApplicabilityTest {
             TUBE_LASER to listOf(false, true, true, true, true, true),
             HOLES to listOf(true, true, true, true, true, true),
             BENDING to listOf(true, false, false, false, false, false),
-            WELDING to listOf(true, true, true, true, true, true),
-            PAINTING to listOf(true, true, true, true, true, true),
+            // Welding and painting are operations of the assembled product, not of a part.
+            WELDING to listOf(false, false, false, false, false, false),
+            PAINTING to listOf(false, false, false, false, false, false),
         )
         assertEquals(OperationKind.entries.toSet(), expected.keys)
         val materials = listOf(sheet, roundTube, profileTube, angle, channel, iBeam)
@@ -44,15 +45,29 @@ class ApplicabilityTest {
     }
 
     @Test
-    fun `220 mm tube is rejected for the tube laser but can still be welded and painted`() {
+    fun `220 mm tube is rejected for the tube laser`() {
         val tube = Material.RoundTube("Ст3", diameterMm = dec("220"), wallMm = dec("6"), lengthMm = dec("1000"))
         assertEquals(SECTION_TOO_LARGE, applicability(TUBE_LASER, tube, book))
         assertEquals(SECTION_TOO_LARGE, applicability(HOLES, tube, book))
         assertFalse(isApplicable(TUBE_LASER, tube, book))
         assertFalse(isApplicable(HOLES, tube, book))
-        assertTrue(isApplicable(WELDING, tube, book))
-        assertTrue(isApplicable(PAINTING, tube, book))
         assertEquals(NOT_APPLICABLE, applicability(LASER_SHEET, tube, book))
+    }
+
+    @Test
+    fun `welding and painting are not applicable on a part of any kind or shape`() {
+        val shapes = listOf(
+            SheetShape.Rectangle(dec("300"), dec("200")),
+            SheetShape.Circle(dec("50")),
+            SheetShape.Ring(dec("50"), dec("20")),
+            SheetShape.Free(dec("12000"), dec("500")),
+        ).map { Material.Sheet("Ст3", dec("2"), it) }
+        for (material in shapes + Fixtures.allMaterials) {
+            assertEquals(NOT_APPLICABLE, applicability(WELDING, material, book), "welding on $material")
+            assertEquals(NOT_APPLICABLE, applicability(PAINTING, material, book), "painting on $material")
+            assertFalse(isApplicable(WELDING, material, book))
+            assertFalse(isApplicable(PAINTING, material, book))
+        }
     }
 
     @Test

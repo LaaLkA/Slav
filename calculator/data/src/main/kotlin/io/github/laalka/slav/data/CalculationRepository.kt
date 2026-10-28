@@ -248,16 +248,27 @@ class CalculationRepository(database: AppDatabase, private val clock: Clock = Cl
 
         fun encode(input: CalculationInput) = storageJson.encodeToString(CalculationInput.serializer(), input)
 
+        // Rows written by an older program are brought to the current model on every read (InputJsonUpgrade.kt).
+        fun decodeInput(text: String): CalculationInput = storageJson.decodeFromJsonElement(
+            CalculationInput.serializer(),
+            upgradeInputJson(storageJson.parseToJsonElement(text)),
+        )
+
+        fun decodeResult(text: String): CalcResult = storageJson.decodeFromJsonElement(
+            StoredResult.serializer(),
+            upgradeResultJson(storageJson.parseToJsonElement(text)),
+        ).toResult()
+
         /** SQLite folds case for ASCII only; the name and the query are both lowercased here instead. */
         fun searchForm(text: String) = text.lowercase()
 
         fun Calculation.toStored() = StoredCalculation(
             id = UUID.fromString(id),
             status = CalculationStatus.valueOf(status),
-            input = storageJson.decodeFromString(CalculationInput.serializer(), input_json),
+            input = decodeInput(input_json),
             snapshot = snapshot_json?.let { storageJson.decodeFromString(PriceBook.serializer(), it) },
             snapshotAt = snapshot_at?.let(Instant::ofEpochMilli),
-            result = result_json?.let { storageJson.decodeFromString(StoredResult.serializer(), it).toResult() },
+            result = result_json?.let(::decodeResult),
             createdAt = Instant.ofEpochMilli(created_at),
             updatedAt = Instant.ofEpochMilli(updated_at),
         )

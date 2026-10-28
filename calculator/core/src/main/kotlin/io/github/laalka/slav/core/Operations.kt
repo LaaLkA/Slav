@@ -5,8 +5,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // Operation inputs of spec 6. Grade, group and thickness are not entered for part operations:
-// they come from the part material. Lengths are in mm. Defaults are always encoded, so stored
-// inputs keep their meaning if a default changes later.
+// they come from the part material. Welding and painting belong to the assembled product only.
+// Lengths are in mm. Defaults are always encoded, so stored inputs keep their meaning if a
+// default changes later.
 
 /** Operations of spec 6.1. */
 enum class OperationKind { LASER_SHEET, TUBE_LASER, HOLES, BENDING, WELDING, PAINTING }
@@ -60,27 +61,6 @@ sealed interface PartOperation {
     ) : PartOperation {
         override val kind get() = OperationKind.BENDING
     }
-
-    /** Welding of a part (spec 6.6); group and thickness come from the part material. */
-    @Serializable
-    @SerialName("welding")
-    data class Welding(
-        val weldType: String,
-        val rows: List<WeldRow>,
-        @EncodeDefault override val manualExtra: ManualExtra? = null,
-    ) : PartOperation {
-        override val kind get() = OperationKind.WELDING
-    }
-
-    /** Powder painting of a part (spec 6.7); the area is the material's unless overridden. */
-    @Serializable
-    @SerialName("painting")
-    data class Painting(
-        @EncodeDefault val areaOverrideM2: Decimal? = null,
-        @EncodeDefault override val manualExtra: ManualExtra? = null,
-    ) : PartOperation {
-        override val kind get() = OperationKind.PAINTING
-    }
 }
 
 /** An operation on the assembled product. */
@@ -89,20 +69,23 @@ sealed interface ProductOperation {
     val kind: OperationKind
     val manualExtra: ManualExtra?
 
-    /** Assembly welding (spec 6.6): there is no single material, so group and thickness are chosen. */
+    /**
+     * Welding of the assembly (spec 6.6), the only welding there is: there is no single material,
+     * so group and thickness are chosen. [seamLengthMm] is the total length of all seams.
+     */
     @Serializable
     @SerialName("assembly_welding")
     data class AssemblyWelding(
         val weldType: String,
         val group: String,
         val thicknessMm: Decimal,
-        val rows: List<WeldRow>,
+        val seamLengthMm: Decimal,
         @EncodeDefault override val manualExtra: ManualExtra? = null,
     ) : ProductOperation {
         override val kind get() = OperationKind.WELDING
     }
 
-    /** Product painting (spec 6.7); the area is Σ part area × quantity per product unless overridden. */
+    /** Product painting (spec 6.7), the only painting there is; the area is Σ part areas (each at least the minimum) unless overridden. */
     @Serializable
     @SerialName("product_painting")
     data class Painting(
@@ -116,10 +99,10 @@ sealed interface ProductOperation {
 /** How the sheet cut length is obtained (spec 6.2). */
 @Serializable
 sealed interface SheetCutMode {
-    /** Cut length 2 × (length + width) of the part, one pierce. */
+    /** Cut length and pierces of the sheet's [SheetShape]: all its contours, one pierce each. */
     @Serializable
-    @SerialName("rectangle")
-    data object Rectangle : SheetCutMode
+    @SerialName("by_shape")
+    data object ByShape : SheetCutMode
 
     /** Total cut length of all contours from the drawing; round holes go to [PartOperation.Holes]. */
     @Serializable
@@ -137,6 +120,3 @@ data class HoleRow(
 
 @Serializable
 data class BendRow(val lengthMm: Decimal, val count: Int)
-
-@Serializable
-data class WeldRow(val lengthMm: Decimal, val count: Int)

@@ -71,7 +71,7 @@ class SettingsTransferTest {
                 sheetThicknessesMm = listOf(dec("2.0"), dec("25")),
                 roundTubes = emptyList(),
                 profileTubes = emptyList(),
-                angles = listOf(AngleSize("50×50×5", dec("50"), dec("50"), dec("5"), dec("3.77"))),
+                angles = listOf(AngleSize("63×63×6", dec("63"), dec("63"), dec("6"), dec("5.72"))),
                 channels = emptyList(),
                 iBeams = emptyList(),
             ),
@@ -151,7 +151,8 @@ class SettingsTransferTest {
         assertEquals(SectionChanges(added = 0, changed = 1, removed = 1), summary[SettingsSection.GRADES])
         assertEquals(SectionChanges(added = 1, changed = 0, removed = 12), summary[SettingsSection.SHEET_THICKNESSES])
         assertEquals(SectionChanges(added = 0, changed = 0, removed = 1), summary[SettingsSection.PAINTING])
-        assertEquals(SectionChanges(added = 1, changed = 0, removed = 0), summary[SettingsSection.ANGLES])
+        // The four sample angles of the default settings are not in the file; its 63×63×6 is new.
+        assertEquals(SectionChanges(added = 1, changed = 0, removed = 4), summary[SettingsSection.ANGLES])
 
         val backup = transfer.replace(incoming)
 
@@ -195,7 +196,10 @@ class SettingsTransferTest {
         assertEquals(local.sortament.sheetThicknessesMm.size + 1, merged.sortament.sheetThicknessesMm.size)
         assertEquals(1, cellsAt("2", merged.materialPricesPerKg.map { it.thicknessMm }))
         assertEquals(1, cellsAt("2", merged.laserSheetCutPerCm.map { it.thicknessMm }))
-        assertEquals(1, cellsAt("2", merged.bendingPerBend.map { it.thicknessMm }))
+        // A bending cell is a thickness × range pair: the file's 2.00 / «до 100» cell replaced the local one, no twin is left.
+        assertEquals(1, merged.bendingPerBend.count { it.thicknessMm.compareTo(dec("2")) == 0 && it.upToMm?.compareTo(dec("100")) == 0 })
+        assertEquals(local.bendingPerBend.size, merged.bendingPerBend.size)
+        assertEquals(1, cellsAt("2", merged.weldingPerCm.filter { it.weldType == "полуавтомат" }.map { it.thicknessMm }))
 
         // The values from the file, found by the exact names the calculator looks prices up by.
         assertEquals(dec("250"), merged.materialPricesPerKg.priceFor("Ст3", dec("2")))
@@ -209,7 +213,8 @@ class SettingsTransferTest {
         assertEquals(SectionChanges(added = 0, changed = 1, removed = 0), summary[SettingsSection.MATERIAL_PRICES])
         assertEquals(SectionChanges(added = 1, changed = 1, removed = 0), summary[SettingsSection.LASER_SHEET_CUT])
         assertEquals(SectionChanges(added = 0, changed = 1, removed = 0), summary[SettingsSection.BENDING])
-        assertEquals(SectionChanges(added = 1, changed = 0, removed = 0), summary[SettingsSection.WELDING])
+        // The file's «АРГОН» / 3 mm cell is the local argon cell, with another price.
+        assertEquals(SectionChanges(added = 0, changed = 1, removed = 0), summary[SettingsSection.WELDING])
     }
 
     @Test

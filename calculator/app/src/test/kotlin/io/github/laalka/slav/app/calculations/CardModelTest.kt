@@ -3,9 +3,10 @@ package io.github.laalka.slav.app.calculations
 import io.github.laalka.slav.app.Deps
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
+import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.ProductOperation
-import io.github.laalka.slav.core.WeldRow
+import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.StoredCalculation
@@ -49,23 +50,23 @@ class CardModelTest {
 
         val state = card(id).state.value
 
-        assertEquals("11 280,00 ₽", state.unitPrice)
-        assertEquals("112 800,00 ₽", state.total)
-        assertEquals("15,7 кг", state.unitMass)
-        assertEquals("157 кг", state.runMass)
+        assertEquals("11 340,00 ₽", state.unitPrice)
+        assertEquals("113 400,00 ₽", state.total)
+        assertEquals("16 кг", state.unitMass)
+        assertEquals("160 кг", state.runMass)
         assertEquals("10", state.quantityText)
         val part = state.parts.single()
         assertEquals(
             listOf(
-                CardLine("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", null, "3 140,00 ₽"),
+                CardLine("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", null, "3 200,00 ₽"),
                 CardLine("Лазер: рез листа", null, "8 000,00 ₽"),
                 CardLine("Гибка", null, "100,00 ₽"),
-                CardLine("Сварка (полуавтомат)", null, "40,00 ₽"),
             ),
             part.lines,
         )
-        assertEquals("11 280,00 ₽", part.cost)
-        assertEquals("1 шт на изделие · 15,7 кг за шт", part.details)
+        assertEquals("11 300,00 ₽", part.cost)
+        assertEquals("Масса: 16 кг", part.details)
+        assertEquals(listOf(CardLine("Сварка сборки (полуавтомат)", null, "40,00 ₽")), state.productLines)
         assertEquals(formatDate(LocalDate.now()), state.snapshotDate)
         assertEquals(CalculationStatus.MANUAL.toList().sortedBy { it.ordinal }, state.statusOptions)
     }
@@ -74,17 +75,61 @@ class CardModelTest {
     fun `manual extras with their comments and product lines are part of the breakdown`() {
         val golden = goldenInput()
         val input = golden.copy(
-            parts = golden.parts.map { it.copy(qtyPerProduct = 2, materialExtra = ManualExtra(Money(BigDecimal("500")), "срочно")) },
-            productOperations = listOf(ProductOperation.AssemblyWelding("полуавтомат", "Сталь", BigDecimal("2"), listOf(WeldRow(BigDecimal("100"), 1)))),
+            parts = golden.parts.map { it.copy(materialExtra = ManualExtra(Money(BigDecimal("500")), "срочно")) },
+            productOperations = listOf(ProductOperation.AssemblyWelding("полуавтомат", "Сталь", BigDecimal("2"), seamLengthMm = BigDecimal("100"))),
         )
         val state = card(deps.saveCalculated(input)).state.value
 
         val part = state.parts.single()
-        assertEquals(CardLine("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "в т. ч. доп. операции 500,00 ₽ — срочно", "3 640,00 ₽"), part.lines.first())
-        assertEquals("× 2 шт = 23 560,00 ₽", part.perProduct)
+        assertEquals(CardLine("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "в т. ч. доп. операции 500,00 ₽ — срочно", "3 700,00 ₽"), part.lines.first())
+        assertEquals("11 800,00 ₽", part.cost)
         // 100 mm = 10 cm × 10 ₽/cm of semi-automatic welding, steel, 2 mm.
         assertEquals(listOf(CardLine("Сварка сборки (полуавтомат)", null, "100,00 ₽")), state.productLines)
-        assertEquals("23 660,00 ₽", state.unitPrice)
+        assertEquals("11 900,00 ₽", state.unitPrice)
+    }
+
+    @Test
+    fun `every part is one piece, identical parts are listed one by one and add up`() {
+        val golden = goldenInput(quantity = 2)
+        val input = golden.copy(parts = golden.parts + golden.parts.map { it.copy(name = "Кронштейн (копия)") })
+
+        val state = card(deps.saveCalculated(input)).state.value
+
+        assertEquals(listOf("Кронштейн", "Кронштейн (копия)"), state.parts.map { it.title })
+        assertEquals(listOf("11 300,00 ₽", "11 300,00 ₽"), state.parts.map { it.cost })
+        // 2 × 11 300 + 40 of the assembly welding.
+        assertEquals("22 640,00 ₽", state.unitPrice)
+        assertEquals("32 кг", state.unitMass)
+    }
+
+    @Test
+    fun `the mass from the drawing is the mass of the part, of the product and of the run`() {
+        val golden = goldenInput(quantity = 10)
+        val input = golden.copy(parts = golden.parts.map { it.copy(massOverrideKg = BigDecimal("12.5")) })
+
+        val state = card(deps.saveCalculated(input)).state.value
+
+        assertEquals("Масса: 12,5 кг", state.parts.single().details)
+        assertEquals("12,5 кг", state.unitMass)
+        assertEquals("125 кг", state.runMass)
+        // 12.5 kg × 200 ₽/kg = 2500.00 instead of 3200.00.
+        assertEquals("2 500,00 ₽", state.parts.single().lines.first().cost)
+        assertEquals("10 640,00 ₽", state.unitPrice)
+    }
+
+    @Test
+    fun `the material line names the shape of a sheet`() {
+        val golden = goldenInput()
+        fun title(shape: SheetShape) = card(
+            deps.saveCalculated(golden.copy(parts = golden.parts.map { it.copy(material = Material.Sheet("Ст3", BigDecimal("2"), shape), operations = emptyList()) })),
+        ).state.value.parts.single().lines.first().title
+
+        assertEquals("Материал: Лист Ст3, 2 мм, круг R 50 мм", title(SheetShape.Circle(BigDecimal("50"))))
+        assertEquals("Материал: Лист Ст3, 2 мм, кольцо R 50 / r 20 мм", title(SheetShape.Ring(BigDecimal("50"), BigDecimal("20"))))
+        assertEquals(
+            "Материал: Лист Ст3, 2 мм, произвольная форма, площадь 12000,5 мм², периметр 500 мм",
+            title(SheetShape.Free(BigDecimal("12000.5"), BigDecimal("500"))),
+        )
     }
 
     @Test
@@ -97,11 +142,11 @@ class CardModelTest {
 
         card.onQuantityChange("10")
 
-        assertEquals("112 800,00 ₽", card.state.value.total)
-        assertEquals("11 280,00 ₽", card.state.value.unitPrice)
+        assertEquals("113 400,00 ₽", card.state.value.total)
+        assertEquals("11 340,00 ₽", card.state.value.unitPrice)
         val after = stored(id)
         assertEquals(10, after.quantity)
-        assertEquals(0, BigDecimal("11280.00").compareTo(assertNotNull(after.unitPrice).amount))
+        assertEquals(0, BigDecimal("11340.00").compareTo(assertNotNull(after.unitPrice).amount))
         assertEquals(before.snapshot, after.snapshot)
         assertEquals(before.snapshotAt, after.snapshotAt)
         assertEquals(before.result, after.result)
@@ -119,10 +164,10 @@ class CardModelTest {
         assertEquals("Заполните", card.state.value.quantityError)
 
         assertEquals(1, stored(id).quantity)
-        assertEquals("11 280,00 ₽", card.state.value.total)
+        assertEquals("11 340,00 ₽", card.state.value.total)
         card.onQuantityChange("3")
         assertNull(card.state.value.quantityError)
-        assertEquals("33 840,00 ₽", card.state.value.total)
+        assertEquals("34 020,00 ₽", card.state.value.total)
     }
 
     @Test
@@ -136,8 +181,8 @@ class CardModelTest {
         card.prepareRecalc()
 
         val preview = assertNotNull(card.state.value.recalc)
-        assertEquals("11 280,00 ₽", preview.oldUnitPrice)
-        assertEquals("12 850,00 ₽", preview.newUnitPrice)
+        assertEquals("11 340,00 ₽", preview.oldUnitPrice)
+        assertEquals("12 940,00 ₽", preview.newUnitPrice)
         assertEquals(false, preview.unchanged)
         assertEquals(before, stored(id), "nothing changes before the answer")
 
@@ -149,11 +194,11 @@ class CardModelTest {
         card.confirmRecalc()
 
         val after = stored(id)
-        assertEquals(0, BigDecimal("12850.00").compareTo(assertNotNull(after.unitPrice).amount))
+        assertEquals(0, BigDecimal("12940.00").compareTo(assertNotNull(after.unitPrice).amount))
         assertEquals(0, BigDecimal("300").compareTo(assertNotNull(after.st3TwoMillimetrePrice())), "the snapshot holds the current prices")
         assertEquals(CalculationStatus.CALCULATED, after.status)
         assertNull(card.state.value.recalc)
-        assertEquals("12 850,00 ₽", card.state.value.unitPrice)
+        assertEquals("12 940,00 ₽", card.state.value.unitPrice)
     }
 
     @Test

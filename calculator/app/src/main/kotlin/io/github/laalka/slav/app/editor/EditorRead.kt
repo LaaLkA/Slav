@@ -21,7 +21,7 @@ import io.github.laalka.slav.core.ProductOperation
 import io.github.laalka.slav.core.ProfileTubeSize
 import io.github.laalka.slav.core.RoundTubeSize
 import io.github.laalka.slav.core.SheetCutMode
-import io.github.laalka.slav.core.WeldRow
+import io.github.laalka.slav.core.SheetShape
 import java.math.BigDecimal
 
 // A draft is stored as a CalculationInput (spec 7.2), which has no empty fields. Every required
@@ -47,6 +47,11 @@ object EditorTags {
 
     fun materialLine(part: String) = "$part/material"
 
+    /** The field of [part]'s [dimension]; the radio button of its sheet shape is "[part]/shape/<kind>". */
+    fun dimension(part: String, dimension: DimensionField) = "$part/${dimension.tag}"
+
+    fun shape(part: String, kind: ShapeKind) = "$part/shape/${kind.name}"
+
     fun row(line: String, index: Int) = "$line/rows/$index"
 }
 
@@ -54,6 +59,7 @@ const val NOT_CHOSEN = "Выберите"
 const val NOT_A_COUNT = "Целое число больше нуля"
 const val NO_ROWS = "Добавьте хотя бы одну строку"
 const val NO_PARTS = "Добавьте деталь"
+const val INNER_NOT_SMALLER = "Внутренний радиус должен быть меньше наружного"
 
 /**
  * [input] is always complete enough to be stored as a draft; it can be calculated only when
@@ -99,43 +105,57 @@ private class FormReader {
 
     private fun part(tag: String, form: PartForm) = Part(
         name = text("$tag/name", form.name),
-        qtyPerProduct = count("$tag/quantity", form.quantity),
         material = material(tag, form.material),
         operations = OperationKind.entries.mapNotNull { kind ->
             form.operations[kind]?.let { partOperation(EditorTags.operation(tag, kind), it) }
         },
         materialExtra = extra(EditorTags.materialLine(tag), form.materialExtra),
+        massOverrideKg = optionalPositive("$tag/mass-override", form.massOverride),
     )
 
     fun material(tag: String, form: MaterialForm): Material {
         val grade = choice("$tag/grade", form.grade).orEmpty()
         val size = choice("$tag/size", form.size)
-        val length = positive("$tag/length", form.length)
+        // Only the dimensions of the sheet's shape are read, so a hidden field never blocks the calculation.
+        fun dimension(field: DimensionField) = positive(EditorTags.dimension(tag, field), form.dimension(field))
         return when (form.kind) {
             SortamentKind.SHEET -> Material.Sheet(
                 grade,
                 thicknessMm = (size as? SizeChoice.Sheet)?.thicknessMm ?: BigDecimal.ZERO,
-                lengthMm = length,
-                widthMm = positive("$tag/width", form.width),
+                shape = when (form.shape) {
+                    ShapeKind.RECTANGLE -> SheetShape.Rectangle(dimension(DimensionField.LENGTH), dimension(DimensionField.WIDTH))
+                    ShapeKind.CIRCLE -> SheetShape.Circle(dimension(DimensionField.RADIUS))
+                    ShapeKind.RING -> ring(tag, dimension(DimensionField.OUTER_RADIUS), dimension(DimensionField.INNER_RADIUS))
+                    ShapeKind.FREE -> SheetShape.Free(dimension(DimensionField.AREA), dimension(DimensionField.PERIMETER))
+                },
             )
             SortamentKind.ROUND_TUBE -> {
+                val length = dimension(DimensionField.LENGTH)
                 val tube = (size as? SizeChoice.RoundTube)?.size ?: UNSET_ROUND_TUBE
                 Material.RoundTube(grade, tube.diameterMm, tube.wallMm, length)
             }
             SortamentKind.PROFILE_TUBE -> {
+                val length = dimension(DimensionField.LENGTH)
                 val tube = (size as? SizeChoice.ProfileTube)?.size ?: UNSET_PROFILE_TUBE
                 Material.ProfileTube(grade, tube.sideAMm, tube.sideBMm, tube.wallMm, length)
             }
-            SortamentKind.ANGLE -> Material.Angle(grade, (size as? SizeChoice.Angle)?.size ?: UNSET_ANGLE, length)
-            SortamentKind.CHANNEL -> Material.Channel(grade, (size as? SizeChoice.Beam)?.size ?: UNSET_BEAM, length)
-            SortamentKind.I_BEAM -> Material.IBeam(grade, (size as? SizeChoice.Beam)?.size ?: UNSET_BEAM, length)
+            SortamentKind.ANGLE -> Material.Angle(grade, (size as? SizeChoice.Angle)?.size ?: UNSET_ANGLE, dimension(DimensionField.LENGTH))
+            SortamentKind.CHANNEL -> Material.Channel(grade, (size as? SizeChoice.Beam)?.size ?: UNSET_BEAM, dimension(DimensionField.LENGTH))
+            SortamentKind.I_BEAM -> Material.IBeam(grade, (size as? SizeChoice.Beam)?.size ?: UNSET_BEAM, dimension(DimensionField.LENGTH))
         }
+    }
+
+    /** A ring needs its inner radius smaller than the outer one; the error sits on the inner field. */
+    private fun ring(tag: String, outer: BigDecimal, inner: BigDecimal): SheetShape.Ring {
+        val innerTag = EditorTags.dimension(tag, DimensionField.INNER_RADIUS)
+        if (outer.signum() > 0 && inner.signum() > 0 && inner >= outer && innerTag !in errors) errors[innerTag] = INNER_NOT_SMALLER
+        return SheetShape.Ring(outer, inner)
     }
 
     private fun partOperation(tag: String, form: PartOperationForm): PartOperation = when (form) {
         is LaserSheetForm -> PartOperation.LaserSheet(
             mode = when (form.mode) {
-                CutMode.RECTANGLE -> SheetCutMode.Rectangle
+                CutMode.BY_SHAPE -> SheetCutMode.ByShape
                 CutMode.CONTOUR -> SheetCutMode.ContourLength(
                     lengthMm = positive("$tag/contour-length", form.contourLength),
                     pierces = count("$tag/pierces", form.pierces),
@@ -154,12 +174,6 @@ private class FormReader {
             rows = rows(tag, form.rows) { rowTag, row -> BendRow(positive("$rowTag/length", row.length), count("$rowTag/count", row.count)) },
             manualExtra = extra(tag, form.extra),
         )
-        is WeldingForm -> PartOperation.Welding(
-            weldType = choice("$tag/weld-type", form.weldType).orEmpty(),
-            rows = weldRows(tag, form.rows),
-            manualExtra = extra(tag, form.extra),
-        )
-        is PaintingForm -> PartOperation.Painting(optionalPositive("$tag/area", form.areaOverride), extra(tag, form.extra))
     }
 
     private fun productOperation(tag: String, form: ProductOperationForm): ProductOperation = when (form) {
@@ -167,14 +181,11 @@ private class FormReader {
             weldType = choice("$tag/weld-type", form.weldType).orEmpty(),
             group = choice("$tag/group", form.group).orEmpty(),
             thicknessMm = choice("$tag/thickness", form.thicknessMm) ?: BigDecimal.ZERO,
-            rows = weldRows(tag, form.rows),
+            seamLengthMm = positive("$tag/seam-length", form.seamLength),
             manualExtra = extra(tag, form.extra),
         )
         is PaintingForm -> ProductOperation.Painting(optionalPositive("$tag/area", form.areaOverride), extra(tag, form.extra))
     }
-
-    private fun weldRows(tag: String, rows: List<CountRowForm>) =
-        rows(tag, rows) { rowTag, row -> WeldRow(positive("$rowTag/length", row.length), count("$rowTag/count", row.count)) }
 
     private fun <R, T> rows(tag: String, rows: List<R>, read: (String, R) -> T): List<T> {
         if (rows.isEmpty()) errors["$tag/rows"] = NO_ROWS
@@ -241,7 +252,7 @@ fun CalculationInput.toForm(newId: () -> Long): CalculationForm = CalculationFor
                 weldType = op.weldType.ifEmpty { null },
                 group = op.group.ifEmpty { null },
                 thicknessMm = op.thicknessMm.takeIf { it.signum() > 0 },
-                rows = op.rows.map { CountRowForm(newId(), positiveText(it.lengthMm), countText(it.count)) },
+                seamLength = positiveText(op.seamLengthMm),
                 extra = op.manualExtra.toForm(),
             )
             is ProductOperation.Painting -> PaintingForm(op.areaOverrideM2?.let(::positiveText).orEmpty(), op.manualExtra.toForm())
@@ -252,13 +263,13 @@ fun CalculationInput.toForm(newId: () -> Long): CalculationForm = CalculationFor
 private fun Part.toForm(newId: () -> Long) = PartForm(
     id = newId(),
     name = name,
-    quantity = countText(qtyPerProduct),
     material = material.toForm(),
+    massOverride = massOverrideKg?.let(::positiveText).orEmpty(),
     materialExtra = materialExtra.toForm(),
     operations = operations.associate { op ->
         op.kind to when (op) {
             is PartOperation.LaserSheet -> when (val mode = op.mode) {
-                SheetCutMode.Rectangle -> LaserSheetForm(CutMode.RECTANGLE, extra = op.manualExtra.toForm())
+                SheetCutMode.ByShape -> LaserSheetForm(CutMode.BY_SHAPE, extra = op.manualExtra.toForm())
                 is SheetCutMode.ContourLength ->
                     LaserSheetForm(CutMode.CONTOUR, positiveText(mode.lengthMm), countText(mode.pierces), op.manualExtra.toForm())
             }
@@ -271,12 +282,6 @@ private fun Part.toForm(newId: () -> Long) = PartForm(
                 op.rows.map { CountRowForm(newId(), positiveText(it.lengthMm), countText(it.count)) },
                 op.manualExtra.toForm(),
             )
-            is PartOperation.Welding -> WeldingForm(
-                op.weldType.ifEmpty { null },
-                op.rows.map { CountRowForm(newId(), positiveText(it.lengthMm), countText(it.count)) },
-                op.manualExtra.toForm(),
-            )
-            is PartOperation.Painting -> PaintingForm(op.areaOverrideM2?.let(::positiveText).orEmpty(), op.manualExtra.toForm())
         }
     },
 )
@@ -284,10 +289,18 @@ private fun Part.toForm(newId: () -> Long) = PartForm(
 private fun Material.toForm(): MaterialForm {
     val grade = grade.ifEmpty { null }
     return when (this) {
-        is Material.Sheet -> MaterialForm(
-            SortamentKind.SHEET, grade, thicknessMm.takeIf { it.signum() > 0 }?.let(SizeChoice::Sheet),
-            positiveText(lengthMm), positiveText(widthMm),
-        )
+        is Material.Sheet -> {
+            val sheet = MaterialForm(SortamentKind.SHEET, grade, thicknessMm.takeIf { it.signum() > 0 }?.let(SizeChoice::Sheet))
+            when (val outline = shape) {
+                is SheetShape.Rectangle ->
+                    sheet.copy(shape = ShapeKind.RECTANGLE, length = positiveText(outline.lengthMm), width = positiveText(outline.widthMm))
+                is SheetShape.Circle -> sheet.copy(shape = ShapeKind.CIRCLE, radius = positiveText(outline.radiusMm))
+                is SheetShape.Ring -> sheet.copy(
+                    shape = ShapeKind.RING, outerRadius = positiveText(outline.outerRadiusMm), innerRadius = positiveText(outline.innerRadiusMm),
+                )
+                is SheetShape.Free -> sheet.copy(shape = ShapeKind.FREE, area = positiveText(outline.areaMm2), perimeter = positiveText(outline.perimeterMm))
+            }
+        }
         is Material.RoundTube -> MaterialForm(
             SortamentKind.ROUND_TUBE, grade,
             RoundTubeSize(diameterMm, wallMm).takeUnless { it == UNSET_ROUND_TUBE }?.let(SizeChoice::RoundTube),

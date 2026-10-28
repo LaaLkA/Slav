@@ -38,7 +38,7 @@ class CalculationListModelTest {
     @AfterTest
     fun close() = deps.close()
 
-    /** «Кронштейн» 11 280,00 × 1, «Опора» 11 280,00 × 3 and the draft «Рама». */
+    /** «Кронштейн» 11 340,00 × 1, «Опора» 11 340,00 × 3 and the draft «Рама». */
     private fun stored() {
         bracket = deps.saveCalculated(goldenInput("Кронштейн", quantity = 1))
         support = deps.saveCalculated(goldenInput("Опора", quantity = 3))
@@ -63,9 +63,9 @@ class CalculationListModelTest {
         val rows = model().state.value.rows.associateBy { it.name }
 
         val support = assertNotNull(rows["Опора"])
-        assertEquals("11 280,00 ₽", support.unitPrice)
+        assertEquals("11 340,00 ₽", support.unitPrice)
         assertEquals("3", support.quantity)
-        assertEquals("33 840,00 ₽", support.total)
+        assertEquals("34 020,00 ₽", support.total)
         assertEquals(CalculationStatus.CALCULATED, support.status)
         assertTrue(support.updatedAt.startsWith(formatDate(LocalDate.now())))
         val frame = assertNotNull(rows["Рама"])

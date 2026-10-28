@@ -66,12 +66,12 @@ class CalculationRepositoryTest {
         val stored = assertNotNull(calculations.get(id))
         assertEquals(CalculationStatus.CALCULATED, stored.status)
         assertEquals(book.priced(input), stored.result)
-        assertEquals(Money(dec("15841.00")), stored.unitPrice)
+        assertEquals(Money(dec("7950.50")), stored.unitPrice)
         assertEquals(book, stored.snapshot)
         assertEquals(clock.now, stored.snapshotAt)
         val row = calculations.list().single()
-        assertEquals("15841.00", row.unitPrice?.amount?.toPlainString())
-        assertEquals("47523.00", row.total?.amount?.toPlainString())
+        assertEquals("7950.50", row.unitPrice?.amount?.toPlainString())
+        assertEquals("23851.50", row.total?.amount?.toPlainString())
     }
 
     @Test
@@ -204,11 +204,11 @@ class CalculationRepositoryTest {
 
     @Test
     fun `sorts by price and total with drafts last in either direction`() {
-        calculated(sheetInput("Дорогой", quantity = 1, cutExtra = "300")) // 16141.00, total 16141.00
+        calculated(sheetInput("Дорогой", quantity = 1, cutExtra = "300")) // 8100.50, total 8100.50
         clock.advance(Duration.ofMinutes(1))
         calculations.saveDraft(sheetInput("Черновик"))
         clock.advance(Duration.ofMinutes(1))
-        calculated(sheetInput("Дешёвый", quantity = 10, cutExtra = "0")) // 15541.00, total 155410.00
+        calculated(sheetInput("Дешёвый", quantity = 10, cutExtra = "0")) // 7800.50, total 78005.00
 
         fun sorted(column: CalculationSortColumn, descending: Boolean) =
             names(calculations.list(sort = CalculationSort(column, descending)))
@@ -270,7 +270,7 @@ class CalculationRepositoryTest {
         assertEquals(10, after.quantity)
         assertEquals(before.result, after.result)
         assertEquals(before.snapshot, after.snapshot)
-        assertEquals("158410.00", calculations.list().single().total?.amount?.toPlainString())
+        assertEquals("79505.00", calculations.list().single().total?.amount?.toPlainString())
         assertFailsWith<IllegalArgumentException> { calculations.setQuantity(id, 0) }
     }
 

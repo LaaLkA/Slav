@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -39,7 +38,6 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.settings.SortamentKind
@@ -56,6 +54,9 @@ private val WIDE_NUMBER_WIDTH = 208.dp
 
 // Segments share the row's width equally; this fits «Труба профильная» on one line.
 private val KIND_ROW_WIDTH = 960.dp
+
+// Four segments: «Прямоугольник / полоса» is the longest.
+private val SHAPE_ROW_WIDTH = 720.dp
 
 // The parameters of a checked operation sit under its title, past the checkbox.
 private val PARAMS_INDENT = 48.dp
@@ -120,7 +121,6 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
     SectionCard(part.title) {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
             TextInput(part.name, "Название детали", { model.onPartNameChange(part.id, it) }, Modifier.weight(1f))
-            NumberInput(part.quantity, "На изделие, шт", { model.onPartQuantityChange(part.id, it) })
             TextButton(
                 onClick = { model.copyPart(part.id) },
                 modifier = Modifier.padding(top = Spacing.small).testTag("${part.tag}/copy"),
@@ -142,11 +142,30 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                 ) { Text(kind.title, maxLines = 1, softWrap = false) }
             }
         }
+        part.shape?.let { shape ->
+            Caption("Форма")
+            SingleChoiceSegmentedButtonRow(Modifier.width(SHAPE_ROW_WIDTH)) {
+                ShapeKind.entries.forEachIndexed { index, kind ->
+                    SegmentedButton(
+                        selected = kind == shape,
+                        onClick = { model.onShapeChange(part.id, kind) },
+                        shape = SegmentedButtonDefaults.itemShape(index, ShapeKind.entries.size),
+                        modifier = Modifier.testTag(EditorTags.shape(part.tag, kind)),
+                    ) { Text(kind.title, maxLines = 1, softWrap = false) }
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
             Choice(part.grade, Modifier.width(CHOICE_WIDTH)) { model.onGradeChange(part.id, part.grade.options[it]) }
             Choice(part.size, Modifier.width(CHOICE_WIDTH)) { model.onSizeChange(part.id, part.sizeOptions[it]) }
-            NumberInput(part.length, "Длина, мм", { model.onLengthChange(part.id, it) })
-            part.width?.let { NumberInput(it, "Ширина, мм", { text -> model.onWidthChange(part.id, text) }) }
+            part.dimensions.forEach { dimension ->
+                key(dimension.field) {
+                    NumberInput(dimension.value, dimension.field.label, { model.onDimensionChange(part.id, dimension.field, it) }, WIDE_NUMBER_WIDTH)
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
+            NumberInput(part.massOverride, "Вес по чертежу, кг", { model.onMassOverrideChange(part.id, it) }, WIDE_NUMBER_WIDTH)
             Column(Modifier.padding(top = Spacing.small)) {
                 Text("Масса детали", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
@@ -155,6 +174,14 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                     modifier = Modifier.testTag("${part.tag}/mass"),
                     softWrap = false,
                 )
+                if (part.massFromDrawing) {
+                    Text(
+                        "по чертежу",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("${part.tag}/mass-hint"),
+                    )
+                }
             }
         }
         ExtraRow(part.materialExtra, currency, LineRef.MaterialOf(part.id), model)
@@ -201,7 +228,7 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
                 }
             }
             when (params.mode) {
-                CutMode.RECTANGLE -> Hint("Длина реза — периметр детали 2 × (длина + ширина), одно пробитие.")
+                CutMode.BY_SHAPE -> Hint("Длина реза — все контуры формы детали; пробитий столько же, сколько контуров: кольцо — 2, остальные формы — 1.")
                 CutMode.CONTOUR -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
                         NumberInput(params.contourLength, "Длина реза L, мм", { if (part != null) model.onContourLengthChange(part, it) }, WIDE_NUMBER_WIDTH)
@@ -226,7 +253,6 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
                             NumberInput(row.diameter, "Диаметр d, мм", { model.onRowLengthChange(line, row.id, it) })
                             NumberInput(row.count, "Кол-во, шт", { model.onRowCountChange(line, row.id, it) })
-                            ReadOnlyNumber("Глубина, мм", params.depth, "${row.tag}/depth")
                             if (params.bothWallsAvailable && part != null) {
                                 CheckRow(
                                     "Через обе стенки",
@@ -247,25 +273,19 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
             CountRows(line, params.rows, "Длина гиба, мм", "Гибов, шт", model)
             RowsFooter(params.rowsError, "Добавить гиб", params.addTag) { model.addRow(line) }
         }
-        is OperationParams.Welding -> {
-            Choice(params.weldType, Modifier.width(CHOICE_WIDTH)) { model.onWeldTypeChange(line, params.weldType.options[it]) }
-            CountRows(line, params.rows, "Длина шва, мм", "Кол-во, шт", model)
-            RowsFooter(params.rowsError, "Добавить шов", params.addTag) { model.addRow(line) }
-        }
         is OperationParams.AssemblyWelding -> {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-                Choice(params.weldType, Modifier.width(CHOICE_WIDTH)) { model.onWeldTypeChange(line, params.weldType.options[it]) }
+                Choice(params.weldType, Modifier.width(CHOICE_WIDTH)) { model.onAssemblyWeldTypeChange(params.weldType.options[it]) }
                 Choice(params.group, Modifier.width(CHOICE_WIDTH)) { model.onAssemblyGroupChange(params.group.options[it]) }
                 Choice(params.thickness, Modifier.width(CHOICE_WIDTH)) { model.onAssemblyThicknessChange(params.thicknessOptions[it]) }
             }
-            CountRows(line, params.rows, "Длина шва, мм", "Кол-во, шт", model)
-            RowsFooter(params.rowsError, "Добавить шов", params.addTag) { model.addRow(line) }
+            NumberInput(params.seamLength, "Длина шва, мм", model::onSeamLengthChange, WIDE_NUMBER_WIDTH)
         }
         is OperationParams.Painting -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
             NumberInput(params.areaOverride, "Своя площадь, м²", { model.onAreaOverrideChange(line, it) }, WIDE_NUMBER_WIDTH)
             Hint(
-                params.autoArea?.let { "По габаритам — $it. Пустое поле — считать по габаритам." }
-                    ?: "Площадь по габаритам появится, когда заполнены размеры и количество деталей.",
+                params.autoArea?.let { "По габаритам — $it: ${params.minAreaHint}. Пустое поле — считать по габаритам." }
+                    ?: "Площадь по габаритам появится, когда заполнены размеры деталей: ${params.minAreaHint}.",
                 Modifier.padding(top = FIELD_TEXT_OFFSET),
             )
         }
@@ -396,19 +416,9 @@ private fun Choice(choice: ChoiceView, modifier: Modifier, onSelect: (Int) -> Un
     ChoiceField(choice.label, choice.selected, choice.options, onSelect, modifier, error = choice.error, testTag = choice.tag)
 }
 
-/** A value the user does not type, drawn as a field so it lines up with the row (spec 6.4: depth = thickness). */
 @Composable
-private fun ReadOnlyNumber(label: String, value: String, tag: String) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = {},
-        readOnly = true,
-        enabled = false,
-        label = { Text(label) },
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge.tabular().copy(textAlign = TextAlign.End),
-        modifier = Modifier.width(NUMBER_WIDTH).testTag(tag),
-    )
+private fun Caption(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable

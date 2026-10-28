@@ -1,8 +1,10 @@
 package io.github.laalka.slav.app.editor
 
+import io.github.laalka.slav.app.settings.NumberInput
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.settings.allThicknesses
 import io.github.laalka.slav.app.settings.parseDecimal
+import io.github.laalka.slav.app.settings.readPositive
 import io.github.laalka.slav.app.settings.sheetThicknesses
 import io.github.laalka.slav.app.settings.toInputText
 import io.github.laalka.slav.app.ui.formatMeasure
@@ -84,19 +86,23 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
         val material = form.material.read()
         val grade = book.grades.firstOrNull { it.name == form.material.grade }
         val sizes = book.sizeOptions(kind)
+        // The mass from the drawing, once it is a valid number, is the mass of the part whatever the dimensions say.
+        val drawingMass = (readPositive(form.massOverride) as? NumberInput.Valid)?.value
+        val computedMass = if (material.complete && grade != null) material.material.massKg(grade.densityKgM3) else null
         return PartView(
             id = form.id,
             tag = tag,
             title = "Деталь ${index + 1}",
             name = field("$tag/name", form.name),
-            quantity = field("$tag/quantity", form.quantity),
             kind = kind,
             grade = choice("$tag/grade", "Марка", form.material.grade, book.grades.map { it.name }, NO_GRADES),
             size = choice("$tag/size", kind.sizeLabel(), form.material.size?.label(), sizes.map { it.label() }, NO_SIZES),
             sizeOptions = sizes,
-            length = field("$tag/length", form.material.length),
-            width = if (kind == SortamentKind.SHEET) field("$tag/width", form.material.width) else null,
-            mass = if (material.complete && grade != null) "${formatMeasure(material.material.massKg(grade.densityKgM3))} кг" else null,
+            shape = form.material.shape.takeIf { kind == SortamentKind.SHEET },
+            dimensions = form.material.dimensions.map { DimensionView(it, field(EditorTags.dimension(tag, it), form.material.dimension(it))) },
+            massOverride = field("$tag/mass-override", form.massOverride),
+            mass = (drawingMass ?: computedMass)?.let { "${formatMeasure(it)} кг" },
+            massFromDrawing = drawingMass != null,
             materialExtra = extra(EditorTags.materialLine(tag), form.materialExtra),
             operations = OperationKind.entries.mapNotNull { partOperation(tag, form, it, material) },
         )
@@ -152,22 +158,11 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
                         )
                     },
                     rowsError = errors["$tag/rows"],
-                    depth = thickness?.toInputText() ?: "",
                     bothWallsAvailable = materialForm.kind.hasTwoWalls,
                     addTag = "$tag/add-row",
                 )
             }
             is BendingForm -> OperationParams.Bending(countRows(tag, form.rows), errors["$tag/rows"], "$tag/add-row")
-            is WeldingForm -> OperationParams.Welding(
-                choice("$tag/weld-type", "Тип сварки", form.weldType, book.general.weldTypes, NO_WELD_TYPES),
-                countRows(tag, form.rows),
-                errors["$tag/rows"],
-                "$tag/add-row",
-            )
-            is PaintingForm -> OperationParams.Painting(
-                material.material.paintAreaM2.takeIf { material.dimensionsComplete }?.let { "${formatMeasure(it)} м²" },
-                field("$tag/area", form.areaOverride),
-            )
         }
     }
 
@@ -183,12 +178,10 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
                     group = choice("$tag/group", "Группа", op.group, book.groups.map { it.name }, NO_GROUPS),
                     thickness = choice("$tag/thickness", "Толщина, мм", op.thicknessMm?.toInputText(), thicknesses.map { it.toInputText() }, NO_SIZES),
                     thicknessOptions = thicknesses,
-                    rows = countRows(tag, op.rows),
-                    rowsError = errors["$tag/rows"],
-                    addTag = "$tag/add-row",
+                    seamLength = field("$tag/seam-length", op.seamLength),
                 )
             }
-            is PaintingForm -> OperationParams.Painting(productArea(form), field("$tag/area", op.areaOverride))
+            is PaintingForm -> OperationParams.Painting(productArea(form), field("$tag/area", op.areaOverride), minAreaHint())
         }
         return OperationView(
             ref = LineRef.OfProduct(kind),
@@ -201,15 +194,19 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
         )
     }
 
-    /** Σ part area × quantity per product (spec 6.7), once every part's dimensions and quantity are filled. */
+    /** Σ part areas, each at least the minimum of the settings (spec 6.7), once every part's dimensions are filled. */
     private fun productArea(form: CalculationForm): String? {
         val parts = form.parts.map { part ->
             val material = part.material.read()
-            val quantity = part.quantity.trim().toIntOrNull()?.takeIf { it > 0 }
-            if (!material.dimensionsComplete || quantity == null) return null
-            Part(part.name, quantity, material.material, operations = emptyList())
+            if (!material.dimensionsComplete) return null
+            Part(part.name, material.material, operations = emptyList())
         }
-        return if (parts.isEmpty()) null else "${formatMeasure(parts.paintAreaM2())} м²"
+        return if (parts.isEmpty()) null else "${formatMeasure(parts.paintAreaM2(book.general.minPaintAreaPerPartM2))} м²"
+    }
+
+    private fun minAreaHint(): String {
+        val min = formatMeasure(book.general.minPaintAreaPerPartM2)
+        return "детали меньше $min м² считаются как $min м²"
     }
 
     private fun countRows(tag: String, rows: List<CountRowForm>) = rows.mapIndexed { index, row ->

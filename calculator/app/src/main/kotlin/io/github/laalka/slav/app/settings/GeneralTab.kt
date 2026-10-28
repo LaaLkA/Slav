@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
@@ -23,6 +24,11 @@ import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
 
 private val FIELD_WIDTH = 240.dp
+
+/** Test tags of «Общие». */
+object GeneralTags {
+    const val MIN_PAINT_AREA = "settings/general/min-paint-area"
+}
 
 @Composable
 fun GeneralTab(model: GeneralModel) {
@@ -67,6 +73,15 @@ fun GeneralTab(model: GeneralModel) {
                 InputField(
                     state.tubeLaserMaxSection.text, model::onMaxSectionChange, Modifier.width(FIELD_WIDTH),
                     label = "Максимальное сечение, мм", error = state.tubeLaserMaxSection.error, numeric = true,
+                )
+            }
+            SectionCard(
+                "Покраска",
+                subtitle = "Деталь меньше этой площади при покраске изделия считается как эта площадь. 0 — без минимума.",
+            ) {
+                InputField(
+                    state.minPaintAreaPerPart.text, model::onMinPaintAreaChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.MIN_PAINT_AREA),
+                    label = "Мин. площадь окраски детали, м²", error = state.minPaintAreaPerPart.error, numeric = true,
                 )
             }
             SectionCard("Тема оформления") {

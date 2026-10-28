@@ -88,21 +88,26 @@ class EditorModel(
 
     fun onPartNameChange(part: Long, text: String) = editPart(part) { it.copy(name = text) }
 
-    fun onPartQuantityChange(part: Long, text: String) = editPart(part) { it.copy(quantity = text) }
+    /** The mass from the drawing; blank means the mass computed from the dimensions. */
+    fun onMassOverrideChange(part: Long, text: String) = editPart(part) { it.copy(massOverride = text) }
 
-    /** A new kind has other sizes, so the size is picked again; the width belongs to a sheet only. */
+    /** A new kind has other sizes, so the size is picked again; the shape belongs to a sheet only. */
     fun onKindChange(part: Long, kind: SortamentKind) = editMaterial(part) { material ->
-        if (material.kind == kind) material
-        else material.copy(kind = kind, size = null, width = if (kind == SortamentKind.SHEET) material.width else "")
+        when {
+            material.kind == kind -> material
+            kind == SortamentKind.SHEET -> material.copy(kind = kind, size = null)
+            else -> material.copy(kind = kind, size = null).withoutSheetShape()
+        }
     }
+
+    fun onShapeChange(part: Long, shape: ShapeKind) = editMaterial(part) { it.copy(shape = shape) }
 
     fun onGradeChange(part: Long, grade: String) = editMaterial(part) { it.copy(grade = grade) }
 
     fun onSizeChange(part: Long, size: SizeChoice) = editMaterial(part) { it.copy(size = size) }
 
-    fun onLengthChange(part: Long, text: String) = editMaterial(part) { it.copy(length = text) }
-
-    fun onWidthChange(part: Long, text: String) = editMaterial(part) { it.copy(width = text) }
+    /** A dimension of the material: the length of a long product, or a dimension of the sheet's shape. */
+    fun onDimensionChange(part: Long, field: DimensionField, text: String) = editMaterial(part) { it.withDimension(field, text) }
 
     /** Checking an operation opens its parameters with their defaults; only an available operation can be checked. */
     fun setChecked(line: LineRef, checked: Boolean) = when (line) {
@@ -145,7 +150,7 @@ class EditorModel(
         if (op is HolesForm) op.copy(rows = op.rows.filterNot { it.id == row }) else op.withCountRows { rows -> rows.filterNot { it.id == row } }
     }
 
-    /** The diameter of a hole, the length of a bend or a seam. */
+    /** The diameter of a hole or the length of a bend. */
     fun onRowLengthChange(line: LineRef, row: Long, text: String) = editOperation(line) { op ->
         if (op is HolesForm) op.copy(rows = op.rows.map { if (it.id == row) it.copy(diameter = text) else it })
         else op.withCountRows { rows -> rows.map { if (it.id == row) it.copy(length = text) else it } }
@@ -161,13 +166,10 @@ class EditorModel(
             (op as HolesForm).copy(rows = op.rows.map { if (it.id == row) it.copy(throughBothWalls = checked) else it })
         }
 
-    fun onWeldTypeChange(line: LineRef, weldType: String) = editOperation(line) { op ->
-        when (op) {
-            is WeldingForm -> op.copy(weldType = weldType)
-            is AssemblyWeldingForm -> op.copy(weldType = weldType)
-            else -> op
-        }
-    }
+    fun onAssemblyWeldTypeChange(weldType: String) = editAssemblyWelding { it.copy(weldType = weldType) }
+
+    /** The total length of all seams of the assembly. */
+    fun onSeamLengthChange(text: String) = editAssemblyWelding { it.copy(seamLength = text) }
 
     fun onAssemblyGroupChange(group: String) = editAssemblyWelding { it.copy(group = group) }
 
@@ -349,12 +351,11 @@ class EditorModel(
         OperationKind.TUBE_LASER -> TubeLaserForm()
         OperationKind.HOLES -> HolesForm(listOf(HoleRowForm(newId())))
         OperationKind.BENDING -> BendingForm(listOf(CountRowForm(newId())))
-        OperationKind.WELDING -> WeldingForm(book.general.weldTypes.firstOrNull(), listOf(CountRowForm(newId())))
-        OperationKind.PAINTING -> PaintingForm()
+        OperationKind.WELDING, OperationKind.PAINTING -> error("$kind is not a part operation")
     }
 
     private fun newProductOperation(kind: OperationKind): ProductOperationForm = when (kind) {
-        OperationKind.WELDING -> AssemblyWeldingForm(book.general.weldTypes.firstOrNull(), group = null, thicknessMm = null, rows = listOf(CountRowForm(newId())))
+        OperationKind.WELDING -> AssemblyWeldingForm(book.general.weldTypes.firstOrNull(), group = null, thicknessMm = null)
         OperationKind.PAINTING -> PaintingForm()
         OperationKind.LASER_SHEET, OperationKind.TUBE_LASER, OperationKind.HOLES, OperationKind.BENDING ->
             error("$kind is not a product operation")

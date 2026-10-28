@@ -8,9 +8,8 @@ import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.OperationLine
-import io.github.laalka.slav.core.Part
-import io.github.laalka.slav.core.PartOperation
 import io.github.laalka.slav.core.ProductOperation
+import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.StoredCalculation
 import java.math.BigDecimal
@@ -20,17 +19,14 @@ import java.time.ZoneId
 /** One line of the breakdown, the material or an operation; [cost] includes [extra] (spec 3). */
 data class BreakdownLine(val title: String, val extra: ManualExtra?, val cost: Money)
 
-/** A part priced once: [cost] and [massKg] are for one piece. */
+/** One part, one piece of the product; [massKg] is the one from the drawing when it was given. */
 data class BreakdownPart(
     val name: String,
-    val qtyPerProduct: Int,
     val massKg: BigDecimal,
     /** The material line first, then the operations in the order they were entered. */
     val lines: List<BreakdownLine>,
     val cost: Money,
-) {
-    val costPerProduct: Money get() = cost * qtyPerProduct
-}
+)
 
 /**
  * A priced calculation as the card and the exports show it (spec 8.2, 8.5). Every amount is a
@@ -66,11 +62,10 @@ fun StoredCalculation.breakdown(zone: ZoneId): Breakdown? {
             val input = input.parts.getOrNull(index)
             BreakdownPart(
                 name = part.name,
-                qtyPerProduct = part.qtyPerProduct,
                 massKg = part.massKg,
                 lines = listOf(
                     BreakdownLine(input?.material?.let { "Материал: ${it.description()}" } ?: "Материал", part.material.manualExtra, part.material.cost),
-                ) + part.operations.map { BreakdownLine(it.partTitle(input), it.manualExtra, it.cost) },
+                ) + part.operations.map { BreakdownLine(it.kind.title, it.manualExtra, it.cost) },
                 cost = part.cost,
             )
         },
@@ -85,7 +80,7 @@ fun StoredCalculation.breakdown(zone: ZoneId): Breakdown? {
 /** "Лист Ст3, 2 мм, 1000 × 1000 мм": the rolled kind, the grade, the size and the part's dimensions. */
 fun Material.description(): String {
     val size = when (this) {
-        is Material.Sheet -> "${thicknessMm.toInputText()} мм, ${lengthMm.toInputText()} × ${widthMm.toInputText()} мм"
+        is Material.Sheet -> "${thicknessMm.toInputText()} мм, ${shape.description()}"
         is Material.RoundTube -> "${diameterMm.toInputText()} × ${wallMm.toInputText()}, длина ${lengthMm.toInputText()} мм"
         is Material.ProfileTube ->
             "${sideAMm.toInputText()} × ${sideBMm.toInputText()} × ${wallMm.toInputText()}, длина ${lengthMm.toInputText()} мм"
@@ -96,10 +91,11 @@ fun Material.description(): String {
     return "${kind.title} $grade, $size"
 }
 
-/** The checklist title; welding names its type, a part has at most one operation of each kind. */
-private fun OperationLine.partTitle(part: Part?): String {
-    val welding = part?.operations?.firstOrNull { it.kind == kind } as? PartOperation.Welding
-    return if (welding != null) "${kind.title} (${welding.weldType})" else kind.title
+private fun SheetShape.description(): String = when (this) {
+    is SheetShape.Rectangle -> "${lengthMm.toInputText()} × ${widthMm.toInputText()} мм"
+    is SheetShape.Circle -> "круг R ${radiusMm.toInputText()} мм"
+    is SheetShape.Ring -> "кольцо R ${outerRadiusMm.toInputText()} / r ${innerRadiusMm.toInputText()} мм"
+    is SheetShape.Free -> "произвольная форма, площадь ${areaMm2.toInputText()} мм², периметр ${perimeterMm.toInputText()} мм"
 }
 
 private fun OperationLine.productTitle(operations: List<ProductOperation>): String = when (kind) {

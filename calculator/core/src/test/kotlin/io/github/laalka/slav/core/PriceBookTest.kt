@@ -15,18 +15,45 @@ class PriceBookTest {
     @Test
     fun `default settings follow the specification`() {
         val general = book.general
+        assertEquals(2, PriceBook.FORMAT_VERSION)
         assertEquals(PriceBook.FORMAT_VERSION, book.formatVersion)
         assertEquals("₽", general.currencySymbol)
         assertEquals(listOf("100", "300", "500", "1000"), general.bendRangeBoundsMm.map { it.toPlainString() })
         assertEquals(listOf("полуавтомат", "аргон", "лазер"), general.weldTypes)
         assertDecimal("200", general.tubeLaserMaxSectionMm)
+        assertDecimal("0.1", general.minPaintAreaPerPartM2)
         assertEquals(listOf(MaterialGroup(STEEL)), book.groups)
-        assertEquals(listOf(Grade(ST3, STEEL, dec("7850"))), book.grades)
+        assertEquals(listOf(Grade(ST3, STEEL, dec("8000"))), book.grades)
         assertEquals(thicknesses, book.sortament.sheetThicknessesMm.map { it.toPlainString() })
     }
 
     @Test
-    fun `default prices are the spreadsheet example`() {
+    fun `default sortament holds the sample sizes`() {
+        val sortament = book.sortament
+        assertEquals(
+            listOf("20×2", "32×2", "57×3", "108×4", "219×6"),
+            sortament.roundTubes.map { "${it.diameterMm.toPlainString()}×${it.wallMm.toPlainString()}" },
+        )
+        assertEquals(
+            listOf("20×20×2", "40×20×2", "60×40×3", "100×100×4", "200×200×6"),
+            sortament.profileTubes.map { "${it.sideAMm.toPlainString()}×${it.sideBMm.toPlainString()}×${it.wallMm.toPlainString()}" },
+        )
+        assertEquals(
+            listOf("25×25×3" to "1.12", "50×50×5" to "3.77", "75×75×6" to "6.89", "100×100×8" to "12.25"),
+            sortament.angles.map { it.designation to it.massPerMeterKg.toPlainString() },
+        )
+        assertEquals(
+            listOf(listOf("10П", "100", "46", "4.5", "8.59"), listOf("16П", "160", "64", "5.0", "14.2"), listOf("20П", "200", "76", "5.2", "18.4")),
+            sortament.channels.map { listOf(it.designation, it.heightMm, it.flangeWidthMm, it.thicknessMm, it.massPerMeterKg).map { v -> v.toString() } },
+        )
+        assertEquals(
+            listOf(listOf("10Б1", "100", "55", "4.1", "8.1"), listOf("20Б1", "200", "100", "5.6", "22.4"), listOf("30Б1", "296", "140", "5.8", "32.9")),
+            sortament.iBeams.map { listOf(it.designation, it.heightMm, it.flangeWidthMm, it.thicknessMm, it.massPerMeterKg).map { v -> v.toString() } },
+        )
+    }
+
+    @Test
+    fun `default prices keep the spreadsheet example`() {
         fun column(lookup: (java.math.BigDecimal) -> java.math.BigDecimal?) =
             thicknesses.map { lookup(dec(it))?.toPlainString() }
 
@@ -51,13 +78,77 @@ class PriceBookTest {
             listOf("10", "10", "10", "10", "15", "15", "15", "15", "20", "20", "25", "25", "30"),
             column { book.weldingPerCm.priceFor("полуавтомат", STEEL, it) },
         )
-        assertEquals(13, book.bendingPerBend.size)
-        assertEquals(13, book.weldingPerCm.size)
-        assertTrue(book.tubeLaserCutPerCm.isEmpty())
-        assertTrue(book.tubeLaserPiercePerPiece.isEmpty())
-        assertNull(book.bendingPerBend.priceFor(STEEL, dec("2"), book.general.bendRangeFor(dec("101"))))
-        assertNull(book.weldingPerCm.priceFor("аргон", STEEL, dec("2")))
-        assertNull(book.paintingPerM2)
+    }
+
+    @Test
+    fun `default tube laser, bending, welding and painting prices are filled with test values`() {
+        fun column(lookup: (java.math.BigDecimal) -> java.math.BigDecimal?) =
+            thicknesses.map { lookup(dec(it))?.toPlainString() }
+
+        assertEquals(
+            listOf("15", "30", "45", "60", "75", "90", "120", "150", "180", "210", "240", "270", "300"),
+            column { book.tubeLaserCutPerCm.priceFor(STEEL, it) },
+        )
+        assertEquals(
+            listOf("5", "5", "5", "10", "10", "15", "15", "20", "20", "25", "25", "30", "35"),
+            column { book.tubeLaserPiercePerPiece.priceFor(STEEL, it) },
+        )
+        // Range k costs «до 100» × (1 + 0.5 × k): a 2 mm bend is 25, 37.5, 50, 62.5, 75.
+        val ranges = book.general.bendRanges()
+        assertEquals(
+            listOf("25", "37.5", "50", "62.5", "75"),
+            ranges.map { book.bendingPerBend.priceFor(STEEL, dec("2"), it)?.toPlainString() },
+        )
+        assertEquals(
+            listOf("200", "300", "400", "500", "600"),
+            ranges.map { book.bendingPerBend.priceFor(STEEL, dec("20"), it)?.toPlainString() },
+        )
+        assertEquals(5 * 13, book.bendingPerBend.size)
+        // Argon is twice and laser three times the semi-automatic price.
+        for (t in thicknesses.map(::dec) + listOf(dec("4.5"), dec("5.8"))) {
+            val semiAutomatic = checkNotNull(book.weldingPerCm.priceFor("полуавтомат", STEEL, t)) { "no price at $t" }
+            assertDecimal((semiAutomatic * dec("2")).toPlainString(), book.weldingPerCm.priceFor("аргон", STEEL, t))
+            assertDecimal((semiAutomatic * dec("3")).toPlainString(), book.weldingPerCm.priceFor("лазер", STEEL, t))
+        }
+        assertDecimal("450", book.paintingPerM2)
+    }
+
+    @Test
+    fun `a section thickness between sheet thicknesses takes the lower sheet price`() {
+        // Channel 10П has a 4.5 mm web and I-beam 20Б1 a 5.6 mm web: priced as 4 and 5 mm.
+        assertDecimal("400", book.materialPricesPerKg.priceFor(ST3, dec("4.5")))
+        assertDecimal("500", book.materialPricesPerKg.priceFor(ST3, dec("5.6")))
+        assertDecimal("60", book.tubeLaserCutPerCm.priceFor(STEEL, dec("4.1")))
+        assertDecimal("15", book.weldingPerCm.priceFor("полуавтомат", STEEL, dec("5.2")))
+    }
+
+    @Test
+    fun `every sample size can be priced with every operation applicable to it`() {
+        val sheets = book.sortament.sheetThicknessesMm.map { Material.Sheet(ST3, it, SheetShape.Rectangle(dec("300"), dec("200"))) }
+        val tubes = book.sortament.roundTubes.map { Material.RoundTube(ST3, it.diameterMm, it.wallMm, dec("1000")) } +
+            book.sortament.profileTubes.map { Material.ProfileTube(ST3, it.sideAMm, it.sideBMm, it.wallMm, dec("1000")) } +
+            book.sortament.angles.map { Material.Angle(ST3, it, dec("1000")) } +
+            book.sortament.channels.map { Material.Channel(ST3, it, dec("1000")) } +
+            book.sortament.iBeams.map { Material.IBeam(ST3, it, dec("1000")) }
+        fun operationsOf(material: Material): List<PartOperation> = buildList {
+            if (isApplicable(OperationKind.LASER_SHEET, material, book)) add(PartOperation.LaserSheet(SheetCutMode.ByShape))
+            if (isApplicable(OperationKind.TUBE_LASER, material, book)) add(PartOperation.TubeLaser())
+            if (isApplicable(OperationKind.HOLES, material, book)) add(PartOperation.Holes(listOf(HoleRow(dec("10")))))
+            // 50 mm and 2000 mm: the first and the last bend range.
+            if (isApplicable(OperationKind.BENDING, material, book)) add(PartOperation.Bending(listOf(BendRow(dec("50"), 1), BendRow(dec("2000"), 1))))
+        }
+        for (material in sheets + tubes) {
+            val input = CalculationInput(
+                name = "Образец",
+                quantity = 1,
+                parts = listOf(Part("Образец", material, operationsOf(material))),
+                productOperations = listOf(
+                    ProductOperation.AssemblyWelding("лазер", STEEL, material.thicknessMm, dec("100")),
+                    ProductOperation.Painting(),
+                ),
+            )
+            assertTrue(Calculator(book).calculate(input) is CalcOutcome.Ok, "cannot price $material: ${Calculator(book).calculate(input)}")
+        }
     }
 
     @Test
@@ -168,7 +259,7 @@ class PriceBookTest {
     @Test
     fun `renameGrade updates grades and material prices`() {
         val renamed = book.renameGrade(ST3, "Ст3сп")
-        assertEquals(listOf(Grade("Ст3сп", STEEL, dec("7850"))), renamed.grades)
+        assertEquals(listOf(Grade("Ст3сп", STEEL, dec("8000"))), renamed.grades)
         assertTrue(renamed.materialPricesPerKg.all { it.grade == "Ст3сп" })
         assertDecimal("2000", renamed.materialPricesPerKg.priceFor("Ст3сп", dec("20")))
         assertNull(renamed.materialPricesPerKg.priceFor(ST3, dec("20")))

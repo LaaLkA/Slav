@@ -14,8 +14,10 @@ import kotlin.test.assertEquals
 /**
  * One hand-computed test and one missing-price test per operation of spec 6.2–6.7. Default prices
  * for steel by thickness 1 / 2 / 3 / 4 / 5 mm: laser sheet 10 / 20 / 30 / 40 / 50 ₽/cm, sheet pierce
- * 0 / 0 / 0 / 10 / 10 ₽, bending up to 100 mm 20 / 25 / 30 / 35 / 40 ₽, semi-automatic welding
- * 10 / 10 / 10 / 10 / 15 ₽/cm. The tube-laser tables and the painting price are added here.
+ * 0 / 0 / 0 / 10 / 10 ₽, bending up to 100 mm 20 / 25 / 30 / 35 / 40 ₽ (1.5 times that for
+ * 100–300 mm), semi-automatic welding 10 / 10 / 10 / 10 / 15 ₽/cm. The tube-laser tables and the
+ * painting price are replaced here by round numbers of their own, so a result does not depend on
+ * the test values of the default book.
  */
 class OperationPricingTest {
     private val book = PriceBook.default().copy(
@@ -26,16 +28,34 @@ class OperationPricingTest {
 
     private fun steel(thicknessMm: String, price: String) = GroupPrice(STEEL, dec(thicknessMm), dec(price))
 
-    private fun sheet(thicknessMm: String, lengthMm: String, widthMm: String) =
-        Material.Sheet(ST3, dec(thicknessMm), lengthMm = dec(lengthMm), widthMm = dec(widthMm))
+    private fun sheet(thicknessMm: String, lengthMm: String, widthMm: String) = rectangleSheet(thicknessMm, lengthMm, widthMm)
 
     // 6.2 Laser sheet
 
     @Test
-    fun `laser sheet rectangle cuts the outline with one pierce`() {
+    fun `laser by shape cuts the outline of a rectangle with one pierce`() {
         // 4 mm, 300 × 200: 2 × (300 + 200) = 1000 mm = 100 cm × 40 = 4000; 1 pierce × 10 = 10 → 4010.00.
-        val cost = book.costOf(sheet("4", "300", "200"), PartOperation.LaserSheet(SheetCutMode.Rectangle))
+        val cost = book.costOf(sheet("4", "300", "200"), PartOperation.LaserSheet(SheetCutMode.ByShape))
         assertKopecks("4010.00", cost)
+    }
+
+    @Test
+    fun `laser by shape takes the cut length and the pierces from the shape`() {
+        fun byShape(shape: SheetShape) = book.costOf(Material.Sheet(ST3, dec("4"), shape), PartOperation.LaserSheet(SheetCutMode.ByShape))
+        // Circle R = 50, 4 mm: 2 × π × 50 = 314.159265358979… mm = 31.4159265358979… cm × 40 = 1256.637061435917…; 1 pierce × 10 → 1266.64.
+        assertKopecks("1266.64", byShape(SheetShape.Circle(dec("50"))))
+        // Ring R = 50, r = 20: 2 × π × 70 = 439.822971502571… mm = 43.9822971502571… cm × 40 = 1759.291886010284…; 2 pierces × 10 → 1779.29.
+        assertKopecks("1779.29", byShape(SheetShape.Ring(dec("50"), dec("20"))))
+        // Free: the typed perimeter 640 mm = 64 cm × 40 = 2560; 1 pierce × 10 → 2570.00, whatever the area.
+        assertKopecks("2570.00", byShape(SheetShape.Free(areaMm2 = dec("20000"), perimeterMm = dec("640"))))
+    }
+
+    @Test
+    fun `contour length ignores the shape`() {
+        // 4 mm: 250 mm = 25 cm × 40 = 1000; 2 pierces × 10 = 20 → 1020.00 on a ring as on a rectangle.
+        val op = PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("250"), pierces = 2))
+        assertKopecks("1020.00", book.costOf(Material.Sheet(ST3, dec("4"), SheetShape.Ring(dec("50"), dec("20"))), op))
+        assertKopecks("1020.00", book.costOf(sheet("4", "300", "200"), op))
     }
 
     @Test
@@ -48,7 +68,7 @@ class OperationPricingTest {
     @Test
     fun `laser sheet without a cut price for the thickness is reported`() {
         val noThree = book.copy(laserSheetCutPerCm = book.laserSheetCutPerCm.filterNot { it.thicknessMm.compareTo(dec("3")) == 0 })
-        val errors = noThree.errorsOf(onePart(sheet("3", "300", "200"), PartOperation.LaserSheet(SheetCutMode.Rectangle)))
+        val errors = noThree.errorsOf(onePart(sheet("3", "300", "200"), PartOperation.LaserSheet(SheetCutMode.ByShape)))
         assertEquals(listOf(MissingPrice(PriceTable.LaserSheetCut, STEEL, "3")), errors)
     }
 
@@ -80,8 +100,8 @@ class OperationPricingTest {
 
     @Test
     fun `tube laser without a cut price is reported`() {
-        // PriceBook.default() has no tube-laser prices.
-        val errors = PriceBook.default().errorsOf(onePart(roundTube, PartOperation.TubeLaser()))
+        val noTubePrices = book.copy(tubeLaserCutPerCm = emptyList(), tubeLaserPiercePerPiece = emptyList())
+        val errors = noTubePrices.errorsOf(onePart(roundTube, PartOperation.TubeLaser()))
         assertEquals(listOf(MissingPrice(PriceTable.TubeLaserCut, STEEL, "3")), errors)
     }
 
@@ -122,7 +142,8 @@ class OperationPricingTest {
     @Test
     fun `holes without tube-laser prices report both cells`() {
         val op = PartOperation.Holes(listOf(HoleRow(dec("8"), count = 2)))
-        val errors = PriceBook.default().errorsOf(onePart(profileTube, op))
+        val noTubePrices = book.copy(tubeLaserCutPerCm = emptyList(), tubeLaserPiercePerPiece = emptyList())
+        val errors = noTubePrices.errorsOf(onePart(profileTube, op))
         assertEquals(
             listOf(MissingPrice(PriceTable.TubeLaserCut, STEEL, "2"), MissingPrice(PriceTable.TubeLaserPierce, STEEL, "2")),
             errors,
@@ -131,29 +152,26 @@ class OperationPricingTest {
 
     // 6.5 Bending
 
-    private val withSecondRange = book.copy(
-        bendingPerBend = book.bendingPerBend + BendPrice(STEEL, dec("3"), dec("300"), dec("45")),
-    )
-
     @Test
     fun `bending prices each row by its length range`() {
-        // 3 mm: 2 bends of 100 mm («до 100») × 30 = 60; 1 bend of 150 mm («100–300») × 45 = 45 → 105.00.
+        // 3 mm: 2 bends of 100 mm («до 100») × 30 = 60; 1 bend of 150 mm («100–300», 1.5 × 30) × 45 = 45 → 105.00.
         val op = PartOperation.Bending(listOf(BendRow(dec("100"), 2), BendRow(dec("150"), 1)))
-        assertKopecks("105.00", withSecondRange.costOf(sheet("3", "500", "300"), op))
+        assertKopecks("105.00", book.costOf(sheet("3", "500", "300"), op))
     }
 
     @Test
     fun `a bend of exactly 100 mm is priced in the up-to-100 range`() {
         val part = sheet("3", "500", "300")
-        assertKopecks("30.00", withSecondRange.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100"), 1)))))
-        assertKopecks("30.00", withSecondRange.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100.0"), 1)))))
-        assertKopecks("45.00", withSecondRange.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100.1"), 1)))))
+        assertKopecks("30.00", book.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100"), 1)))))
+        assertKopecks("30.00", book.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100.0"), 1)))))
+        assertKopecks("45.00", book.costOf(part, PartOperation.Bending(listOf(BendRow(dec("100.1"), 1)))))
     }
 
     @Test
     fun `bending without a price for the range is reported`() {
         val op = PartOperation.Bending(listOf(BendRow(dec("350"), 1)))
-        val errors = book.errorsOf(onePart(sheet("3", "500", "300"), op))
+        val noRange = book.copy(bendingPerBend = book.bendingPerBend.filterNot { it.thicknessMm.compareTo(dec("3")) == 0 && it.upToMm?.compareTo(dec("500")) == 0 })
+        val errors = noRange.errorsOf(onePart(sheet("3", "500", "300"), op))
         assertEquals(listOf(MissingPrice(PriceTable.Bending(STEEL), "3", "300–500")), errors)
     }
 
@@ -166,23 +184,16 @@ class OperationPricingTest {
     // 6.6 Welding
 
     @Test
-    fun `part welding takes group and thickness from the material`() {
-        // Angle s = 5, semi-automatic 15 ₽/cm: (2 × 50 + 1 × 125) mm = 22.5 cm × 15 = 337.50.
-        val op = PartOperation.Welding("полуавтомат", listOf(WeldRow(dec("50"), 2), WeldRow(dec("125"), 1)))
-        assertKopecks("337.50", book.costOf(angle, op))
-    }
-
-    @Test
-    fun `assembly welding uses the chosen group and thickness and its manual extra`() {
-        val argon = book.copy(weldingPerCm = book.weldingPerCm + WeldPrice("аргон", STEEL, dec("3"), dec("18")))
+    fun `assembly welding is the total seam length times the chosen price and its manual extra`() {
+        val argon = book.copy(weldingPerCm = book.weldingPerCm.filterNot { it.weldType == "аргон" } + WeldPrice("аргон", STEEL, dec("3"), dec("18")))
         val welding = ProductOperation.AssemblyWelding(
             weldType = "аргон",
             group = STEEL,
             thicknessMm = dec("3"),
-            rows = listOf(WeldRow(dec("80"), 6), WeldRow(dec("40.5"), 2)),
+            seamLengthMm = dec("561"),
             manualExtra = ManualExtra(Money(dec("1000")), "Зачистка швов"),
         )
-        // Argon, steel 3 mm, 18 ₽/cm: (6 × 80 + 2 × 40.5) mm = 561 mm = 56.1 cm × 18 = 1009.80; + 1000 → 2009.80.
+        // Argon, steel 3 mm, 18 ₽/cm: 561 mm = 56.1 cm × 18 = 1009.80; + 1000 → 2009.80.
         // The only part is a 1 mm sheet with no argon price: taking the part's thickness would fail.
         val input = onePart(sheet("1", "100", "100")).copy(productOperations = listOf(welding))
         val line = argon.priced(input).productLines.single()
@@ -192,16 +203,24 @@ class OperationPricingTest {
     }
 
     @Test
-    fun `welding without a price for the weld type is reported at part and product level`() {
-        val input = onePart(angle, PartOperation.Welding("аргон", listOf(WeldRow(dec("50"), 1)))).copy(
+    fun `assembly welding of a short seam in the default book`() {
+        // Semi-automatic, steel, 2 mm, 10 ₽/cm: 40 mm = 4 cm → 40.00.
+        val welding = ProductOperation.AssemblyWelding("полуавтомат", STEEL, dec("2"), dec("40"))
+        assertKopecks("40.00", PriceBook.default().priced(onePart(sheet).copy(productOperations = listOf(welding))).productLines.single().cost)
+    }
+
+    @Test
+    fun `assembly welding without a price for the weld type, group and thickness is reported`() {
+        val input = onePart(angle).copy(
             productOperations = listOf(
-                ProductOperation.AssemblyWelding("полуавтомат", "Нержавеющая сталь", dec("3"), listOf(WeldRow(dec("10"), 1))),
+                ProductOperation.AssemblyWelding("полуавтомат", "Нержавеющая сталь", dec("3"), dec("10")),
+                ProductOperation.AssemblyWelding("газ", STEEL, dec("3"), dec("10")),
             ),
         )
         assertEquals(
             listOf(
-                MissingPrice(PriceTable.Welding("аргон"), STEEL, "5"),
                 MissingPrice(PriceTable.Welding("полуавтомат"), "Нержавеющая сталь", "3"),
+                MissingPrice(PriceTable.Welding("газ"), STEEL, "3"),
             ),
             book.errorsOf(input),
         )
@@ -209,32 +228,59 @@ class OperationPricingTest {
 
     // 6.7 Painting
 
+    /** A 2 mm sheet of a free shape: its painted surface is 2 × area + perimeter × 2 mm². */
+    private fun paintedSheet(areaMm2: String, perimeterMm: String) =
+        Material.Sheet(ST3, dec("2"), SheetShape.Free(dec(areaMm2), dec(perimeterMm)))
+
+    private fun productPainting(parts: List<Part>, painting: ProductOperation.Painting = ProductOperation.Painting()) =
+        CalculationInput("Рама", 1, parts, listOf(painting))
+
     @Test
-    fun `part painting area comes from the material or the override`() {
-        // 2 mm, 1000 × 500: 2 × (1000 × 500 + 500 × 2 + 1000 × 2) = 1 006 000 mm² = 1.006 m² × 350 = 352.10.
-        assertKopecks("352.10", book.costOf(sheet, PartOperation.Painting()))
-        // Override 0.75 m² × 350 = 262.50.
-        assertKopecks("262.50", book.costOf(sheet, PartOperation.Painting(areaOverrideM2 = dec("0.75"))))
+    fun `product painting area is the sum of part areas unless overridden`() {
+        val input = productPainting(listOf(Part("Лист", sheet, emptyList()), Part("Труба", profileTube, emptyList())))
+        // Sheet 1.006 m² + profile tube 2 × (40 + 20) × 6000 = 720 000 mm² = 0.72 m² → 1.726 m² × 350 = 604.10.
+        assertKopecks("604.10", book.priced(input).productLines.single().cost)
+        // Override 3 m² × 350 = 1050.00.
+        assertKopecks("1050.00", book.priced(input.copy(productOperations = listOf(ProductOperation.Painting(dec("3"))))).productLines.single().cost)
     }
 
     @Test
-    fun `product painting area is the sum of part areas times quantity unless overridden`() {
-        fun input(painting: ProductOperation.Painting) = CalculationInput(
-            name = "Рама",
-            quantity = 1,
-            parts = listOf(Part("Лист", 1, sheet, emptyList()), Part("Труба", 2, profileTube, emptyList())),
-            productOperations = listOf(painting),
-        )
-        // Sheet 1.006 m² × 1 + profile tube 2 × (40 + 20) × 6000 = 720 000 mm² = 0.72 m² × 2 = 1.44 → 2.446 m² × 350 = 856.10.
-        assertKopecks("856.10", book.priced(input(ProductOperation.Painting())).productLines.single().cost)
-        // Override 3 m² × 350 = 1050.00.
-        assertKopecks("1050.00", book.priced(input(ProductOperation.Painting(dec("3")))).productLines.single().cost)
+    fun `a part smaller than the minimum is painted as the minimum`() {
+        // 2 × 24 000 + 1000 × 2 = 50 000 mm² = 0.05 m² and 2 × 149 000 + 1000 × 2 = 300 000 mm² = 0.30 m².
+        val small = Part("Малая", paintedSheet("24000", "1000"), emptyList())
+        val large = Part("Большая", paintedSheet("149000", "1000"), emptyList())
+        assertDecimal("0.05", small.material.paintAreaM2)
+        assertDecimal("0.3", large.material.paintAreaM2)
+        // The small part counts as 0.1: 0.1 + 0.30 = 0.40 m² × 350 = 140.00, not 0.35 m² = 122.50.
+        assertKopecks("140.00", book.priced(productPainting(listOf(small, large))).productLines.single().cost)
+    }
+
+    @Test
+    fun `the minimum comes from the settings and a part at the minimum is not raised`() {
+        val small = Part("Малая", paintedSheet("24000", "1000"), emptyList())
+        val large = Part("Большая", paintedSheet("149000", "1000"), emptyList())
+        val input = productPainting(listOf(small, large))
+        fun withMinimum(value: String) = book.copy(general = book.general.copy(minPaintAreaPerPartM2 = dec(value)))
+        // Minimum 0.35: 0.35 + 0.35 = 0.70 m² × 350 = 245.00. Minimum 0: 0.05 + 0.30 = 0.35 m² = 122.50. Minimum 0.05: 0.35 m² as well.
+        assertKopecks("245.00", withMinimum("0.35").priced(input).productLines.single().cost)
+        assertKopecks("122.50", withMinimum("0").priced(input).productLines.single().cost)
+        assertKopecks("122.50", withMinimum("0.05").priced(input).productLines.single().cost)
+    }
+
+    @Test
+    fun `the area override replaces the minimum too, and the mass from the drawing never changes the area`() {
+        val small = Part("Малая", paintedSheet("24000", "1000"), emptyList(), massOverrideKg = dec("50"))
+        // Override 0.2 m² × 350 = 70.00 although the sum would be 0.1 m².
+        assertKopecks("70.00", book.priced(productPainting(listOf(small), ProductOperation.Painting(dec("0.2")))).productLines.single().cost)
+        // No override: the area of a 50 kg part is still its dimensions' 0.05 m², raised to 0.1 → 35.00.
+        assertKopecks("35.00", book.priced(productPainting(listOf(small))).productLines.single().cost)
     }
 
     @Test
     fun `painting without a price is reported`() {
-        // PriceBook.default() has no painting price.
-        val errors = PriceBook.default().errorsOf(onePart(sheet, PartOperation.Painting()))
+        // The painting price is deleted from the default book.
+        val noPrice = PriceBook.default().copy(paintingPerM2 = null)
+        val errors = noPrice.errorsOf(productPainting(listOf(Part("Лист", sheet, emptyList()))))
         assertEquals(listOf(MissingPrice(PriceTable.Painting, null, null)), errors)
     }
 
@@ -242,24 +288,25 @@ class OperationPricingTest {
 
     @Test
     fun `material line is mass times price per kg plus the manual extra`() {
-        // 57 × 3, 1000 mm: 3.9951633775701… kg × 300 ₽/kg = 1198.5490132710…; + 200.50 = 1399.0490132… → 1399.05.
+        // 57 × 3, 1000 mm: 4.0715040790523… kg (8000 kg/m³) × 300 ₽/kg = 1221.4512237157…; + 200.50 = 1421.9512237… → 1421.95.
         val extra = ManualExtra(Money(dec("200.50")), "Доставка")
         val part = book.priced(onePart(roundTube, materialExtra = extra)).parts.single()
-        assertKopecks("1399.05", part.material.cost)
+        assertKopecks("1421.95", part.material.cost)
         assertEquals(extra, part.material.manualExtra)
-        assertKopecks("1399.05", part.cost)
+        assertKopecks("1421.95", part.cost)
     }
 
     @Test
     fun `material without a price for the thickness is reported`() {
-        // Channel 10П has a 4.5 mm web; the default thickness list has no 4.5.
-        val errors = book.errorsOf(onePart(Fixtures.channel))
-        assertEquals(listOf(MissingPrice(PriceTable.MaterialPerKg, ST3, "4.5")), errors)
+        // A channel with a 4.8 mm web: the default thickness list has no 4.8.
+        val channel = Material.Channel(ST3, BeamSize("12П", dec("120"), dec("52"), dec("4.8"), dec("10.4")), dec("1000"))
+        val errors = book.errorsOf(onePart(channel))
+        assertEquals(listOf(MissingPrice(PriceTable.MaterialPerKg, ST3, "4.8")), errors)
     }
 
     @Test
     fun `unknown grade is reported`() {
-        val errors = book.errorsOf(onePart(sheet.copy(grade = "09Г2С"), PartOperation.Painting()))
+        val errors = book.errorsOf(onePart(sheet.copy(grade = "09Г2С"), PartOperation.LaserSheet(SheetCutMode.ByShape)))
         assertEquals(listOf(CalcError.UnknownGrade("09Г2С")), errors)
     }
 }

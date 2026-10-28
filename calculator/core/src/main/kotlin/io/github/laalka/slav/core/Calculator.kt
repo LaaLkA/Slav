@@ -26,11 +26,12 @@ class Calculator(private val priceBook: PriceBook) {
         val operations = part.operations.filter { checkApplicable(it.kind, material, errors) }
         // Without the grade there is no group to look operation prices up by, nor density for the mass.
         if (grade == null) return null
+        // The mass from the drawing, when given, is the mass everywhere: shown, summed and priced.
+        val massKg = part.massKg(grade.densityKgM3)
         return PartResult(
             name = part.name,
-            qtyPerProduct = part.qtyPerProduct,
-            massKg = material.massKg(grade.densityKgM3),
-            material = MaterialLine(line(priceMaterial(material, grade, priceBook, errors), part.materialExtra), part.materialExtra),
+            massKg = massKg,
+            material = MaterialLine(line(priceMaterial(material, massKg, grade, priceBook, errors), part.materialExtra), part.materialExtra),
             operations = operations.map { op ->
                 OperationLine(op.kind, line(pricePartOperation(op, material, grade.group, errors), op.manualExtra), op.manualExtra)
             },
@@ -53,17 +54,15 @@ class Calculator(private val priceBook: PriceBook) {
             is PartOperation.TubeLaser -> priceTubeLaser(op, material as Material.LongProduct, group, priceBook, errors)
             is PartOperation.Holes -> priceHoles(op, material, group, priceBook, errors)
             is PartOperation.Bending -> priceBending(op, material as Material.Sheet, group, priceBook, errors)
-            is PartOperation.Welding -> priceWelding(op.weldType, op.rows, group, material.thicknessMm, priceBook, errors)
-            is PartOperation.Painting -> pricePainting(op.areaOverrideM2 ?: material.paintAreaM2, priceBook, errors)
         }
 
     private fun priceProductOperation(op: ProductOperation, parts: List<Part>, errors: Errors): Money =
         when (op) {
             is ProductOperation.AssemblyWelding ->
-                priceWelding(op.weldType, op.rows, op.group, op.thicknessMm, priceBook, errors)
-            // The product area is Σ area by the parts' dimensions (spec 6.7), not their painting overrides.
+                priceWelding(op.weldType, op.seamLengthMm, op.group, op.thicknessMm, priceBook, errors)
+            // The product area is Σ area by the parts' dimensions (spec 6.7), never by their mass from the drawing.
             is ProductOperation.Painting -> pricePainting(
-                op.areaOverrideM2 ?: parts.paintAreaM2(),
+                op.areaOverrideM2 ?: parts.paintAreaM2(priceBook.general.minPaintAreaPerPartM2),
                 priceBook,
                 errors,
             )
@@ -85,20 +84,19 @@ sealed interface CalcOutcome {
  * sums of rounded lines and agree with the breakdown to the kopeck (spec 10).
  */
 data class CalcResult(val parts: List<PartResult>, val productLines: List<OperationLine>) {
-    /** Σ (part cost × quantity per product) + Σ product lines. */
-    val unitPrice: Money = parts.map { it.cost * it.qtyPerProduct }.sum() + productLines.map { it.cost }.sum()
+    /** Σ part cost + Σ product lines. */
+    val unitPrice: Money = parts.map { it.cost }.sum() + productLines.map { it.cost }.sum()
 
-    /** Σ (part mass × quantity per product). */
-    val unitMassKg: BigDecimal = parts.sumOf { it.massKg * it.qtyPerProduct.toBigDecimal() }
+    /** Σ part mass. */
+    val unitMassKg: BigDecimal = parts.sumOf { it.massKg }
 
     /** The run total; the run size is changed on the card without recalculating (spec 8.2). */
     fun total(quantity: Int): Money = unitPrice * quantity
 }
 
-/** One part, priced once; [cost] is for one piece. */
+/** One part, one piece of the product; [massKg] is the override from the drawing when it was given. */
 data class PartResult(
     val name: String,
-    val qtyPerProduct: Int,
     val massKg: BigDecimal,
     val material: MaterialLine,
     /** In the order the operations were entered. */

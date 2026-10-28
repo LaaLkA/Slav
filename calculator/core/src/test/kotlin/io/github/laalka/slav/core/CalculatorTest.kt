@@ -8,60 +8,61 @@ import io.github.laalka.slav.core.Fixtures.sheet
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 class CalculatorTest {
-    /** The structure of a calculation in the old spreadsheet (sheet «прощет») with its example prices. */
-    private val spreadsheetInput = CalculationInput(
-        name = "Просчёт",
+    /** The golden case: one part «Кронштейн» and the welding of the assembly, on the default prices. */
+    private val goldenInput = CalculationInput(
+        name = "Кронштейн",
         quantity = 10,
         parts = listOf(
             Part(
-                name = "Деталь",
-                qtyPerProduct = 1,
-                material = Material.Sheet(ST3, dec("2"), lengthMm = dec("1000"), widthMm = dec("1000")),
+                name = "Кронштейн",
+                material = rectangleSheet("2", "1000", "1000"),
                 operations = listOf(
                     PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("4000"), pierces = 3)),
                     PartOperation.Bending(listOf(BendRow(dec("80"), 4))),
-                    PartOperation.Welding("полуавтомат", listOf(WeldRow(dec("40"), 1))),
                 ),
             ),
         ),
-        productOperations = emptyList(),
+        productOperations = listOf(ProductOperation.AssemblyWelding("полуавтомат", STEEL, dec("2"), seamLengthMm = dec("40"))),
     )
 
     @Test
-    fun `golden test reproduces the old spreadsheet`() {
-        val result = PriceBook.default().priced(spreadsheetInput)
+    fun `golden test on the default prices`() {
+        val result = PriceBook.default().priced(goldenInput)
         val part = result.parts.single()
-        // 1000 × 1000 × 2 mm = 0.002 m³ × 7850 = 15.70 kg; × 200 ₽/kg (Ст3, 2 mm) = 3140.00.
-        assertDecimal("15.70", part.massKg)
-        assertKopecks("3140.00", part.material.cost)
+        // 1000 × 1000 × 2 mm = 0.002 m³ × 8000 = 16.00 kg; × 200 ₽/kg (Ст3, 2 mm) = 3200.00.
+        assertDecimal("16.00", part.massKg)
+        assertKopecks("3200.00", part.material.cost)
         // Laser: 4000 mm = 400 cm × 20 ₽/cm = 8000.00; 3 pierces × 0 = 0.
         // Bending: 4 bends of 80 mm («до 100», 2 mm) × 25 = 100.00.
-        // Welding: semi-automatic, 40 mm = 4 cm × 10 ₽/cm = 40.00.
-        assertEquals(
-            listOf(OperationKind.LASER_SHEET, OperationKind.BENDING, OperationKind.WELDING),
-            part.operations.map { it.kind },
-        )
-        assertEquals(listOf("8000.00", "100.00", "40.00"), part.operations.map { it.cost.amount.toPlainString() })
-        // 3140 + 8000 + 100 + 40 = 11280.00; × 10 = 112800.00.
-        assertKopecks("11280.00", part.cost)
-        assertKopecks("11280.00", result.unitPrice)
-        assertKopecks("112800.00", result.total(10))
-        assertDecimal("15.70", result.unitMassKg)
+        assertEquals(listOf(OperationKind.LASER_SHEET, OperationKind.BENDING), part.operations.map { it.kind })
+        assertEquals(listOf("8000.00", "100.00"), part.operations.map { it.cost.amount.toPlainString() })
+        assertKopecks("11300.00", part.cost)
+        // Assembly welding: semi-automatic, steel, 2 mm, seam 40 mm = 4 cm × 10 ₽/cm = 40.00.
+        assertEquals(listOf(OperationKind.WELDING), result.productLines.map { it.kind })
+        assertKopecks("40.00", result.productLines.single().cost)
+        // 3200 + 8000 + 0 + 100 + 40 = 11340.00; × 10 = 113400.00.
+        assertKopecks("11340.00", result.unitPrice)
+        assertKopecks("113400.00", result.total(10))
+        assertDecimal("16.00", result.unitMassKg)
     }
 
     @Test
     fun `two missing cells yield two errors in one outcome`() {
-        val noThree = PriceBook.default().let { book ->
-            book.copy(laserSheetCutPerCm = book.laserSheetCutPerCm.filterNot { it.thicknessMm.compareTo(dec("3")) == 0 })
+        val broken = PriceBook.default().let { book ->
+            book.copy(
+                laserSheetCutPerCm = book.laserSheetCutPerCm.filterNot { it.thicknessMm.compareTo(dec("3")) == 0 },
+                paintingPerM2 = null,
+            )
         }
-        val part = Material.Sheet(ST3, dec("3"), lengthMm = dec("400"), widthMm = dec("300"))
-        // Neither the 3 mm laser cell nor the painting price (unset by default) is filled.
-        val errors = noThree.errorsOf(onePart(part, PartOperation.LaserSheet(SheetCutMode.Rectangle), PartOperation.Painting()))
+        val input = onePart(rectangleSheet("3", "400", "300"), PartOperation.LaserSheet(SheetCutMode.ByShape))
+            .copy(productOperations = listOf(ProductOperation.Painting()))
+        // Neither the 3 mm laser cell nor the painting price is filled.
         assertEquals(
             listOf(MissingPrice(PriceTable.LaserSheetCut, STEEL, "3"), MissingPrice(PriceTable.Painting, null, null)),
-            errors,
+            broken.errorsOf(input),
         )
     }
 
@@ -72,12 +73,11 @@ class CalculatorTest {
             name = "Ошибки",
             quantity = 1,
             parts = listOf(
-                Part("Неизвестная марка", 1, sheet.copy(grade = "AISI 304"), listOf(PartOperation.LaserSheet(SheetCutMode.Rectangle))),
-                Part("Гнутая труба", 1, roundTube, listOf(PartOperation.Bending(listOf(BendRow(dec("50"), 1))))),
-                Part("Большая труба", 1, bigTube, listOf(PartOperation.TubeLaser())),
-                Part("Окрашенный лист", 1, sheet, listOf(PartOperation.Painting())),
+                Part("Неизвестная марка", sheet.copy(grade = "AISI 304"), listOf(PartOperation.LaserSheet(SheetCutMode.ByShape))),
+                Part("Гнутая труба", roundTube, listOf(PartOperation.Bending(listOf(BendRow(dec("50"), 1))))),
+                Part("Большая труба", bigTube, listOf(PartOperation.TubeLaser())),
             ),
-            productOperations = emptyList(),
+            productOperations = listOf(ProductOperation.Painting()),
         )
         assertEquals(
             listOf(
@@ -86,7 +86,7 @@ class CalculatorTest {
                 CalcError.SectionTooLarge(OperationKind.TUBE_LASER, bigTube, BigDecimal(200)),
                 MissingPrice(PriceTable.Painting, null, null),
             ),
-            PriceBook.default().errorsOf(input),
+            PriceBook.default().copy(paintingPerM2 = null).errorsOf(input),
         )
     }
 
@@ -95,10 +95,13 @@ class CalculatorTest {
         val input = CalculationInput(
             name = "Две покраски",
             quantity = 1,
-            parts = listOf(Part("А", 1, sheet, listOf(PartOperation.Painting())), Part("Б", 2, roundTube, listOf(PartOperation.Painting()))),
-            productOperations = listOf(ProductOperation.Painting()),
+            parts = listOf(Part("А", sheet, emptyList()), Part("Б", roundTube, emptyList())),
+            productOperations = listOf(ProductOperation.Painting(), ProductOperation.Painting(dec("2"))),
         )
-        assertEquals(listOf(MissingPrice(PriceTable.Painting, null, null)), PriceBook.default().errorsOf(input))
+        assertEquals(
+            listOf(MissingPrice(PriceTable.Painting, null, null)),
+            PriceBook.default().copy(paintingPerM2 = null).errorsOf(input),
+        )
     }
 
     @Test
@@ -109,29 +112,22 @@ class CalculatorTest {
             materialPricesPerKg = default.materialPricesPerKg.map { if (isOne(it.thicknessMm)) it.copy(pricePerKg = dec("0.1")) else it },
             laserSheetCutPerCm = default.laserSheetCutPerCm.map { if (isOne(it.thicknessMm)) it.copy(price = dec("1")) else it },
         )
-        val input = CalculationInput(
-            name = "Округление",
-            quantity = 2,
-            parts = listOf(
-                Part(
-                    name = "Лист",
-                    qtyPerProduct = 3,
-                    material = Material.Sheet(ST3, dec("1"), lengthMm = dec("1000"), widthMm = dec("1000")),
-                    operations = listOf(PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("7.85")))),
-                ),
-            ),
-            productOperations = emptyList(),
+        fun leaf(name: String) = Part(
+            name = name,
+            material = Material.Sheet(ST3, dec("1"), SheetShape.Rectangle(dec("1000"), dec("1000"))),
+            operations = listOf(PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("7.85")))),
         )
+        val input = CalculationInput(name = "Округление", quantity = 2, parts = listOf(leaf("Лист 1"), leaf("Лист 2")), productOperations = emptyList())
         val result = book.priced(input)
-        val part = result.parts.single()
-        // Material 7.85 kg × 0.1 = 0.785 → 0.79 (half-even would give 0.78).
-        assertKopecks("0.79", part.material.cost)
-        // Laser 7.85 mm = 0.785 cm × 1 ₽/cm + 1 pierce × 0 = 0.785 → 0.79.
+        val part = result.parts.first()
+        // 1000 × 1000 × 1 mm = 0.001 m³ × 8000 = 8 kg; material 8 × 0.1 = 0.80.
+        assertKopecks("0.80", part.material.cost)
+        // Laser 7.85 mm = 0.785 cm × 1 ₽/cm + 1 pierce × 0 = 0.785 → 0.79 (half-even would give 0.78).
         assertKopecks("0.79", part.operations.single().cost)
-        // 0.79 + 0.79 = 1.58, not round(0.785 + 0.785) = 1.57.
-        assertKopecks("1.58", part.cost)
-        assertKopecks("4.74", result.unitPrice)
-        assertKopecks("9.48", result.total(2))
+        // 0.80 + 0.79 = 1.59; two parts make 3.18, the sum of rounded lines, not round(2 × 1.585) = 3.17.
+        assertKopecks("1.59", part.cost)
+        assertKopecks("3.18", result.unitPrice)
+        assertKopecks("6.36", result.total(2))
     }
 
     @Test
@@ -139,33 +135,63 @@ class CalculatorTest {
         val book = PriceBook.default()
         val extra = ManualExtra(Money(dec("150")), "Снятие фаски")
         // 4 mm, 300 × 200: 100 cm × 40 + 1 × 10 = 4010; + 150 = 4160.00.
-        val part = Material.Sheet(ST3, dec("4"), lengthMm = dec("300"), widthMm = dec("200"))
-        val line = book.priced(onePart(part, PartOperation.LaserSheet(SheetCutMode.Rectangle, extra))).parts.single().operations.single()
+        val line = book.priced(onePart(rectangleSheet("4", "300", "200"), PartOperation.LaserSheet(SheetCutMode.ByShape, extra)))
+            .parts.single().operations.single()
         assertKopecks("4160.00", line.cost)
         assertEquals(extra, line.manualExtra)
     }
 
     @Test
-    fun `unit price and mass count each part by its quantity per product`() {
+    fun `unit price and mass add up the parts, identical parts are listed one by one`() {
+        val leaf = Part("Лист", rectangleSheet("1", "1000", "1000"), emptyList())
         val input = CalculationInput(
             name = "Сборка",
             quantity = 4,
-            parts = listOf(
-                Part("Лист", 2, Material.Sheet(ST3, dec("1"), lengthMm = dec("1000"), widthMm = dec("1000")), emptyList()),
-                Part("Труба", 3, roundTube, emptyList()),
-            ),
-            productOperations = listOf(
-                ProductOperation.AssemblyWelding("полуавтомат", STEEL, dec("2"), listOf(WeldRow(dec("100"), 1))),
-            ),
+            parts = listOf(leaf, leaf, Part("Труба", roundTube, emptyList()), Part("Труба", roundTube, emptyList()), Part("Труба", roundTube, emptyList())),
+            productOperations = listOf(ProductOperation.AssemblyWelding("полуавтомат", STEEL, dec("2"), dec("100"))),
         )
         val result = PriceBook.default().priced(input)
-        // Sheet: 7.85 kg × 100 = 785.00. Tube 57 × 3 × 1000: 3.9951633775701… kg × 300 = 1198.549… → 1198.55.
+        // Sheet: 8 kg × 100 = 800.00. Tube 57 × 3 × 1000: 4.0715040790523… kg × 300 = 1221.4512237157… → 1221.45.
         // Assembly welding: 100 mm = 10 cm × 10 ₽/cm = 100.00.
-        // 785.00 × 2 + 1198.55 × 3 + 100.00 = 1570.00 + 3595.65 + 100.00 = 5265.65; × 4 = 21062.60.
-        assertKopecks("5265.65", result.unitPrice)
-        assertKopecks("21062.60", result.total(4))
-        // 7.85 × 2 + 3.9951633775701… × 3 = 15.70 + 11.9854901327104… = 27.6854901327104…
-        assertDecimalRounded("27.6854901327104", result.unitMassKg)
+        // 800.00 × 2 + 1221.45 × 3 + 100.00 = 1600.00 + 3664.35 + 100.00 = 5364.35; × 4 = 21457.40.
+        assertKopecks("5364.35", result.unitPrice)
+        assertKopecks("21457.40", result.total(4))
+        // 8 × 2 + 4.0715040790523… × 3 = 16 + 12.2145122371571… = 28.2145122371571…
+        assertDecimalRounded("28.214512237157", result.unitMassKg)
+    }
+
+    @Test
+    fun `the mass from the drawing replaces the computed mass of every material kind in the material line`() {
+        val book = PriceBook.default()
+        for (material in Fixtures.allMaterials) {
+            val computed = book.priced(onePart(material)).parts.single().massKg
+            assertNotEquals(0, dec("10").compareTo(computed), "the drawing mass must differ from the computed one for $material")
+            val input = onePart(material).let { it.copy(parts = it.parts.map { part -> part.copy(massOverrideKg = dec("10")) }) }
+            val result = book.priced(input)
+            val part = result.parts.single()
+            val perKg = checkNotNull(book.materialPricesPerKg.priceFor(ST3, material.thicknessMm)) { "no price for $material" }
+            assertDecimal("10", part.massKg)
+            assertKopecks(Money(dec("10") * perKg).rounded().amount.toPlainString(), part.material.cost)
+            assertDecimal("10", result.unitMassKg)
+        }
+    }
+
+    @Test
+    fun `the mass from the drawing is summed with the computed masses of the other parts`() {
+        val input = CalculationInput(
+            name = "Масса",
+            quantity = 1,
+            parts = listOf(
+                Part("Лист", rectangleSheet("2", "1000", "1000"), emptyList(), massOverrideKg = dec("15.5")),
+                Part("Лист", rectangleSheet("2", "1000", "1000"), emptyList()),
+            ),
+            productOperations = emptyList(),
+        )
+        val result = PriceBook.default().priced(input)
+        // 15.5 kg from the drawing × 200 = 3100.00 and the computed 16 kg × 200 = 3200.00.
+        assertEquals(listOf("3100.00", "3200.00"), result.parts.map { it.material.cost.amount.toPlainString() })
+        assertDecimal("31.5", result.unitMassKg)
+        assertKopecks("6300.00", result.unitPrice)
     }
 
     @Test
@@ -176,10 +202,10 @@ class CalculatorTest {
                 if (it.thicknessMm.compareTo(dec("2")) == 0) it.copy(pricePerKg = dec("250")) else it
             },
         )
-        assertKopecks("11280.00", snapshot.priced(spreadsheetInput).unitPrice)
-        // 15.70 kg × 250 = 3925.00 instead of 3140.00: 11280.00 + 785.00 = 12065.00.
-        assertKopecks("12065.00", current.priced(spreadsheetInput).unitPrice)
+        assertKopecks("11340.00", snapshot.priced(goldenInput).unitPrice)
+        // 16 kg × 250 = 4000.00 instead of 3200.00: 11340.00 + 800.00 = 12140.00.
+        assertKopecks("12140.00", current.priced(goldenInput).unitPrice)
         // Recalculating on the snapshot afterwards still gives the old price.
-        assertKopecks("11280.00", snapshot.priced(spreadsheetInput).unitPrice)
+        assertKopecks("11340.00", snapshot.priced(goldenInput).unitPrice)
     }
 }

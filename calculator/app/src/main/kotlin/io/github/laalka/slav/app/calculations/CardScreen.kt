@@ -138,7 +138,6 @@ private fun BreakdownCard(state: CardState) {
             Text(part.details, style = MaterialTheme.typography.bodySmall.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant)
             part.lines.forEach { LineRow(it) }
             AmountLine("Цена детали", part.cost, strong = true)
-            part.perProduct?.let { AmountLine("На изделие", it) }
         }
         if (state.productLines.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = Spacing.small))

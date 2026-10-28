@@ -13,7 +13,7 @@ class MaterialTest {
 
     @Test
     fun `sheet mass matches the spreadsheet formula`() {
-        val sheet = Material.Sheet("Ст3", dec("1"), lengthMm = dec("1000"), widthMm = dec("1000"))
+        val sheet = rectangleSheet("1", "1000", "1000")
         // 1000 × 1000 × 1 = 1 000 000 mm³ = 0.001 m³; × 7850 = 7.85 kg.
         assertDecimal("7.85", sheet.massKg(steel))
         // Spreadsheet: L × W × T × 0.00000785.
@@ -22,10 +22,10 @@ class MaterialTest {
 
     @Test
     fun `sheet mass uses all three dimensions and the density`() {
-        val steelSheet = Material.Sheet("Ст3", dec("3"), lengthMm = dec("1250"), widthMm = dec("2500"))
+        val steelSheet = rectangleSheet("3", "1250", "2500")
         // 1250 × 2500 × 3 = 9 375 000 mm³ = 0.009375 m³; × 7850 = 73.59375 kg.
         assertDecimal("73.59375", steelSheet.massKg(steel))
-        val aluminium = Material.Sheet("АМг3", dec("4"), lengthMm = dec("1500"), widthMm = dec("750"))
+        val aluminium = rectangleSheet("4", "1500", "750").copy(grade = "АМг3")
         // 1500 × 750 × 4 = 4 500 000 mm³ = 0.0045 m³; × 2700 = 12.15 kg.
         assertDecimal("12.15", aluminium.massKg(dec("2700")))
     }

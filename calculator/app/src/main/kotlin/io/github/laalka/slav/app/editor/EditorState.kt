@@ -46,20 +46,26 @@ data class PartView(
     val tag: String,
     val title: String,
     val name: FieldView,
-    val quantity: FieldView,
     val kind: SortamentKind,
     val grade: ChoiceView,
     val size: ChoiceView,
     /** The sizes behind [size]'s options, in the same order. */
     val sizeOptions: List<SizeChoice>,
-    val length: FieldView,
-    /** Sheets only. */
-    val width: FieldView?,
-    /** The mass of one part, null until the material is complete. */
+    /** The outline of a sheet; null for any other kind. */
+    val shape: ShapeKind?,
+    /** The fields of the material's dimensions: the sheet's shape, or the length of a long product. */
+    val dimensions: List<DimensionView>,
+    /** The mass from the drawing, an optional field of every kind. */
+    val massOverride: FieldView,
+    /** The mass of the part: the one from the drawing when it is typed, else the computed one, null until the material is complete. */
     val mass: String?,
+    /** The mass shown is the one from the drawing. */
+    val massFromDrawing: Boolean,
     val materialExtra: ExtraView,
     val operations: List<OperationView>,
 )
+
+data class DimensionView(val field: DimensionField, val value: FieldView)
 
 data class OperationView(
     val ref: LineRef,
@@ -79,18 +85,15 @@ sealed interface OperationParams {
     /** [cutLength] is the length of one cut, the section perimeter, once the section is chosen. */
     data class TubeLaser(val cuts: FieldView, val cutLength: String?) : OperationParams
 
-    /** [depth] is the part thickness (spec 6.4); «через обе стенки» exists for tubes only. */
+    /** «Через обе стенки» exists for tubes only (spec 6.4). */
     data class Holes(
         val rows: List<HoleRowView>,
         val rowsError: String?,
-        val depth: String,
         val bothWallsAvailable: Boolean,
         val addTag: String,
     ) : OperationParams
 
     data class Bending(val rows: List<CountRowView>, val rowsError: String?, val addTag: String) : OperationParams
-
-    data class Welding(val weldType: ChoiceView, val rows: List<CountRowView>, val rowsError: String?, val addTag: String) : OperationParams
 
     data class AssemblyWelding(
         val weldType: ChoiceView,
@@ -98,13 +101,15 @@ sealed interface OperationParams {
         val thickness: ChoiceView,
         /** The thicknesses behind [thickness]'s options, in the same order. */
         val thicknessOptions: List<BigDecimal>,
-        val rows: List<CountRowView>,
-        val rowsError: String?,
-        val addTag: String,
+        /** The total length of all seams. */
+        val seamLength: FieldView,
     ) : OperationParams
 
-    /** [autoArea] is the area by the dimensions, null until they are filled; [areaOverride] replaces it when typed. */
-    data class Painting(val autoArea: String?, val areaOverride: FieldView) : OperationParams
+    /**
+     * [autoArea] is the area by the dimensions, null until they are filled; [areaOverride] replaces
+     * it when typed. [minAreaHint] says what the settings do to a small part's area.
+     */
+    data class Painting(val autoArea: String?, val areaOverride: FieldView, val minAreaHint: String) : OperationParams
 }
 
 /** [warning] does not block the calculation: a hole narrower than the part is thick (spec 6.4). */

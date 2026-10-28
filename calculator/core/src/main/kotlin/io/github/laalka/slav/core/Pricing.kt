@@ -9,16 +9,16 @@ import java.math.BigDecimal
 
 private val TWO = BigDecimal(2)
 
-/** Spec 5: mass × price per kg (grade, thickness). */
-internal fun priceMaterial(material: Material, grade: Grade, book: PriceBook, errors: Errors): Money {
+/** Spec 5: mass × price per kg (grade, thickness); [massKg] is the part's, from the drawing or the dimensions. */
+internal fun priceMaterial(material: Material, massKg: BigDecimal, grade: Grade, book: PriceBook, errors: Errors): Money {
     val t = material.thicknessMm
     val perKg = errors.price(
         book.materialPricesPerKg.priceFor(grade.name, t), PriceTable.MaterialPerKg, grade.name, t.toHeader(),
     )
-    return Money(material.massKg(grade.densityKgM3) * perKg)
+    return Money(massKg * perKg)
 }
 
-/** Spec 6.2: L / 10 × cut(group, t) + pierces × pierce(group, t). */
+/** Spec 6.2: L / 10 × cut(group, t) + pierces × pierce(group, t); a shape cut takes L and the pierces from the shape. */
 internal fun priceLaserSheet(
     op: PartOperation.LaserSheet,
     sheet: Material.Sheet,
@@ -27,7 +27,7 @@ internal fun priceLaserSheet(
     errors: Errors,
 ): Money {
     val (lengthMm, pierces) = when (val mode = op.mode) {
-        SheetCutMode.Rectangle -> TWO * (sheet.lengthMm + sheet.widthMm) to 1
+        SheetCutMode.ByShape -> sheet.shape.cutLengthMm to sheet.shape.pierces
         is SheetCutMode.ContourLength -> mode.lengthMm to mode.pierces
     }
     val t = sheet.thicknessMm
@@ -63,10 +63,10 @@ internal fun priceHoles(op: PartOperation.Holes, material: Material, group: Stri
             errors.groupPrice(book.tubeLaserCutPerCm, PriceTable.TubeLaserCut, group, t) to
                 errors.groupPrice(book.tubeLaserPiercePerPiece, PriceTable.TubeLaserPierce, group, t)
     }
-    val isTube = material is Material.RoundTube || material is Material.ProfileTube
+    val hasTwoWalls = material is Material.RoundTube || material is Material.ProfileTube
     return Money(
         op.rows.sumOf { row ->
-            val walls = if (row.throughBothWalls && isTube) TWO else BigDecimal.ONE
+            val walls = if (row.throughBothWalls && hasTwoWalls) TWO else BigDecimal.ONE
             row.count.toBigDecimal() * walls * (PI * row.diameterMm.mmToCm() * cut + pierce)
         },
     )
@@ -86,13 +86,10 @@ internal fun priceBending(op: PartOperation.Bending, sheet: Material.Sheet, grou
     )
 }
 
-/**
- * Spec 6.6: Σ count × length / 10 × weld(type, group, t). A part passes its material's group and
- * thickness, assembly welding the ones the user chose.
- */
+/** Spec 6.6: seam length / 10 × weld(type, group, t), for the group and thickness chosen on the assembly. */
 internal fun priceWelding(
     weldType: String,
-    rows: List<WeldRow>,
+    seamLengthMm: BigDecimal,
     group: String,
     thicknessMm: BigDecimal,
     book: PriceBook,
@@ -101,7 +98,7 @@ internal fun priceWelding(
     val perCm = errors.price(
         book.weldingPerCm.priceFor(weldType, group, thicknessMm), PriceTable.Welding(weldType), group, thicknessMm.toHeader(),
     )
-    return Money(rows.sumOf { it.count.toBigDecimal() * it.lengthMm.mmToCm() } * perCm)
+    return Money(seamLengthMm.mmToCm() * perCm)
 }
 
 /** Spec 6.7: area × price per m². */

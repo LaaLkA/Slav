@@ -15,6 +15,8 @@ data class GeneralState(
     val weldTypes: List<String>,
     val weldTypeForm: FieldState,
     val tubeLaserMaxSection: FieldState,
+    /** The least painted area a part is charged for in product painting, m². */
+    val minPaintAreaPerPart: FieldState,
     val theme: ThemeMode,
     /** Grows when the fields must show the model's text again, dropping what was typed. */
     val epoch: Int,
@@ -25,6 +27,7 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
     /** Text of a field that cannot be saved as it is, null while the field shows the saved value. */
     private var currencyEdit: String? = null
     private var maxSectionEdit: String? = null
+    private var minPaintAreaEdit: String? = null
     private var boundForm = FieldState()
     private var weldTypeForm = FieldState()
     private var epoch = 0
@@ -37,6 +40,7 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
             if (replaced) {
                 currencyEdit = null
                 maxSectionEdit = null
+                minPaintAreaEdit = null
                 epoch++
             }
             refresh()
@@ -60,6 +64,18 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
                 store.update { it.copy(general = it.general.copy(tubeLaserMaxSectionMm = input.value)) }
             }
             else -> maxSectionEdit = text
+        }
+        refresh()
+    }
+
+    /** Zero is allowed: it switches the minimum off. */
+    fun onMinPaintAreaChange(text: String) {
+        when (val input = readPrice(text)) {
+            is NumberInput.Valid -> {
+                minPaintAreaEdit = null
+                store.update { it.copy(general = it.general.copy(minPaintAreaPerPartM2 = input.value)) }
+            }
+            else -> minPaintAreaEdit = text
         }
         refresh()
     }
@@ -136,6 +152,7 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
         val general = store.book.value.general
         val currency = currencyEdit
         val maxSection = maxSectionEdit
+        val minPaintArea = minPaintAreaEdit
         return GeneralState(
             currency = if (currency != null) FieldState(currency, "Введите обозначение валюты") else FieldState(general.currencySymbol),
             bendBounds = general.bendRangeBoundsMm.sorted().map { it.toInputText() },
@@ -147,6 +164,11 @@ class GeneralModel(private val store: SettingsStore, private val preferences: Ap
                 FieldState(maxSection, requiredPositiveError(readPositive(maxSection)))
             } else {
                 FieldState(general.tubeLaserMaxSectionMm.toInputText())
+            },
+            minPaintAreaPerPart = if (minPaintArea != null) {
+                FieldState(minPaintArea, requiredPositiveError(readPrice(minPaintArea)))
+            } else {
+                FieldState(general.minPaintAreaPerPartM2.toInputText())
             },
             theme = preferences.themeMode.value,
             epoch = epoch,

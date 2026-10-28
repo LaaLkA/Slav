@@ -28,24 +28,90 @@ sealed interface SizeChoice {
     data class Beam(val size: BeamSize) : SizeChoice
 }
 
-/** [size] is null until picked and always matches [kind]; [width] is used by a sheet only. */
+/** The outline of a sheet, the «Форма» picker of the material block (spec 5). */
+enum class ShapeKind(val title: String) {
+    RECTANGLE("Прямоугольник / полоса"),
+    CIRCLE("Круг"),
+    RING("Кольцо"),
+    FREE("Произвольная"),
+}
+
+/** A dimension of the material the user types, in the order the fields are shown; [tag] ends the field's test tag. */
+enum class DimensionField(val label: String, val tag: String) {
+    LENGTH("Длина, мм", "length"),
+    WIDTH("Ширина, мм", "width"),
+    RADIUS("Радиус, мм", "radius"),
+    OUTER_RADIUS("Наружный радиус, мм", "outer-radius"),
+    INNER_RADIUS("Внутренний радиус, мм", "inner-radius"),
+    AREA("Площадь, мм²", "area"),
+    PERIMETER("Периметр реза, мм", "perimeter"),
+}
+
+/**
+ * [size] is null until picked and always matches [kind]. A long product has a [length]. A sheet has
+ * a [shape], and the dimensions of the shape are the only ones read and shown; the others keep what
+ * was typed, so going back to a shape finds its numbers again.
+ */
 data class MaterialForm(
     val kind: SortamentKind = SortamentKind.SHEET,
     val grade: String? = null,
     val size: SizeChoice? = null,
     val length: String = "",
+    val shape: ShapeKind = ShapeKind.RECTANGLE,
     val width: String = "",
-)
+    val radius: String = "",
+    val outerRadius: String = "",
+    val innerRadius: String = "",
+    val area: String = "",
+    val perimeter: String = "",
+) {
+    /** The dimensions of this material, in the order they are shown. */
+    val dimensions: List<DimensionField>
+        get() = when (kind) {
+            SortamentKind.SHEET -> when (shape) {
+                ShapeKind.RECTANGLE -> listOf(DimensionField.LENGTH, DimensionField.WIDTH)
+                ShapeKind.CIRCLE -> listOf(DimensionField.RADIUS)
+                ShapeKind.RING -> listOf(DimensionField.OUTER_RADIUS, DimensionField.INNER_RADIUS)
+                ShapeKind.FREE -> listOf(DimensionField.AREA, DimensionField.PERIMETER)
+            }
+            else -> listOf(DimensionField.LENGTH)
+        }
 
-/** The «Прямоугольник / Длина контура» switch of the sheet laser (spec 6.2). */
+    fun dimension(field: DimensionField): String = when (field) {
+        DimensionField.LENGTH -> length
+        DimensionField.WIDTH -> width
+        DimensionField.RADIUS -> radius
+        DimensionField.OUTER_RADIUS -> outerRadius
+        DimensionField.INNER_RADIUS -> innerRadius
+        DimensionField.AREA -> area
+        DimensionField.PERIMETER -> perimeter
+    }
+
+    fun withDimension(field: DimensionField, text: String): MaterialForm = when (field) {
+        DimensionField.LENGTH -> copy(length = text)
+        DimensionField.WIDTH -> copy(width = text)
+        DimensionField.RADIUS -> copy(radius = text)
+        DimensionField.OUTER_RADIUS -> copy(outerRadius = text)
+        DimensionField.INNER_RADIUS -> copy(innerRadius = text)
+        DimensionField.AREA -> copy(area = text)
+        DimensionField.PERIMETER -> copy(perimeter = text)
+    }
+
+    /** What a rolled kind other than a sheet does not have: a shape. The length is the one dimension they share. */
+    fun withoutSheetShape(): MaterialForm = copy(
+        shape = ShapeKind.RECTANGLE, width = "", radius = "", outerRadius = "", innerRadius = "", area = "", perimeter = "",
+    )
+}
+
+/** The «По форме / Длина контура» switch of the sheet laser (spec 6.2). */
 enum class CutMode(val title: String) {
-    RECTANGLE("Прямоугольник"),
+    BY_SHAPE("По форме"),
     CONTOUR("Длина контура"),
 }
 
 data class HoleRowForm(val id: Long, val diameter: String = "", val count: String = "1", val throughBothWalls: Boolean = false)
 
-/** A bend or a weld seam: a length and how many of them. */
+/** A bend: a length and how many of them. */
 data class CountRowForm(val id: Long, val length: String = "", val count: String = "1")
 
 sealed interface OperationForm {
@@ -57,7 +123,7 @@ sealed interface PartOperationForm : OperationForm
 sealed interface ProductOperationForm : OperationForm
 
 data class LaserSheetForm(
-    val mode: CutMode = CutMode.RECTANGLE,
+    val mode: CutMode = CutMode.BY_SHAPE,
     val contourLength: String = "",
     val pierces: String = "1",
     override val extra: ExtraForm = ExtraForm(),
@@ -69,33 +135,30 @@ data class HolesForm(val rows: List<HoleRowForm>, override val extra: ExtraForm 
 
 data class BendingForm(val rows: List<CountRowForm>, override val extra: ExtraForm = ExtraForm()) : PartOperationForm
 
-data class WeldingForm(
-    val weldType: String?,
-    val rows: List<CountRowForm>,
-    override val extra: ExtraForm = ExtraForm(),
-) : PartOperationForm
-
 /** A blank [areaOverride] means the area by the dimensions (spec 6.7). */
 data class PaintingForm(
     val areaOverride: String = "",
     override val extra: ExtraForm = ExtraForm(),
-) : PartOperationForm, ProductOperationForm
+) : ProductOperationForm
 
-/** Assembly welding: there is no single material, so the group and the thickness are picked (spec 6.6). */
+/**
+ * Assembly welding: there is no single material, so the group and the thickness are picked, and
+ * the seams are one total length (spec 6.6).
+ */
 data class AssemblyWeldingForm(
     val weldType: String?,
     val group: String?,
     val thicknessMm: BigDecimal?,
-    val rows: List<CountRowForm>,
+    val seamLength: String = "",
     override val extra: ExtraForm = ExtraForm(),
 ) : ProductOperationForm
 
-/** [operations] holds the checked operations only. */
+/** One piece of the product; identical parts are copies. [massOverride] is the mass from the drawing, blank for the computed one. */
 data class PartForm(
     val id: Long,
     val name: String,
-    val quantity: String = "1",
     val material: MaterialForm = MaterialForm(),
+    val massOverride: String = "",
     val materialExtra: ExtraForm = ExtraForm(),
     val operations: Map<OperationKind, PartOperationForm> = emptyMap(),
 )
@@ -113,15 +176,12 @@ fun OperationForm.withExtra(extra: ExtraForm): OperationForm = when (this) {
     is TubeLaserForm -> copy(extra = extra)
     is HolesForm -> copy(extra = extra)
     is BendingForm -> copy(extra = extra)
-    is WeldingForm -> copy(extra = extra)
     is PaintingForm -> copy(extra = extra)
     is AssemblyWeldingForm -> copy(extra = extra)
 }
 
-/** Bending, welding and assembly welding keep their rows as [CountRowForm]; other forms are returned as they are. */
+/** Bending keeps its rows as [CountRowForm]; other forms are returned as they are. */
 fun OperationForm.withCountRows(transform: (List<CountRowForm>) -> List<CountRowForm>): OperationForm = when (this) {
     is BendingForm -> copy(rows = transform(rows))
-    is WeldingForm -> copy(rows = transform(rows))
-    is AssemblyWeldingForm -> copy(rows = transform(rows))
-    is LaserSheetForm, is TubeLaserForm, is HolesForm, is PaintingForm -> this
+    is LaserSheetForm, is TubeLaserForm, is HolesForm, is PaintingForm, is AssemblyWeldingForm -> this
 }

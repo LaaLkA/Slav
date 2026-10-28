@@ -180,6 +180,28 @@ class SettingsModelTest {
     }
 
     @Test
+    fun `the minimum painted area of a part is a general setting, zero switches it off and a wrong text is flagged and not saved`() {
+        assertEquals("0,1", model.general.state.value.minPaintAreaPerPart.text)
+
+        model.general.onMinPaintAreaChange("0,25")
+        assertSame(dec("0.25"), stored.general.minPaintAreaPerPartM2)
+        assertEquals(FieldState("0,25"), model.general.state.value.minPaintAreaPerPart)
+
+        model.general.onMinPaintAreaChange("0")
+        assertSame(dec("0"), stored.general.minPaintAreaPerPartM2)
+
+        model.general.onMinPaintAreaChange("abc")
+        assertEquals(FieldState("abc", NOT_A_NUMBER), model.general.state.value.minPaintAreaPerPart)
+        model.general.onMinPaintAreaChange("")
+        assertEquals(FieldState("", REQUIRED), model.general.state.value.minPaintAreaPerPart)
+        assertSame(dec("0"), stored.general.minPaintAreaPerPartM2)
+
+        model.general.onMinPaintAreaChange("0.3")
+        assertSame(dec("0.3"), stored.general.minPaintAreaPerPartM2)
+        assertEquals(FieldState("0,3"), model.general.state.value.minPaintAreaPerPart)
+    }
+
+    @Test
     fun `the chosen theme survives a restart`() {
         model.general.setTheme(ThemeMode.DARK)
 

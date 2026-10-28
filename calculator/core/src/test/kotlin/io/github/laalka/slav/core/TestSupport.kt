@@ -30,7 +30,7 @@ fun onePart(material: Material, vararg operations: PartOperation, materialExtra:
     CalculationInput(
         name = "Расчёт",
         quantity = 1,
-        parts = listOf(Part("Деталь", 1, material, operations.toList(), materialExtra)),
+        parts = listOf(Part("Деталь", material, operations.toList(), materialExtra)),
         productOperations = emptyList(),
     )
 
@@ -44,6 +44,10 @@ fun PriceBook.errorsOf(input: CalculationInput): List<CalcError> {
     return assertIs<CalcOutcome.Failed>(outcome, "expected Failed, got $outcome").errors
 }
 
+/** A rectangular sheet of Ст3. */
+fun rectangleSheet(thicknessMm: String, lengthMm: String, widthMm: String) =
+    Material.Sheet(Fixtures.ST3, dec(thicknessMm), SheetShape.Rectangle(dec(lengthMm), dec(widthMm)))
+
 /** Cost of the first operation of the only part. */
 fun PriceBook.costOf(material: Material, operation: PartOperation): Money =
     priced(onePart(material, operation)).parts.single().operations.single().cost
@@ -56,7 +60,7 @@ object Fixtures {
     val channel10 = BeamSize("10П", dec("100"), dec("46"), dec("4.5"), dec("8.59"))
     val iBeam20 = BeamSize("20", dec("200"), dec("100"), dec("5.2"), dec("21.0"))
 
-    val sheet = Material.Sheet(ST3, thicknessMm = dec("2"), lengthMm = dec("1000"), widthMm = dec("500"))
+    val sheet = rectangleSheet("2", "1000", "500")
     val roundTube = Material.RoundTube(ST3, diameterMm = dec("57"), wallMm = dec("3"), lengthMm = dec("1000"))
     val profileTube =
         Material.ProfileTube(ST3, sideAMm = dec("40"), sideBMm = dec("20"), wallMm = dec("2"), lengthMm = dec("6000"))
@@ -68,17 +72,19 @@ object Fixtures {
 
     private fun extra(amount: String, comment: String) = ManualExtra(Money(dec(amount)), comment)
 
-    /** Every material kind, every part operation and cut mode, both product operations, manual extras. */
+    /**
+     * Every material kind, sheet shape, part operation and cut mode, both product operations,
+     * manual extras and a mass from the drawing.
+     */
     val fullInput = CalculationInput(
         name = "Кронштейн КР-12",
         quantity = 25,
         parts = listOf(
             Part(
                 name = "Основание",
-                qtyPerProduct = 1,
                 material = sheet,
                 operations = listOf(
-                    PartOperation.LaserSheet(SheetCutMode.Rectangle),
+                    PartOperation.LaserSheet(SheetCutMode.ByShape),
                     PartOperation.LaserSheet(
                         SheetCutMode.ContourLength(lengthMm = dec("1840.5"), pierces = 3),
                         extra("150", "Снятие фаски"),
@@ -87,35 +93,40 @@ object Fixtures {
                         listOf(HoleRow(dec("8.5"), count = 4), HoleRow(dec("12"), count = 2)),
                     ),
                     PartOperation.Bending(listOf(BendRow(dec("500"), 2), BendRow(dec("100"), 1))),
-                    PartOperation.Welding("полуавтомат", listOf(WeldRow(dec("120"), 4))),
-                    PartOperation.Painting(areaOverrideM2 = dec("0.75")),
                 ),
                 materialExtra = extra("200.50", "Доставка листа"),
             ),
+            Part("Фланец", Material.Sheet(ST3, dec("4"), SheetShape.Circle(dec("50"))), listOf(PartOperation.LaserSheet(SheetCutMode.ByShape))),
+            Part(
+                "Шайба",
+                Material.Sheet(ST3, dec("2"), SheetShape.Ring(dec("50"), dec("20"))),
+                listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)),
+                massOverrideKg = dec("0.1"),
+            ),
+            Part(
+                "Накладка",
+                Material.Sheet(ST3, dec("3"), SheetShape.Free(areaMm2 = dec("12500.5"), perimeterMm = dec("640"))),
+                listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)),
+            ),
             Part(
                 name = "Стойка",
-                qtyPerProduct = 2,
                 material = roundTube,
                 operations = listOf(
                     PartOperation.TubeLaser(),
                     PartOperation.Holes(listOf(HoleRow(dec("10"), count = 2, throughBothWalls = true))),
-                    PartOperation.Painting(),
                 ),
             ),
-            Part(
-                "Поперечина", 2, profileTube,
-                listOf(PartOperation.TubeLaser(cuts = 4, manualExtra = extra("0", ""))),
-            ),
-            Part("Упор", 4, angle, listOf(PartOperation.Welding("аргон", listOf(WeldRow(dec("50"), 2))))),
-            Part("Рама", 1, channel, emptyList()),
-            Part("Балка", 1, iBeam, listOf(PartOperation.Painting())),
+            Part("Поперечина", profileTube, listOf(PartOperation.TubeLaser(cuts = 4, manualExtra = extra("0", "")))),
+            Part("Упор", angle, emptyList()),
+            Part("Рама", channel, emptyList()),
+            Part("Балка", iBeam, emptyList()),
         ),
         productOperations = listOf(
             ProductOperation.AssemblyWelding(
                 weldType = "полуавтомат",
                 group = STEEL,
                 thicknessMm = dec("3"),
-                rows = listOf(WeldRow(dec("80"), 6), WeldRow(dec("40.5"), 2)),
+                seamLengthMm = dec("561"),
                 manualExtra = extra("1000", "Зачистка швов"),
             ),
             ProductOperation.Painting(),
