@@ -89,18 +89,19 @@ class MaterialTest {
 
     @Test
     fun `paint areas`() {
+        // Only a sheet set by weight reads the density (steel here); the others do not.
         // 2 × (1000 × 500 + 500 × 2 + 1000 × 2) = 2 × 503 000 = 1 006 000 mm² = 1.006 m².
-        assertDecimal("1.006", sheet.paintAreaM2)
+        assertDecimal("1.006", sheet.paintAreaM2(steel))
         // π × 57 × 1000 = 179 070.78… mm² = 0.179070781255 m².
-        assertDecimalRounded("0.179070781255", roundTube.paintAreaM2)
+        assertDecimalRounded("0.179070781255", roundTube.paintAreaM2(steel))
         // 2 × (40 + 20) × 6000 = 720 000 mm² = 0.72 m².
-        assertDecimal("0.72", profileTube.paintAreaM2)
+        assertDecimal("0.72", profileTube.paintAreaM2(steel))
         // 200 × 2500 = 500 000 mm² = 0.5 m².
-        assertDecimal("0.5", angle.paintAreaM2)
+        assertDecimal("0.5", angle.paintAreaM2(steel))
         // 375 × 1200 = 450 000 mm² = 0.45 m².
-        assertDecimal("0.45", channel.paintAreaM2)
+        assertDecimal("0.45", channel.paintAreaM2(steel))
         // 789.6 × 3500 = 2 763 600 mm² = 2.7636 m².
-        assertDecimal("2.7636", iBeam.paintAreaM2)
+        assertDecimal("2.7636", iBeam.paintAreaM2(steel))
     }
 
     @Test

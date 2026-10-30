@@ -20,7 +20,10 @@ internal fun priceMaterial(thicknessMm: BigDecimal, massKg: BigDecimal, grade: G
 /** Spec 3, 10: a line is its formula value plus the manual extra, rounded half-up to kopecks. */
 internal fun lineCost(cost: Money, extra: ManualExtra?): Money = (if (extra == null) cost else cost + extra.amount).rounded()
 
-/** Spec 6.2: L / 10 × cut(group, t) + pierces × pierce(group, t); a shape cut takes L and the pierces from the shape. */
+/**
+ * Spec 6.2: L / 10 × cut(group, t) + pierces × pierce(group, t); a shape cut takes L and the pierces from the shape.
+ * A shape cut of a sheet set by weight without a perimeter has no L: the error is recorded and the line is zero.
+ */
 internal fun priceLaserSheet(
     op: PartOperation.LaserSheet,
     sheet: Material.Sheet,
@@ -29,12 +32,17 @@ internal fun priceLaserSheet(
     errors: Errors,
 ): Money {
     val (lengthMm, pierces) = when (val mode = op.mode) {
-        SheetCutMode.ByShape -> sheet.shape.cutLengthMm to sheet.shape.pierces
+        SheetCutMode.ByShape -> sheet.cutLengthMm to sheet.pierces
         is SheetCutMode.ContourLength -> mode.lengthMm to mode.pierces
     }
     val t = sheet.thicknessMm
+    // The prices are looked up before the length is checked, so a missing price and a missing length surface together.
     val cut = errors.groupPrice(book.laserSheetCutPerCm, PriceTable.LaserSheetCut, group, t)
     val pierce = errors.groupPrice(book.laserSheetPiercePerPiece, PriceTable.LaserSheetPierce, group, t)
+    if (lengthMm == null) {
+        errors += CalcError.MissingCutLength(sheet)
+        return Money.ZERO
+    }
     return Money(lengthMm.mmToCm() * cut + pierces.toBigDecimal() * pierce)
 }
 

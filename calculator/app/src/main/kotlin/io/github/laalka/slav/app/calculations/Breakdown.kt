@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.calculations
 import io.github.laalka.slav.app.editor.kind
 import io.github.laalka.slav.app.editor.title
 import io.github.laalka.slav.app.settings.toInputText
+import io.github.laalka.slav.app.ui.formatMeasure
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
@@ -127,6 +128,13 @@ private fun SheetShape.description(): String = when (this) {
     is SheetShape.Circle -> "круг R ${radiusMm.toInputText()} мм"
     is SheetShape.Ring -> "кольцо R ${outerRadiusMm.toInputText()} / r ${innerRadiusMm.toInputText()} мм"
     is SheetShape.Free -> "произвольная форма, площадь ${areaMm2.toInputText()} мм², периметр ${perimeterMm.toInputText()} мм"
+    is SheetShape.ByMass -> weightDescription()
+}
+
+/** "по весу 12 кг, периметр 1 200 мм"; a sheet set by weight without a perimeter has only the first part. */
+internal fun SheetShape.ByMass.weightDescription(): String {
+    val weight = "по весу ${formatMeasure(massKg)} кг"
+    return perimeterMm?.let { "$weight, периметр ${formatMeasure(it)} мм" } ?: weight
 }
 
 private fun OperationLine.productTitle(operations: List<ProductOperation>): String = when (kind) {

@@ -55,12 +55,22 @@ data class PartView(
     val shape: ShapeKind?,
     /** The fields of the material's dimensions: the sheet's shape, or the length of a long product. */
     val dimensions: List<DimensionView>,
-    /** The mass from the drawing, an optional field of every kind. */
+    /** The mass from the drawing, an optional field of the long products. */
     val massOverride: FieldView,
-    /** The mass of the part: the one from the drawing when it is typed, else the computed one, null until the material is complete. */
+    /**
+     * Whether [massOverride] is on the screen: always for a long product, for a sheet only while it
+     * holds a value (parts saved before a sheet could be set by weight), so that value is not lost unseen.
+     */
+    val massOverrideShown: Boolean,
+    /**
+     * The mass of the part: the one from the drawing when it is typed, else the weight of a sheet set by
+     * weight, else the computed one, null until the material is complete.
+     */
     val mass: String?,
     /** The mass shown is the one from the drawing. */
     val massFromDrawing: Boolean,
+    /** The mass shown is the weight typed for a sheet set by weight. */
+    val massByWeight: Boolean,
     val materialExtra: ExtraView,
     val operations: List<OperationView>,
 )

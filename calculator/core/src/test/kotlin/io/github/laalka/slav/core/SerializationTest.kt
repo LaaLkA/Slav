@@ -80,9 +80,37 @@ class SerializationTest {
             SheetShape.Circle(dec("50")),
             SheetShape.Ring(dec("50"), dec("20")),
             SheetShape.Free(dec("12000"), dec("500")),
+            SheetShape.ByMass(dec("12"), dec("3000")),
+            SheetShape.ByMass(dec("12")),
         )) {
             assertEquals(shape, json.decodeFromString<SheetShape>(json.encodeToString(shape)))
         }
+    }
+
+    @Test
+    fun `the JSON of the outline shapes is what it was before the weight shape existed`() {
+        // Stored calculations and library parts hold these literals; the shapes must keep writing and reading exactly them.
+        val literals = mapOf(
+            SheetShape.Rectangle(dec("300"), dec("200")) to """{"type":"rectangle","lengthMm":"300","widthMm":"200"}""",
+            SheetShape.Circle(dec("50")) to """{"type":"circle","radiusMm":"50"}""",
+            SheetShape.Ring(dec("50"), dec("20")) to """{"type":"ring","outerRadiusMm":"50","innerRadiusMm":"20"}""",
+            SheetShape.Free(dec("12000.5"), dec("500")) to """{"type":"free","areaMm2":"12000.5","perimeterMm":"500"}""",
+        )
+        for ((shape, literal) in literals) {
+            assertEquals(literal, json.encodeToString<SheetShape>(shape))
+            assertEquals(shape, json.decodeFromString<SheetShape>(literal))
+        }
+    }
+
+    @Test
+    fun `a sheet set by weight writes its perimeter even when it is absent`() {
+        assertEquals(
+            """{"type":"by_mass","massKg":"12","perimeterMm":"3000"}""",
+            json.encodeToString<SheetShape>(SheetShape.ByMass(dec("12"), dec("3000"))),
+        )
+        assertEquals("""{"type":"by_mass","massKg":"12","perimeterMm":null}""", json.encodeToString<SheetShape>(SheetShape.ByMass(dec("12"))))
+        // A shape stored without the perimeter reads as one without it.
+        assertEquals(SheetShape.ByMass(dec("12")), json.decodeFromString<SheetShape>("""{"type":"by_mass","massKg":"12"}"""))
     }
 
     @Test

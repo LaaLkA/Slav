@@ -247,6 +247,18 @@ class Beta1UpgradeTest {
         assertEquals(input, Json.decodeFromJsonElement(CalculationInput.serializer(), upgradeInputJson(json)))
     }
 
+    @Test
+    fun `a sheet set by weight is not taken for a beta1 sheet and passes through the upgrade unchanged`() {
+        val sheet = Material.Sheet("Ст3", dec("3"), SheetShape.ByMass(dec("12"), dec("3000")))
+        val input = sheetInput("Пластина").let { it.copy(parts = it.parts + Part("По весу", sheet, listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)))) }
+        val json = Json.parseToJsonElement(Json.encodeToString(CalculationInput.serializer(), input))
+        val text = json.toString()
+        assertTrue("""{"type":"by_mass","massKg":"12","perimeterMm":"3000"}""" in text, text)
+
+        assertEquals(json, upgradeInputJson(json))
+        assertEquals(input, Json.decodeFromJsonElement(CalculationInput.serializer(), upgradeInputJson(json)))
+    }
+
     private fun upgradedWelding(vararg rows: String): JsonObject {
         val operation = """{"type":"assembly_welding","weldType":"т","group":"г","thicknessMm":"2","rows":[${rows.joinToString(",")}],"manualExtra":null}"""
         val upgraded = upgradeInputJson(Json.parseToJsonElement("""{"name":"н","quantity":1,"parts":[],"productOperations":[$operation]}"""))

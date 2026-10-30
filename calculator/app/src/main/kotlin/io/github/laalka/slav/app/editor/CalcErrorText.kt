@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.editor
 
+import io.github.laalka.slav.app.calculations.description
 import io.github.laalka.slav.app.settings.GroupTable
 import io.github.laalka.slav.app.settings.SettingsTab
 import io.github.laalka.slav.app.settings.SortamentKind
@@ -61,6 +62,10 @@ fun CalcError.readable(onSnapshot: Boolean, currency: String): ReadableError = w
         ReadableError("Операция «${operation.title}» не выполняется для проката «${material.kind.title}»")
     is CalcError.SectionTooLarge ->
         ReadableError("Операция «${operation.title}» недоступна: сечение больше ${limitMm.toInputText()} мм")
+    is CalcError.MissingCutLength -> ReadableError(
+        "${material.description()}: лазер «По форме» — у листа, заданного весом, нет периметра. " +
+            "Введите периметр или выберите «Длина контура».",
+    )
 }
 
 /** The titles of the tables in «Цены материала» and «Цены операций»; the laser rate per minute is named with the currency. */

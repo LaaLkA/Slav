@@ -1,6 +1,8 @@
 package io.github.laalka.slav.app.editor
 
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.calculations.goldenInput
+import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.settings.REQUIRED
 import io.github.laalka.slav.app.settings.SettingsTab
 import io.github.laalka.slav.app.settings.SortamentKind
@@ -420,7 +422,7 @@ class EditorModelTest {
     // Sheet shapes
 
     @Test
-    fun `a sheet offers four shapes and each asks only for its own dimensions`() = runTest {
+    fun `a sheet offers five shapes and each asks only for its own dimensions`() = runTest {
         val editor = editor()
         val part = editor.part().id
         fun shown() = editor.part().dimensions.map { it.field }
@@ -434,8 +436,11 @@ class EditorModelTest {
         editor.onShapeChange(part, ShapeKind.FREE)
         assertEquals(listOf(DimensionField.AREA, DimensionField.PERIMETER), shown())
         assertEquals(listOf("Площадь, мм²", "Периметр реза, мм"), editor.part().dimensions.map { it.field.label })
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+        assertEquals(listOf(DimensionField.MASS, DimensionField.PERIMETER), shown())
+        assertEquals(listOf("Вес, кг", "Периметр реза, мм"), editor.part().dimensions.map { it.field.label })
         assertEquals(
-            listOf("Прямоугольник / полоса", "Круг", "Кольцо", "Произвольная"),
+            listOf("Прямоугольник / полоса", "Круг", "Кольцо", "Произвольная", "По весу"),
             ShapeKind.entries.map { it.title },
         )
 
@@ -558,6 +563,208 @@ class EditorModelTest {
         assertEquals(SheetCutMode.ByShape, assertIs<PartOperation.LaserSheet>(saved.input.parts.single().operations.single()).mode)
         // Ring R = 50, r = 20 at 4 mm: 2 × π × 70 = 439.82… mm = 43.98… cm × 40 + 2 pierces × 10 = 1779.29.
         assertEquals("1779.29", assertNotNull(saved.result).parts.single().operations.single().cost.amount.toPlainString())
+    }
+
+
+    // A sheet set by weight
+
+    /** Ст3, 2 mm, set by [mass] kg: no length, no width. */
+    private fun EditorModel.fillByWeight(mass: String) {
+        onNameChange("Пластина")
+        val part = part().id
+        onGradeChange(part, "Ст3")
+        selectSize(part, "2")
+        onShapeChange(part, ShapeKind.BY_MASS)
+        onDimensionChange(part, DimensionField.MASS, mass)
+    }
+
+    @Test
+    fun `a sheet set by weight asks for the weight only, and the perimeter is optional`() = runTest {
+        val editor = editor()
+        editor.onNameChange("Пластина")
+        val part = editor.part().id
+        editor.onGradeChange(part, "Ст3")
+        editor.selectSize(part, "2")
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+
+        assertEquals(listOf(DimensionField.MASS, DimensionField.PERIMETER), editor.part().dimensions.map { it.field })
+        assertEquals(REQUIRED, editor.part().dimension(DimensionField.MASS).error)
+        assertNull(editor.part().dimension(DimensionField.PERIMETER).error, "the perimeter is optional while the cut is not by shape")
+        assertEquals(1, editor.state.value.missingCount, "only the weight is missing, not the length and the width of the rectangle")
+
+        editor.onDimensionChange(part, DimensionField.MASS, "16")
+
+        assertTrue(editor.state.value.canCalculate)
+        assertEquals("16 кг", editor.part().mass)
+        assertTrue(editor.part().massByWeight)
+        assertFalse(editor.part().massFromDrawing)
+        editor.calculate()
+        val saved = stored(calculated.single())
+        val sheet = assertIs<Material.Sheet>(saved.input.parts.single().material)
+        assertEquals(SheetShape.ByMass(dec("16"), null), sheet.shape)
+        // 16 kg × 200 ₽/kg = 3200.00, nothing else is checked.
+        assertEquals("3200.00", assertNotNull(saved.result).unitPrice.amount.toPlainString())
+    }
+
+    @Test
+    fun `the laser by shape makes the perimeter of a sheet set by weight required, and the contour length does not`() = runTest {
+        val editor = editor()
+        editor.fillByWeight("16")
+        val part = editor.part().id
+        assertTrue(editor.state.value.canCalculate)
+
+        editor.setChecked(LineRef.OfPart(part, OperationKind.LASER_SHEET), true)
+
+        // «По форме» is the mode a new laser starts with.
+        assertEquals(REQUIRED, editor.part().dimension(DimensionField.PERIMETER).error)
+        assertEquals(1, editor.state.value.missingCount)
+        assertFalse(editor.state.value.canCalculate)
+
+        editor.onCutModeChange(part, CutMode.CONTOUR)
+        assertNull(editor.part().dimension(DimensionField.PERIMETER).error, "the contour length needs no perimeter")
+        editor.onContourLengthChange(part, "4000")
+        editor.onPiercesChange(part, "3")
+        assertTrue(editor.state.value.canCalculate)
+
+        editor.onCutModeChange(part, CutMode.BY_SHAPE)
+        assertEquals(REQUIRED, editor.part().dimension(DimensionField.PERIMETER).error)
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "3000")
+
+        assertNull(editor.part().dimension(DimensionField.PERIMETER).error)
+        assertTrue(editor.state.value.canCalculate)
+        editor.calculate()
+        val saved = stored(calculated.single())
+        assertEquals(SheetShape.ByMass(dec("16"), dec("3000")), assertIs<Material.Sheet>(saved.input.parts.single().material).shape)
+        // Material 16 kg × 200 = 3200.00; laser by shape 3000 mm = 300 cm × 20 ₽/cm = 6000.00 and 1 pierce × 0 → 9200.00.
+        assertEquals("9200.00", assertNotNull(saved.result).unitPrice.amount.toPlainString())
+    }
+
+    @Test
+    fun `a perimeter that is not a number is flagged even where it is optional`() = runTest {
+        val editor = editor()
+        editor.fillByWeight("16")
+        val part = editor.part().id
+
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "abc")
+
+        assertNotNull(editor.part().dimension(DimensionField.PERIMETER).error)
+        assertFalse(editor.state.value.canCalculate)
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "")
+        assertTrue(editor.state.value.canCalculate)
+    }
+
+    @Test
+    fun `a sheet set by weight is stored in a draft and comes back with its weight and perimeter`() = runTest {
+        val editor = editor()
+        editor.fillByWeight("12,5")
+        val part = editor.part().id
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "1200")
+        editor.flush()
+
+        assertEquals(SheetShape.ByMass(dec("12.5"), dec("1200")), assertIs<Material.Sheet>(onlyStored().input.parts.single().material).shape)
+        val reopened = editor(onlyStored().id).part()
+        assertEquals(ShapeKind.BY_MASS, reopened.shape)
+        assertEquals("12,5", reopened.dimension(DimensionField.MASS).text)
+        assertEquals("1200", reopened.dimension(DimensionField.PERIMETER).text)
+
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "")
+        editor.flush()
+        assertEquals(SheetShape.ByMass(dec("12.5"), null), assertIs<Material.Sheet>(onlyStored().input.parts.single().material).shape)
+        assertEquals("", editor(onlyStored().id).part().dimension(DimensionField.PERIMETER).text)
+    }
+
+    @Test
+    fun `the weight of a sheet set by weight shows before a grade is chosen and says it is by weight`() = runTest {
+        val editor = editor()
+        val part = editor.part().id
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+        assertNull(editor.part().mass)
+
+        editor.onDimensionChange(part, DimensionField.MASS, "7,5")
+
+        assertEquals("7,5 кг", editor.part().mass)
+        assertTrue(editor.part().massByWeight)
+        editor.onDimensionChange(part, DimensionField.MASS, "abc")
+        assertNull(editor.part().mass)
+        assertFalse(editor.part().massByWeight)
+    }
+
+    @Test
+    fun `the mass from the drawing is hidden on a new sheet, shown while a sheet holds one, and always on a long product`() = runTest {
+        val editor = editor()
+        val part = editor.part().id
+        assertFalse(editor.part().massOverrideShown, "a new sheet is set by its dimensions or its weight, not by both")
+
+        // A part saved before sheets could be set by weight: a rectangle with a mass from the drawing.
+        val legacy = goldenInput().parts.single().copy(massOverrideKg = dec("10"))
+        val legacyEditor = editor(deps.calculations.createRevisionDraft(deps.saveCalculated(goldenInput().copy(parts = listOf(legacy)))))
+        val shown = legacyEditor.part()
+        assertTrue(shown.massOverrideShown)
+        assertEquals("10", shown.massOverride.text)
+        assertEquals("10 кг", shown.mass)
+        assertTrue(shown.massFromDrawing)
+        assertFalse(shown.massByWeight)
+
+        // Cleared by the user, it goes and does not come back.
+        legacyEditor.onMassOverrideChange(shown.id, "")
+        assertFalse(legacyEditor.part().massOverrideShown)
+        assertEquals("16 кг", legacyEditor.part().mass)
+
+        editor.onKindChange(part, SortamentKind.ANGLE)
+        assertTrue(editor.part().massOverrideShown)
+    }
+
+    @Test
+    fun `a legacy sheet with a mass from the drawing prices exactly as it did`() = runTest {
+        val legacy = goldenInput().parts.single().copy(massOverrideKg = dec("10"))
+        val id = deps.saveCalculated(goldenInput().copy(parts = listOf(legacy)))
+        val editor = editor(deps.calculations.createRevisionDraft(id))
+
+        editor.calculate()
+
+        // The same 10140.00 as when the mass was typed over a rectangle: 2000 + 8000 + 0 + 100 + 40.
+        assertEquals("10140.00", assertNotNull(stored(calculated.single()).result).unitPrice.amount.toPlainString())
+    }
+
+    @Test
+    fun `a sheet set by weight is painted by the area its weight gives, once the grades are known`() = runTest {
+        val editor = editor()
+        val part = editor.part().id
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+        editor.selectSize(part, "2")
+        editor.onDimensionChange(part, DimensionField.MASS, "16")
+        editor.setChecked(LineRef.OfProduct(OperationKind.PAINTING), true)
+        fun painting() = assertIs<OperationParams.Painting>(editor.product(OperationKind.PAINTING).params)
+        assertNull(painting().autoArea, "the area of a weight needs the density of the grade")
+
+        editor.onGradeChange(part, "Ст3")
+
+        // 2 × 16 / (0.002 m × 8000 kg/m³) = 2 m².
+        assertEquals("2 м²", painting().autoArea)
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "1000")
+        // + 1000 × 2 mm² = 0.002 m².
+        assertEquals("2,002 м²", painting().autoArea)
+    }
+
+    @Test
+    fun `switching a sheet from the weight to a rectangle keeps the weight for the way back`() = runTest {
+        val editor = editor()
+        editor.fillByWeight("16")
+        val part = editor.part().id
+
+        editor.onShapeChange(part, ShapeKind.RECTANGLE)
+        assertEquals(listOf(DimensionField.LENGTH, DimensionField.WIDTH), editor.part().dimensions.map { it.field })
+        assertFalse(editor.state.value.canCalculate)
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+
+        assertEquals("16", editor.part().dimension(DimensionField.MASS).text)
+        assertTrue(editor.state.value.canCalculate)
+
+        // A long product has no shape at all: leaving the sheet drops what was typed for the shapes.
+        editor.onKindChange(part, SortamentKind.ANGLE)
+        editor.onKindChange(part, SortamentKind.SHEET)
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+        assertEquals("", editor.part().dimension(DimensionField.MASS).text)
     }
 
     // Mass from the drawing

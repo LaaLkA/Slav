@@ -32,5 +32,8 @@ data class Part(
 /**
  * The product's painted surface by its parts' dimensions (spec 6.7): Σ max(part area, [minPerPartM2]).
  * A small part still costs a minimum of paint and handling, so it never counts as less than that.
+ * [densityOf] gives the density of a part's grade, which a sheet set by weight takes its area from;
+ * a part whose grade is unknown (null) is skipped: the calculation reports it as UnknownGrade.
  */
-fun List<Part>.paintAreaM2(minPerPartM2: BigDecimal): BigDecimal = sumOf { it.material.paintAreaM2.max(minPerPartM2) }
+fun List<Part>.paintAreaM2(minPerPartM2: BigDecimal, densityOf: (Part) -> BigDecimal?): BigDecimal =
+    sumOf { part -> densityOf(part)?.let { part.material.paintAreaM2(it).max(minPerPartM2) } ?: BigDecimal.ZERO }

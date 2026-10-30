@@ -38,6 +38,8 @@ class Calculator(private val priceBook: PriceBook) {
         )
     }
 
+    private fun densityOf(part: Part): BigDecimal? = priceBook.grades.firstOrNull { it.name == part.material.grade }?.densityKgM3
+
     private fun checkApplicable(kind: OperationKind, material: Material, errors: Errors): Boolean =
         when (applicability(kind, material, priceBook)) {
             Applicability.APPLICABLE -> true
@@ -60,9 +62,10 @@ class Calculator(private val priceBook: PriceBook) {
         when (op) {
             is ProductOperation.AssemblyWelding ->
                 priceWelding(op.weldType, op.seamLengthMm, op.group, op.thicknessMm, priceBook, errors)
-            // The product area is Σ area by the parts' dimensions (spec 6.7), never by their mass from the drawing.
+            // The product area is Σ area by the parts' dimensions (spec 6.7), never by their mass from the
+            // drawing (massOverrideKg); a sheet set by weight has no dimensions and takes its area from the weight.
             is ProductOperation.Painting -> pricePainting(
-                op.areaOverrideM2 ?: parts.paintAreaM2(priceBook.general.minPaintAreaPerPartM2),
+                op.areaOverrideM2 ?: parts.paintAreaM2(priceBook.general.minPaintAreaPerPartM2, ::densityOf),
                 priceBook,
                 errors,
             )

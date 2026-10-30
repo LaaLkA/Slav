@@ -105,7 +105,7 @@ internal class FormReader {
 
     private fun part(tag: String, form: PartForm) = Part(
         name = text("$tag/name", form.name),
-        material = material(tag, form.material),
+        material = material(tag, form.material, perimeterRequired = form.isCutByShape()),
         operations = OperationKind.entries.mapNotNull { kind ->
             form.operations[kind]?.let { partOperation(EditorTags.operation(tag, kind), it) }
         },
@@ -113,7 +113,11 @@ internal class FormReader {
         massOverrideKg = optionalPositive("$tag/mass-override", form.massOverride),
     )
 
-    fun material(tag: String, form: MaterialForm): Material {
+    /** The laser cut «По форме» is as long as the perimeter of a sheet set by weight, so then the perimeter must be typed. */
+    private fun PartForm.isCutByShape() = (operations[OperationKind.LASER_SHEET] as? LaserSheetForm)?.mode == CutMode.BY_SHAPE
+
+    /** [perimeterRequired]: the part is cut by its shape, which a sheet set by weight has only as the perimeter typed. */
+    fun material(tag: String, form: MaterialForm, perimeterRequired: Boolean = false): Material {
         val grade = choice("$tag/grade", form.grade).orEmpty()
         val size = choice("$tag/size", form.size)
         // Only the dimensions of the sheet's shape are read, so a hidden field never blocks the calculation.
@@ -127,6 +131,14 @@ internal class FormReader {
                     ShapeKind.CIRCLE -> SheetShape.Circle(dimension(DimensionField.RADIUS))
                     ShapeKind.RING -> ring(tag, dimension(DimensionField.OUTER_RADIUS), dimension(DimensionField.INNER_RADIUS))
                     ShapeKind.FREE -> SheetShape.Free(dimension(DimensionField.AREA), dimension(DimensionField.PERIMETER))
+                    ShapeKind.BY_MASS -> SheetShape.ByMass(
+                        massKg = dimension(DimensionField.MASS),
+                        perimeterMm = if (perimeterRequired) {
+                            dimension(DimensionField.PERIMETER)
+                        } else {
+                            optionalPositive(EditorTags.dimension(tag, DimensionField.PERIMETER), form.perimeter)
+                        },
+                    )
                 },
             )
             SortamentKind.ROUND_TUBE -> {
@@ -300,6 +312,9 @@ private fun Material.toForm(): MaterialForm {
                     shape = ShapeKind.RING, outerRadius = positiveText(outline.outerRadiusMm), innerRadius = positiveText(outline.innerRadiusMm),
                 )
                 is SheetShape.Free -> sheet.copy(shape = ShapeKind.FREE, area = positiveText(outline.areaMm2), perimeter = positiveText(outline.perimeterMm))
+                is SheetShape.ByMass -> sheet.copy(
+                    shape = ShapeKind.BY_MASS, mass = positiveText(outline.massKg), perimeter = outline.perimeterMm?.let(::positiveText).orEmpty(),
+                )
             }
         }
         is Material.RoundTube -> MaterialForm(

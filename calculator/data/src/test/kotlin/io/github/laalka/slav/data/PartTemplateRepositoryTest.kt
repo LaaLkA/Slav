@@ -65,6 +65,22 @@ class PartTemplateRepositoryTest {
     private fun names(search: String = "") = templates.list(search).map { it.name }
 
     @Test
+    fun `a sheet set by weight is stored and read back with and without its perimeter`() {
+        for (shape in listOf(SheetShape.ByMass(dec("12"), dec("3000")), SheetShape.ByMass(dec("12.5")))) {
+            val part = Part(
+                name = "По весу",
+                material = Material.Sheet("Ст3", dec("3"), shape),
+                operations = listOf(PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("1200"), pierces = 2))),
+            )
+
+            val saved = written(templates.save("Пластина ${shape.perimeterMm}", part))
+
+            assertEquals(part, assertNotNull(templates.get(saved.id)).part)
+            assertEquals(shape, assertIs<Material.Sheet>(assertNotNull(templates.get(saved.id)).part.material).shape)
+        }
+    }
+
+    @Test
     fun `a saved part is read back whole, with the dates of the save`() {
         val saved = written(templates.save("Кронштейн", plate))
 

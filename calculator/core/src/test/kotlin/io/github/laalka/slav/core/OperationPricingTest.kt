@@ -59,6 +59,40 @@ class OperationPricingTest {
     }
 
     @Test
+    fun `laser by shape of a sheet set by weight cuts the typed perimeter with one pierce`() {
+        // 4 mm, 12 kg, perimeter 3000 mm = 300 cm × 40 = 12000; 1 pierce × 10 = 10 → 12010.00.
+        val byMass = Material.Sheet(ST3, dec("4"), SheetShape.ByMass(dec("12"), dec("3000")))
+        assertKopecks("12010.00", book.costOf(byMass, PartOperation.LaserSheet(SheetCutMode.ByShape)))
+    }
+
+    @Test
+    fun `laser by shape of a sheet set by weight without a perimeter is reported and the line is zero`() {
+        val byMass = Material.Sheet(ST3, dec("4"), SheetShape.ByMass(dec("12")))
+        val input = onePart(byMass, PartOperation.LaserSheet(SheetCutMode.ByShape))
+        assertEquals(listOf(CalcError.MissingCutLength(byMass)), book.errorsOf(input))
+
+        // The line itself is zero, not the 1 pierce × 10 ₽ the shape would still have.
+        val errors = Errors()
+        assertMoney("0", priceLaserSheet(PartOperation.LaserSheet(SheetCutMode.ByShape), byMass, STEEL, book, errors))
+        assertEquals(listOf(CalcError.MissingCutLength(byMass)), errors.all)
+    }
+
+    @Test
+    fun `a missing cut length is reported together with a missing price`() {
+        val byMass = Material.Sheet(ST3, dec("4"), SheetShape.ByMass(dec("12")))
+        val noFour = book.copy(laserSheetCutPerCm = book.laserSheetCutPerCm.filterNot { it.thicknessMm.compareTo(dec("4")) == 0 })
+        val errors = noFour.errorsOf(onePart(byMass, PartOperation.LaserSheet(SheetCutMode.ByShape)))
+        assertEquals(listOf(MissingPrice(PriceTable.LaserSheetCut, STEEL, "4"), CalcError.MissingCutLength(byMass)), errors)
+    }
+
+    @Test
+    fun `laser contour length of a sheet set by weight needs no perimeter`() {
+        // 4 mm: 250 mm = 25 cm × 40 = 1000; 2 pierces × 10 = 20 → 1020.00, as on any other shape.
+        val byMass = Material.Sheet(ST3, dec("4"), SheetShape.ByMass(dec("12")))
+        assertKopecks("1020.00", book.costOf(byMass, PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("250"), pierces = 2))))
+    }
+
+    @Test
     fun `laser sheet contour length with several pierces`() {
         // 5 mm: 1234.5 mm = 123.45 cm × 50 = 6172.50; 3 pierces × 10 = 30 → 6202.50.
         val op = PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("1234.5"), pierces = 3))
@@ -249,8 +283,8 @@ class OperationPricingTest {
         // 2 × 24 000 + 1000 × 2 = 50 000 mm² = 0.05 m² and 2 × 149 000 + 1000 × 2 = 300 000 mm² = 0.30 m².
         val small = Part("Малая", paintedSheet("24000", "1000"), emptyList())
         val large = Part("Большая", paintedSheet("149000", "1000"), emptyList())
-        assertDecimal("0.05", small.material.paintAreaM2)
-        assertDecimal("0.3", large.material.paintAreaM2)
+        assertDecimal("0.05", small.material.paintAreaM2(dec("8000")))
+        assertDecimal("0.3", large.material.paintAreaM2(dec("8000")))
         // The small part counts as 0.1: 0.1 + 0.30 = 0.40 m² × 350 = 140.00, not 0.35 m² = 122.50.
         assertKopecks("140.00", book.priced(productPainting(listOf(small, large))).productLines.single().cost)
     }
@@ -274,6 +308,41 @@ class OperationPricingTest {
         assertKopecks("70.00", book.priced(productPainting(listOf(small), ProductOperation.Painting(dec("0.2")))).productLines.single().cost)
         // No override: the area of a 50 kg part is still its dimensions' 0.05 m², raised to 0.1 → 35.00.
         assertKopecks("35.00", book.priced(productPainting(listOf(small))).productLines.single().cost)
+    }
+
+    @Test
+    fun `a sheet set by weight is painted by the area its weight gives`() {
+        // 3 mm, 12 kg, perimeter 3000 mm: 2 × 12 / (0.003 × 8000) + 3000 × 3 / 1e6 = 1.009 m² × 350 = 353.15.
+        val byMass = Material.Sheet(ST3, dec("3"), SheetShape.ByMass(dec("12"), dec("3000")))
+        assertKopecks("353.15", book.priced(productPainting(listOf(Part("Пластина", byMass, emptyList())))).productLines.single().cost)
+        // Without the perimeter: 1 m² × 350 = 350.00.
+        val noPerimeter = byMass.copy(shape = SheetShape.ByMass(dec("12")))
+        assertKopecks("350.00", book.priced(productPainting(listOf(Part("Пластина", noPerimeter, emptyList())))).productLines.single().cost)
+    }
+
+    @Test
+    fun `a sheet set by weight below the minimum is painted as the minimum`() {
+        // 2 mm, 0.1 kg: 2 × 0.1 / (0.002 × 8000) = 0.0125 m², counted as 0.1 → 0.1 × 350 = 35.00.
+        val light = Part("Прокладка", Material.Sheet(ST3, dec("2"), SheetShape.ByMass(dec("0.1"))), emptyList())
+        assertKopecks("35.00", book.priced(productPainting(listOf(light))).productLines.single().cost)
+    }
+
+    @Test
+    fun `a sheet set by weight is painted by the density of the grade of the book it is priced on`() {
+        val byMass = Part("Пластина", Material.Sheet(ST3, dec("3"), SheetShape.ByMass(dec("12"))), emptyList())
+        val lighter = book.copy(grades = book.grades.map { it.copy(densityKgM3 = dec("4000")) })
+        // 2 × 12 / (0.003 × 4000) = 2 m² × 350 = 700.00 against 350.00 at 8000 kg/m³.
+        assertKopecks("700.00", lighter.priced(productPainting(listOf(byMass))).productLines.single().cost)
+    }
+
+    @Test
+    fun `a part whose grade is unknown is left out of the area and reported as an unknown grade`() {
+        val unknown = Part("Пластина", Material.Sheet("Нет такой", dec("3"), SheetShape.ByMass(dec("12"))), emptyList())
+        val known = Part("Лист", sheet, emptyList())
+        assertEquals(listOf(CalcError.UnknownGrade("Нет такой")), book.errorsOf(productPainting(listOf(unknown, known))))
+        val densityOf = { part: Part -> book.grades.firstOrNull { it.name == part.material.grade }?.densityKgM3 }
+        // Only the sheet counts: 1.006 m².
+        assertDecimal("1.006", listOf(unknown, known).paintAreaM2(dec("0.1"), densityOf))
     }
 
     @Test

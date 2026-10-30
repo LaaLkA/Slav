@@ -50,6 +50,40 @@ class CalculatorTest {
     }
 
     @Test
+    fun `a rectangle with a mass from the drawing prices as it did before sheets could be set by weight`() {
+        val withDrawingMass = goldenInput.copy(parts = goldenInput.parts.map { it.copy(massOverrideKg = dec("15.5")) })
+        val result = PriceBook.default().priced(withDrawingMass)
+        val part = result.parts.single()
+        // The dimensions stay in the input and the laser, the bending and the welding do not change; only the mass does:
+        // 15.5 kg × 200 ₽/kg = 3100.00 instead of 3200.00.
+        assertDecimal("15.5", part.massKg)
+        assertKopecks("3100.00", part.material.cost)
+        assertEquals(listOf("8000.00", "100.00"), part.operations.map { it.cost.amount.toPlainString() })
+        // 3100 + 8000 + 100 + 40 = 11240.00; × 10 = 112400.00.
+        assertKopecks("11240.00", result.unitPrice)
+        assertKopecks("112400.00", result.total(10))
+    }
+
+    @Test
+    fun `a sheet set by weight is priced by that weight and needs no dimensions`() {
+        val byMass = Part(
+            name = "Пластина",
+            material = Material.Sheet(ST3, dec("2"), SheetShape.ByMass(dec("16"))),
+            operations = listOf(
+                PartOperation.LaserSheet(SheetCutMode.ContourLength(dec("4000"), pierces = 3)),
+                PartOperation.Bending(listOf(BendRow(dec("80"), 4))),
+            ),
+        )
+        val result = PriceBook.default().priced(goldenInput.copy(parts = listOf(byMass)))
+        val part = result.parts.single()
+        // 16 kg typed × 200 ₽/kg = 3200.00; the laser and the bending of the golden case are the same, so the whole case is 11340.00.
+        assertDecimal("16", part.massKg)
+        assertKopecks("3200.00", part.material.cost)
+        assertKopecks("11340.00", result.unitPrice)
+        assertKopecks("113400.00", result.total(10))
+    }
+
+    @Test
     fun `two missing cells yield two errors in one outcome`() {
         val broken = PriceBook.default().let { book ->
             book.copy(

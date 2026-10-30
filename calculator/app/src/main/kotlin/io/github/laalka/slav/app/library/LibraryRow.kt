@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.library
 
+import io.github.laalka.slav.app.calculations.weightDescription
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.settings.toInputText
 import io.github.laalka.slav.core.Material
@@ -52,6 +53,7 @@ private fun Material.dimensionsText(): String = when (this) {
             if (outer.isEmpty() || inner.isEmpty()) "" else "кольцо R$outer / r$inner"
         }
         is SheetShape.Free -> number(outline.areaMm2).orEmptyWith(prefix = "произвольная форма, ", suffix = " мм²")
+        is SheetShape.ByMass -> if (outline.massKg.signum() > 0) outline.weightDescription() else ""
     }
     is Material.LongProduct -> number(lengthMm).orEmptyWith(prefix = "длина ", suffix = " мм")
 }

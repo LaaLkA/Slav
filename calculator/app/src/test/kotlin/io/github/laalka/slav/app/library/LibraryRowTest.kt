@@ -24,6 +24,16 @@ class LibraryRowTest {
     }
 
     @Test
+    fun `a sheet set by weight says the weight and the perimeter when there is one`() {
+        assertEquals("Лист Ст3 3 мм, по весу 12 кг", Material.Sheet("Ст3", dec("3"), SheetShape.ByMass(dec("12"))).summary())
+        assertEquals(
+            "Лист Ст3 3 мм, по весу 12 кг, периметр 1 200 мм",
+            Material.Sheet("Ст3", dec("3"), SheetShape.ByMass(dec("12"), dec("1200"))).summary(),
+        )
+        assertEquals("Лист Ст3 3 мм, по весу 12,5 кг", Material.Sheet("Ст3", dec("3"), SheetShape.ByMass(dec("12.50"))).summary())
+    }
+
+    @Test
     fun `a long product is described by its section and its length`() {
         assertEquals("Труба круглая Ст3 57×3 мм, длина 1000 мм", Material.RoundTube("Ст3", dec("57"), dec("3"), dec("1000")).summary())
         assertEquals("Труба профильная Ст3 40×20×2 мм, длина 600 мм", Material.ProfileTube("Ст3", dec("40"), dec("20"), dec("2"), dec("600")).summary())
@@ -41,6 +51,8 @@ class LibraryRowTest {
         // A shape with one side missing says nothing about its size rather than half of it.
         assertEquals("Лист Ст3 2 мм", Material.Sheet("Ст3", dec("2"), SheetShape.Rectangle(dec("1000"), BigDecimal.ZERO)).summary())
         assertEquals("Лист Ст3 2 мм", Material.Sheet("Ст3", dec("2"), SheetShape.Ring(dec("50"), BigDecimal.ZERO)).summary())
+        // A weight not typed yet says nothing, whatever the perimeter.
+        assertEquals("Лист Ст3 2 мм", Material.Sheet("Ст3", dec("2"), SheetShape.ByMass(BigDecimal.ZERO, dec("500"))).summary())
         assertEquals("Труба круглая", Material.RoundTube("", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO).summary())
         assertEquals("Уголок Ст3, длина 750 мм", Material.Angle("Ст3", angle.copy(designation = ""), dec("750")).summary())
     }

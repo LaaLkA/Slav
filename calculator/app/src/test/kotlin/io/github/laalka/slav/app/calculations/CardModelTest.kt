@@ -146,6 +146,11 @@ class CardModelTest {
             "Материал: Лист Ст3, 2 мм, произвольная форма, площадь 12000,5 мм², периметр 500 мм",
             title(SheetShape.Free(BigDecimal("12000.5"), BigDecimal("500"))),
         )
+        assertEquals("Материал: Лист Ст3, 2 мм, по весу 12 кг", title(SheetShape.ByMass(BigDecimal("12"))))
+        assertEquals(
+            "Материал: Лист Ст3, 2 мм, по весу 12 кг, периметр 1 200 мм",
+            title(SheetShape.ByMass(BigDecimal("12"), BigDecimal("1200"))),
+        )
     }
 
     @Test

@@ -109,6 +109,12 @@ object Fixtures {
                 listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)),
             ),
             Part(
+                "Пластина",
+                Material.Sheet(ST3, dec("3"), SheetShape.ByMass(massKg = dec("12"), perimeterMm = dec("3000"))),
+                listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)),
+            ),
+            Part("Прокладка", Material.Sheet(ST3, dec("2"), SheetShape.ByMass(massKg = dec("0.5"))), emptyList()),
+            Part(
                 name = "Стойка",
                 material = roundTube,
                 operations = listOf(

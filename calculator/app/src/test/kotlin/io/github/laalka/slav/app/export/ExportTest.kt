@@ -7,7 +7,11 @@ import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
+import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
+import io.github.laalka.slav.core.PartOperation
+import io.github.laalka.slav.core.SheetCutMode
+import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
@@ -150,6 +154,34 @@ class ExportTest {
             // 12.5 kg × 200 ₽/kg: the material line is priced by the mass from the drawing.
             assertEquals(2500.0, sheet.first { it.cell(1).startsWith("Материал:") }.getCell(AMOUNT).numericCellValue)
         }
+    }
+
+    @Test
+    fun `a sheet set by weight is exported with the same description as the card, in both formats`() {
+        val golden = goldenInput(quantity = 10)
+        val byMass = Material.Sheet("Ст3", BigDecimal("2"), SheetShape.ByMass(BigDecimal("16"), BigDecimal("1200")))
+        val input = golden.copy(
+            parts = golden.parts.map { it.copy(material = byMass, operations = listOf(PartOperation.LaserSheet(SheetCutMode.ByShape))) },
+            productOperations = emptyList(),
+        )
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(deps.saveCalculated(input))).breakdown(ZoneId.systemDefault()))
+        val description = "Материал: Лист Ст3, 2 мм, по весу 16 кг, периметр 1 200 мм"
+        assertEquals(description, breakdown.parts.single().lines.first().title)
+
+        val xlsx = temp.root.toPath().resolve("weight.xlsx")
+        ExportFormat.XLSX.write(breakdown, "₽", xlsx)
+        XSSFWorkbook(xlsx.toFile()).use { workbook ->
+            val sheet = workbook.getSheetAt(0)
+            val material = sheet.first { it.cell(1).startsWith("Материал:") }
+            assertEquals(description, material.cell(1))
+            // 16 kg × 200 ₽/kg; the laser by shape: 1200 mm = 120 cm × 20 ₽/cm = 2400.00, 1 pierce × 0.
+            assertEquals(3200.0, material.getCell(AMOUNT).numericCellValue)
+            assertEquals(2400.0, sheet.first { it.cell(1) == "Лазер: рез листа" }.getCell(AMOUNT).numericCellValue)
+        }
+
+        val pdf = temp.root.toPath().resolve("weight.pdf")
+        ExportFormat.PDF.write(breakdown, "₽", pdf)
+        assertTrue("Цена изделия 5 600,00 ₽" in pdfText(pdf), pdfText(pdf))
     }
 
     @Test

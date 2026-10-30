@@ -28,12 +28,13 @@ sealed interface SizeChoice {
     data class Beam(val size: BeamSize) : SizeChoice
 }
 
-/** The outline of a sheet, the «Форма» picker of the material block (spec 5). */
+/** How a sheet is set, the «Форма» picker of the material block (spec 5): by the outline of a shape, or by the weight alone. */
 enum class ShapeKind(val title: String) {
     RECTANGLE("Прямоугольник / полоса"),
     CIRCLE("Круг"),
     RING("Кольцо"),
     FREE("Произвольная"),
+    BY_MASS("По весу"),
 }
 
 /** A dimension of the material the user types, in the order the fields are shown; [tag] ends the field's test tag. */
@@ -45,12 +46,15 @@ enum class DimensionField(val label: String, val tag: String) {
     INNER_RADIUS("Внутренний радиус, мм", "inner-radius"),
     AREA("Площадь, мм²", "area"),
     PERIMETER("Периметр реза, мм", "perimeter"),
+    // Not "mass": that tag is the readout «Масса детали» of the same part.
+    MASS("Вес, кг", "weight"),
 }
 
 /**
  * [size] is null until picked and always matches [kind]. A long product has a [length]. A sheet has
  * a [shape], and the dimensions of the shape are the only ones read and shown; the others keep what
- * was typed, so going back to a shape finds its numbers again.
+ * was typed, so going back to a shape finds its numbers again. The [perimeter] is shared by the free
+ * shape and the weight.
  */
 data class MaterialForm(
     val kind: SortamentKind = SortamentKind.SHEET,
@@ -64,6 +68,7 @@ data class MaterialForm(
     val innerRadius: String = "",
     val area: String = "",
     val perimeter: String = "",
+    val mass: String = "",
 ) {
     /** The dimensions of this material, in the order they are shown. */
     val dimensions: List<DimensionField>
@@ -73,6 +78,7 @@ data class MaterialForm(
                 ShapeKind.CIRCLE -> listOf(DimensionField.RADIUS)
                 ShapeKind.RING -> listOf(DimensionField.OUTER_RADIUS, DimensionField.INNER_RADIUS)
                 ShapeKind.FREE -> listOf(DimensionField.AREA, DimensionField.PERIMETER)
+                ShapeKind.BY_MASS -> listOf(DimensionField.MASS, DimensionField.PERIMETER)
             }
             else -> listOf(DimensionField.LENGTH)
         }
@@ -85,6 +91,7 @@ data class MaterialForm(
         DimensionField.INNER_RADIUS -> innerRadius
         DimensionField.AREA -> area
         DimensionField.PERIMETER -> perimeter
+        DimensionField.MASS -> mass
     }
 
     fun withDimension(field: DimensionField, text: String): MaterialForm = when (field) {
@@ -95,11 +102,12 @@ data class MaterialForm(
         DimensionField.INNER_RADIUS -> copy(innerRadius = text)
         DimensionField.AREA -> copy(area = text)
         DimensionField.PERIMETER -> copy(perimeter = text)
+        DimensionField.MASS -> copy(mass = text)
     }
 
     /** What a rolled kind other than a sheet does not have: a shape. The length is the one dimension they share. */
     fun withoutSheetShape(): MaterialForm = copy(
-        shape = ShapeKind.RECTANGLE, width = "", radius = "", outerRadius = "", innerRadius = "", area = "", perimeter = "",
+        shape = ShapeKind.RECTANGLE, width = "", radius = "", outerRadius = "", innerRadius = "", area = "", perimeter = "", mass = "",
     )
 }
 

@@ -237,6 +237,37 @@ class EditorLibraryTest {
     }
 
     @Test
+    fun `a sheet set by weight goes to the library and comes back as it was, with its perimeter`() = runTest {
+        val editor = editor()
+        editor.onNameChange("Пластина")
+        val part = editor.part().id
+        editor.onGradeChange(part, "Ст3")
+        editor.selectSize(part, "3")
+        editor.onShapeChange(part, ShapeKind.BY_MASS)
+        editor.onDimensionChange(part, DimensionField.MASS, "12")
+        editor.onDimensionChange(part, DimensionField.PERIMETER, "3000")
+        editor.setChecked(LineRef.OfPart(part, OperationKind.LASER_SHEET), true)
+
+        editor.library.requestSave(part)
+        editor.library.confirmSave()
+        val template = deps.partTemplates.list().single()
+
+        val sheet = assertIs<Material.Sheet>(template.part.material)
+        assertEquals(SheetShape.ByMass(BigDecimal("12"), BigDecimal("3000")), sheet.shape)
+        assertEquals(PartOperation.LaserSheet(SheetCutMode.ByShape), template.part.operations.single())
+
+        val other = editor()
+        other.library.pick(template.id)
+        val inserted = other.state.value.parts.last()
+        assertEquals(ShapeKind.BY_MASS, inserted.shape)
+        assertEquals("12", inserted.dimension(DimensionField.MASS).text)
+        assertEquals("3000", inserted.dimension(DimensionField.PERIMETER).text)
+        assertEquals("12 кг", inserted.mass)
+        other.flush()
+        assertEquals(template.part, stored(deps.calculations.list().single().id).input.parts.last())
+    }
+
+    @Test
     fun `the same template added twice gives two parts with ids of their own that edit separately`() = runTest {
         val template = written(deps.partTemplates.save("Кронштейн", goldenPart))
         val editor = editor()

@@ -60,8 +60,10 @@ internal val WIDE_NUMBER_WIDTH = 208.dp
 // Segments share the row's width equally; this fits «Труба профильная» on one line.
 private val KIND_ROW_WIDTH = 960.dp
 
-// Four segments: «Прямоугольник / полоса» is the longest.
-private val SHAPE_ROW_WIDTH = 720.dp
+// Five segments share the row's width equally; «Прямоугольник / полоса», the longest label, needs about 200 dp
+// without the check mark of the chosen segment (with it about 226 dp, more than the card of the 1280 dp window
+// of the program leaves for five segments, 1120 dp).
+private val SHAPE_ROW_WIDTH = 1100.dp
 
 // The parameters of a checked operation sit under its title, past the checkbox.
 private val PARAMS_INDENT = 48.dp
@@ -168,6 +170,7 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                         onClick = { model.onShapeChange(part.id, kind) },
                         shape = SegmentedButtonDefaults.itemShape(index, ShapeKind.entries.size),
                         modifier = Modifier.testTag(EditorTags.shape(part.tag, kind)),
+                        icon = {},
                     ) { Text(kind.title, maxLines = 1, softWrap = false) }
                 }
             }
@@ -182,7 +185,9 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
-            NumberInput(part.massOverride, "Вес по чертежу, кг", { model.onMassOverrideChange(part.id, it) }, WIDE_NUMBER_WIDTH)
+            if (part.massOverrideShown) {
+                NumberInput(part.massOverride, "Вес по чертежу, кг", { model.onMassOverrideChange(part.id, it) }, WIDE_NUMBER_WIDTH)
+            }
             Column(Modifier.padding(top = Spacing.small)) {
                 Text("Масса детали", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
@@ -191,9 +196,14 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                     modifier = Modifier.testTag("${part.tag}/mass"),
                     softWrap = false,
                 )
-                if (part.massFromDrawing) {
+                val massSource = when {
+                    part.massFromDrawing -> "по чертежу"
+                    part.massByWeight -> "по весу"
+                    else -> null
+                }
+                if (massSource != null) {
                     Text(
-                        "по чертежу",
+                        massSource,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("${part.tag}/mass-hint"),
@@ -248,7 +258,10 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
                 }
             }
             when (params.mode) {
-                CutMode.BY_SHAPE -> Hint("Длина реза — все контуры формы детали; пробитий столько же, сколько контуров: кольцо — 2, остальные формы — 1.")
+                CutMode.BY_SHAPE -> Hint(
+                    "Длина реза — все контуры формы детали; пробитий столько же, сколько контуров: кольцо — 2, остальные формы — 1. " +
+                        "Для формы «По весу» длина реза — введённый периметр, пробитие одно.",
+                )
                 CutMode.CONTOUR -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
                         NumberInput(params.contourLength, "Длина реза L, мм", { if (part != null) model.onContourLengthChange(part, it) }, WIDE_NUMBER_WIDTH)
@@ -305,7 +318,7 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
             NumberInput(params.areaOverride, "Своя площадь, м²", { model.onAreaOverrideChange(line, it) }, WIDE_NUMBER_WIDTH)
             Hint(
                 params.autoArea?.let { "По габаритам — $it: ${params.minAreaHint}. Пустое поле — считать по габаритам." }
-                    ?: "Площадь по габаритам появится, когда заполнены размеры деталей: ${params.minAreaHint}.",
+                    ?: "Площадь по габаритам появится, когда заполнены марки и размеры деталей: ${params.minAreaHint}.",
                 Modifier.padding(top = FIELD_TEXT_OFFSET),
             )
         }

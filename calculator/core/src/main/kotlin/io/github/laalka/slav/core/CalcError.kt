@@ -18,6 +18,9 @@ sealed interface CalcError {
 
     /** A tube-laser operation on a section larger than [limitMm], the tube-laser limit of the price book used. */
     data class SectionTooLarge(val operation: OperationKind, val material: Material, val limitMm: BigDecimal) : CalcError
+
+    /** Laser «по форме» on a sheet set by weight without a perimeter: the cut length of [material] is unknown. */
+    data class MissingCutLength(val material: Material) : CalcError
 }
 
 /** A price table of spec 4.4–4.5. Bending has a table per material group, welding a table per weld type. */

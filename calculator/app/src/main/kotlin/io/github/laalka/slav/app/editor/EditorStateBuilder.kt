@@ -13,6 +13,7 @@ import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.Part
 import io.github.laalka.slav.core.PriceBook
+import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.core.applicability
 import io.github.laalka.slav.core.paintAreaM2
 
@@ -88,6 +89,8 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
         val sizes = book.sizeOptions(kind)
         // The mass from the drawing, once it is a valid number, is the mass of the part whatever the dimensions say.
         val drawingMass = (readPositive(form.massOverride) as? NumberInput.Valid)?.value
+        // The weight of a sheet set by weight is the mass once it is a valid number, whatever the grade says.
+        val weightMass = ((material.material as? Material.Sheet)?.shape as? SheetShape.ByMass)?.massKg?.takeIf { it.signum() > 0 }
         val computedMass = if (material.complete && grade != null) material.material.massKg(grade.densityKgM3) else null
         return PartView(
             id = form.id,
@@ -101,8 +104,10 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
             shape = form.material.shape.takeIf { kind == SortamentKind.SHEET },
             dimensions = form.material.dimensions.map { DimensionView(it, field(EditorTags.dimension(tag, it), form.material.dimension(it))) },
             massOverride = field("$tag/mass-override", form.massOverride),
-            mass = (drawingMass ?: computedMass)?.let { "${formatMeasure(it)} кг" },
+            massOverrideShown = kind != SortamentKind.SHEET || form.massOverride.isNotBlank(),
+            mass = (drawingMass ?: weightMass ?: computedMass)?.let { "${formatMeasure(it)} кг" },
             massFromDrawing = drawingMass != null,
+            massByWeight = drawingMass == null && weightMass != null,
             materialExtra = extra(EditorTags.materialLine(tag), form.materialExtra),
             operations = OperationKind.entries.mapNotNull { partOperation(tag, form, it, material) },
         )
@@ -194,14 +199,19 @@ private class StateBuilder(private val book: PriceBook, private val errors: Map<
         )
     }
 
-    /** Σ part areas, each at least the minimum of the settings (spec 6.7), once every part's dimensions are filled. */
+    /**
+     * Σ part areas, each at least the minimum of the settings (spec 6.7), once every part's dimensions are filled.
+     * A sheet set by weight takes its area from the density of its grade, so every grade must be known too.
+     */
     private fun productArea(form: CalculationForm): String? {
         val parts = form.parts.map { part ->
             val material = part.material.read()
             if (!material.dimensionsComplete) return null
             Part(part.name, material.material, operations = emptyList())
         }
-        return if (parts.isEmpty()) null else "${formatMeasure(parts.paintAreaM2(book.general.minPaintAreaPerPartM2))} м²"
+        val densityOf = { part: Part -> book.grades.firstOrNull { it.name == part.material.grade }?.densityKgM3 }
+        if (parts.isEmpty() || parts.any { densityOf(it) == null }) return null
+        return "${formatMeasure(parts.paintAreaM2(book.general.minPaintAreaPerPartM2, densityOf))} м²"
     }
 
     private fun minAreaHint(): String {

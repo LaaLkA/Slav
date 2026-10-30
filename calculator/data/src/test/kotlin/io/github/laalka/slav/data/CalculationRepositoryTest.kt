@@ -1,8 +1,13 @@
 package io.github.laalka.slav.data
 
 import io.github.laalka.slav.core.CalculationInput
+import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
+import io.github.laalka.slav.core.Part
+import io.github.laalka.slav.core.PartOperation
 import io.github.laalka.slav.core.PriceBook
+import io.github.laalka.slav.core.SheetCutMode
+import io.github.laalka.slav.core.SheetShape
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.time.Duration
@@ -61,6 +66,18 @@ class CalculationRepositoryTest {
         val row = calculations.list().single()
         assertNull(row.unitPrice)
         assertNull(row.total)
+    }
+
+    @Test
+    fun `a calculation with a sheet set by weight is stored and read back whole, input and price`() {
+        val part = Part("По весу", Material.Sheet("Ст3", dec("2"), SheetShape.ByMass(dec("16"), dec("1200"))), listOf(PartOperation.LaserSheet(SheetCutMode.ByShape)))
+        val input = CalculationInput("Пластина", 3, listOf(part), emptyList())
+
+        val stored = assertNotNull(calculations.get(calculated(input)))
+
+        assertEquals(input, stored.input)
+        // 16 kg × 200 ₽/kg = 3200.00; by shape 1200 mm = 120 cm × 20 ₽/cm = 2400.00 and 1 pierce × 0 → 5600.00.
+        assertEquals(0, dec("5600").compareTo(assertNotNull(stored.unitPrice).amount))
     }
 
     @Test
