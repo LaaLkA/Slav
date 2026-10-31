@@ -4,6 +4,7 @@ import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.calculations.priceSummary
+import io.github.laalka.slav.app.developer.RandomCalculation
 import io.github.laalka.slav.app.library.EditorLibraryModel
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.core.Applicability
@@ -32,6 +33,7 @@ import java.math.BigDecimal
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.random.Random
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -106,6 +108,9 @@ class EditorModel(
     private var pendingSave: Job? = null
     private var calcErrors: List<ReadableError> = emptyList()
 
+    /** Counts the times the form was replaced as a whole: the fields keep what was typed, so they are created again. */
+    private var epoch = 0
+
     private val _state = MutableStateFlow(build())
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
@@ -130,6 +135,15 @@ class EditorModel(
 
     /** «Скидка, %»; blank means none. */
     fun onDiscountChange(text: String) = edit { it.copy(discount = text) }
+
+    /**
+     * Developer mode: replaces the whole form with a random calculation that is valid on the prices of the
+     * editor ([RandomCalculation]), so it can be calculated at once.
+     */
+    fun fillRandomly(random: Random = Random.Default) {
+        epoch++
+        edit { RandomCalculation(book, random).calculationForm(::newId) }
+    }
 
     fun addPart() = edit { it.copy(parts = it.parts + newPart(it.parts.size + 1)) }
 
@@ -392,7 +406,7 @@ class EditorModel(
             else -> "Заполните эти цены в «Настройках» и нажмите «Рассчитать» ещё раз. Расчёт сохранён как черновик."
         }
         val read = read()
-        return editorState(form, read, book, isNew, inPlace, priceSource, summary(read), calcErrors, hint)
+        return editorState(form, read, book, isNew, inPlace, priceSource, summary(read), calcErrors, hint, epoch)
     }
 
     /** The part [part] as the form reads now, for the library; null when there is no such part. */

@@ -41,6 +41,8 @@ object EditorTags {
     const val CALCULATE = "editor/calculate"
     const val BACK = "editor/back"
     const val ERRORS = "editor/errors"
+    const val MISSING = "editor/missing"
+    const val FILL_RANDOM = "editor/fill-random"
     const val LEAVE_CONFIRM = "editor/leave/confirm"
     const val LEAVE_STAY = "editor/leave/stay"
 

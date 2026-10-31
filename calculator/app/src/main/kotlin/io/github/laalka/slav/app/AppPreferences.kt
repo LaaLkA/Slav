@@ -37,14 +37,29 @@ class AppPreferences(private val file: Path) {
     )
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    private val _developerMode = MutableStateFlow(properties.getProperty(DEVELOPER_MODE).toBoolean())
+
+    /** Developer mode shows the buttons that fill an editor with random data; it is off until switched on here. */
+    val developerMode: StateFlow<Boolean> = _developerMode.asStateFlow()
+
     fun setThemeMode(mode: ThemeMode) {
-        properties.setProperty(THEME, mode.name)
+        save(THEME, mode.name)
+        _themeMode.value = mode
+    }
+
+    fun setDeveloperMode(on: Boolean) {
+        save(DEVELOPER_MODE, on.toString())
+        _developerMode.value = on
+    }
+
+    private fun save(key: String, value: String) {
+        properties.setProperty(key, value)
         file.parent.createDirectories()
         file.outputStream().use { properties.store(it, null) }
-        _themeMode.value = mode
     }
 
     private companion object {
         const val THEME = "theme"
+        const val DEVELOPER_MODE = "developer-mode"
     }
 }

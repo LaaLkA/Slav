@@ -11,7 +11,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 
-private val LightColors = lightColorScheme(
+/**
+ * Errors are the one colour that must not be missed, so both themes keep them saturated and well above
+ * WCAG AA (4.5:1) for text on every surface a field or a message sits on. Measured with the WCAG
+ * relative-luminance formula (the same one `ThemeContrastTest` computes):
+ * light `error` #C62828 is 5.36:1 on `surface`, 5.09:1 on `surfaceContainerLow` (the cards) and 4.82:1 on
+ * `surfaceContainer` (the bottom bar); dark `error` #FF5C5C is 6.14:1, 5.65:1 and 5.40:1 on the same.
+ * `onError` on `error` is 5.62:1 (light) and 5.27:1 (dark).
+ */
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF415F91),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFD6E3FF),
@@ -24,7 +32,7 @@ private val LightColors = lightColorScheme(
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFFAD8FD),
     onTertiaryContainer = Color(0xFF573E5C),
-    error = Color(0xFFBA1A1A),
+    error = Color(0xFFC62828),
     onError = Color(0xFFFFFFFF),
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF93000A),
@@ -49,7 +57,8 @@ private val LightColors = lightColorScheme(
     surfaceContainerHighest = Color(0xFFE2E2E9),
 )
 
-private val DarkColors = darkColorScheme(
+/** The dark counterpart of [LightColors]; the contrast of its error colour is stated there. */
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFFAAC7FF),
     onPrimary = Color(0xFF0A305F),
     primaryContainer = Color(0xFF284777),
@@ -62,8 +71,8 @@ private val DarkColors = darkColorScheme(
     onTertiary = Color(0xFF3F2844),
     tertiaryContainer = Color(0xFF573E5C),
     onTertiaryContainer = Color(0xFFFAD8FD),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
+    error = Color(0xFFFF5C5C),
+    onError = Color(0xFF4D0003),
     errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6),
     background = Color(0xFF111318),

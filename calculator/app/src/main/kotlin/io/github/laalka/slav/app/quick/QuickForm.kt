@@ -23,6 +23,7 @@ object QuickTags {
     const val SHEET_AREA = "quick/sheet-area"
     const val CUT_TIME = "quick/cut-time"
     const val MASS = "quick/mass"
+    const val FILL_RANDOM = "quick/fill-random"
 
     /** The line tag of [line]; its «Доп. операции» fields end in "/extra/amount" and "/extra/comment". */
     fun line(line: QuickLine) = "quick/${line.name.lowercase()}"

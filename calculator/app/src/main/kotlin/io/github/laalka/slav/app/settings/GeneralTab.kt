@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,6 +22,8 @@ import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.PasswordDialog
+import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.RemovableChips
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
@@ -35,7 +38,15 @@ object GeneralTags {
     const val PASSWORD_REPEAT = "settings/general/password-repeat"
     const val PASSWORD_SAVE = "settings/general/password-save"
     const val PASSWORD_SUCCESS = "settings/general/password-success"
+    const val DEVELOPER_SWITCH = "settings/general/developer-switch"
+    const val DEVELOPER_PASSWORD = "settings/general/developer-password"
+    const val DEVELOPER_CONFIRM = "settings/general/developer-confirm"
+    const val DEVELOPER_CANCEL = "settings/general/developer-cancel"
 }
+
+private val DEVELOPER_TAGS = PasswordDialogTags(
+    GeneralTags.DEVELOPER_PASSWORD, GeneralTags.DEVELOPER_CONFIRM, GeneralTags.DEVELOPER_CANCEL,
+)
 
 @Composable
 fun GeneralTab(model: GeneralModel) {
@@ -130,6 +141,33 @@ fun GeneralTab(model: GeneralModel) {
                     }
                 }
             }
+            SectionCard(
+                "Режим разработчика",
+                subtitle = "В редакторах появляется кнопка «Заполнить случайными данными». " +
+                    "Хранится на этом компьютере, в настройки и экспорт не входит. Включить можно, зная пароль администратора.",
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = state.developerMode,
+                        onCheckedChange = model::onDeveloperModeChange,
+                        modifier = Modifier.testTag(GeneralTags.DEVELOPER_SWITCH),
+                    )
+                    Text("Режим разработчика", style = MaterialTheme.typography.bodyLarge)
+                }
+            }
         }
+    }
+    state.developerQuestion?.let { question ->
+        PasswordDialog(
+            title = "Режим разработчика",
+            message = "Введите пароль администратора, чтобы включить режим разработчика.",
+            confirmLabel = "Включить",
+            error = question.error,
+            tags = DEVELOPER_TAGS,
+            onPasswordChange = model::onDeveloperPasswordChange,
+            onConfirm = model::confirmDeveloperMode,
+            onCancel = model::cancelDeveloperMode,
+            confirmColor = MaterialTheme.colorScheme.primary,
+        )
     }
 }

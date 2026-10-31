@@ -35,6 +35,7 @@ const val NAV_SETTINGS_TAG = "nav/settings"
 fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavigator(deps)) {
     val page by navigator.page.collectAsState()
     val askingToDiscard by navigator.discardQuestion.collectAsState()
+    val developerMode by deps.preferences.developerMode.collectAsState()
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Row(modifier = Modifier.fillMaxSize()) {
@@ -72,10 +73,20 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
                 )
                 // Keyed by the model: another calculation's editor starts with fresh fields.
                 is Page.Editor -> key(current.model) {
-                    EditorScreen(current.model, filePicker, onBack = navigator::closeEditor)
+                    EditorScreen(
+                        current.model,
+                        filePicker,
+                        onBack = navigator::closeEditor,
+                        onFillRandom = if (developerMode) ({ current.model.fillRandomly() }) else null,
+                    )
                 }
                 is Page.QuickEditor -> key(current.model) {
-                    QuickEditorScreen(current.model, filePicker, onBack = navigator::closeEditor)
+                    QuickEditorScreen(
+                        current.model,
+                        filePicker,
+                        onBack = navigator::closeEditor,
+                        onFillRandom = if (developerMode) ({ current.model.fillRandomly() }) else null,
+                    )
                 }
                 is Page.Card -> key(current.model) {
                     CardScreen(

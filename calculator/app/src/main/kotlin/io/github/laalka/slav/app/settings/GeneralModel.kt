@@ -2,6 +2,7 @@ package io.github.laalka.slav.app.settings
 
 import io.github.laalka.slav.app.AppPreferences
 import io.github.laalka.slav.app.ThemeMode
+import io.github.laalka.slav.app.calculations.PasswordFlow
 import io.github.laalka.slav.data.AdminPassword
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,9 @@ const val PASSWORD_TOO_SHORT = "Не короче ${AdminPassword.MIN_LENGTH} с
 const val PASSWORDS_DIFFER = "Пароли не совпадают"
 const val PASSWORD_CHANGED = "Пароль администратора изменён"
 
+/** The question in front of switching developer mode on: [error] is what is wrong with the password typed so far. */
+data class DeveloperQuestion(val error: String?)
+
 data class GeneralState(
     val currency: FieldState,
     /** Bend-length range bounds, ascending, and the ranges they make: «до 100», «100–300», … */
@@ -32,14 +36,19 @@ data class GeneralState(
     /** The least painted area a part is charged for in product painting, m². */
     val minPaintAreaPerPart: FieldState,
     val theme: ThemeMode,
+    /** Developer mode is on; it is a choice of this computer, not a setting. */
+    val developerMode: Boolean,
+    /** Set while the administrator password is asked before developer mode is switched on. */
+    val developerQuestion: DeveloperQuestion?,
     val password: PasswordFormState,
     /** Grows when the fields must show the model's text again, dropping what was typed. */
     val epoch: Int,
 )
 
 /**
- * «Общие» (spec 4.6), the colour theme (spec 11) and the administrator password, which deleting
- * a calculation asks for. The password is not part of the settings: it is not exported, imported or saved with them.
+ * «Общие» (spec 4.6), the colour theme (spec 11), developer mode and the administrator password, which deleting
+ * a calculation asks for. The password is not part of the settings: it is not exported, imported or saved with
+ * them, and neither are the theme and developer mode, which stay with this computer ([AppPreferences]).
  */
 class GeneralModel(
     private val store: SettingsStore,
@@ -59,6 +68,9 @@ class GeneralModel(
     private var newPassword = ""
     private var repeatPassword = ""
     private var passwordForm = PasswordFormState()
+
+    /** Switching developer mode on asks the administrator password; switching it off asks nothing. */
+    private val developerPassword = PasswordFlow<Unit>(adminPassword) { preferences.setDeveloperMode(true) }
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<GeneralState> = _state.asStateFlow()
@@ -209,6 +221,28 @@ class GeneralModel(
         refresh()
     }
 
+    /** On asks the administrator password first ([confirmDeveloperMode]); off is done at once. */
+    fun onDeveloperModeChange(on: Boolean) {
+        if (on) developerPassword.request(Unit) else preferences.setDeveloperMode(false)
+        refresh()
+    }
+
+    fun onDeveloperPasswordChange(text: String) {
+        developerPassword.onPasswordChange(text)
+        refresh()
+    }
+
+    /** A wrong password leaves the question open with its error and developer mode off. */
+    fun confirmDeveloperMode() {
+        developerPassword.confirm()
+        refresh()
+    }
+
+    fun cancelDeveloperMode() {
+        developerPassword.cancel()
+        refresh()
+    }
+
     private fun refresh() {
         _state.value = build()
     }
@@ -236,6 +270,8 @@ class GeneralModel(
                 FieldState(general.minPaintAreaPerPartM2.toInputText())
             },
             theme = preferences.themeMode.value,
+            developerMode = preferences.developerMode.value,
+            developerQuestion = developerPassword.pending?.let { DeveloperQuestion(developerPassword.error) },
             password = passwordForm,
             epoch = epoch,
         )

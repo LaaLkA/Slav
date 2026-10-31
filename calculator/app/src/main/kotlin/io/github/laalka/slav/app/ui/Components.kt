@@ -2,6 +2,8 @@ package io.github.laalka.slav.app.ui
 
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,23 +22,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -52,6 +57,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -119,7 +126,7 @@ fun InputField(
 ) {
     var text by remember { mutableStateOf(value) }
     val style = LocalTextStyle.current
-    OutlinedTextField(
+    OutlinedField(
         value = text,
         onValueChange = {
             text = it
@@ -130,14 +137,94 @@ fun InputField(
             if (isEnter && event.type == KeyEventType.KeyDown) onEnter()
             isEnter
         },
+        textStyle = if (numeric) style.tabular().copy(textAlign = TextAlign.End) else style,
         label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         placeholder = placeholder?.let { { Text(it, maxLines = 1) } },
         leadingIcon = leadingIcon,
-        isError = error != null,
-        supportingText = error?.let { { Text(it) } },
-        singleLine = true,
+        error = error,
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-        textStyle = if (numeric) style.tabular().copy(textAlign = TextAlign.End) else style,
+    )
+}
+
+/** The outline of a field in error is this thick whether or not the field is focused. */
+private val ERROR_OUTLINE = 2.dp
+
+// The room an outlined field leaves above itself for its floating label (Material's OutlinedTextField does the same).
+private val LABEL_ROOM = 8.dp
+
+/**
+ * An outlined single-line field with [error] under it. It is Material's `OutlinedTextField` assembled from
+ * its parts, because that one draws the outline of a field in error 1 dp thick until the field is focused:
+ * here it is [ERROR_OUTLINE] always, and the supporting error text is [WarningWeight].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OutlinedField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier,
+    textStyle: TextStyle,
+    label: (@Composable () -> Unit)?,
+    error: String?,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    placeholder: (@Composable () -> Unit)? = null,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+) {
+    val colors = OutlinedTextFieldDefaults.colors()
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val isError = error != null
+    val textColor = when {
+        !enabled -> colors.disabledTextColor
+        isError -> colors.errorTextColor
+        focused -> colors.focusedTextColor
+        else -> colors.unfocusedTextColor
+    }
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .then(if (label != null) Modifier.padding(top = LABEL_ROOM) else Modifier)
+            .semantics(mergeDescendants = true) {}
+            .defaultMinSize(minWidth = OutlinedTextFieldDefaults.MinWidth, minHeight = OutlinedTextFieldDefaults.MinHeight),
+        enabled = enabled,
+        readOnly = readOnly,
+        textStyle = textStyle.merge(TextStyle(color = textColor)),
+        cursorBrush = SolidColor(if (isError) colors.errorCursorColor else colors.cursorColor),
+        visualTransformation = visualTransformation,
+        interactionSource = interactionSource,
+        singleLine = true,
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = enabled,
+                singleLine = true,
+                visualTransformation = visualTransformation,
+                interactionSource = interactionSource,
+                isError = isError,
+                label = label,
+                placeholder = placeholder,
+                leadingIcon = leadingIcon,
+                trailingIcon = trailingIcon,
+                supportingText = error?.let { { Text(it, fontWeight = WarningWeight) } },
+                colors = colors,
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = enabled,
+                        isError = isError,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = OutlinedTextFieldDefaults.shape,
+                        focusedBorderThickness = if (isError) ERROR_OUTLINE else OutlinedTextFieldDefaults.FocusedBorderThickness,
+                        unfocusedBorderThickness = if (isError) ERROR_OUTLINE else OutlinedTextFieldDefaults.UnfocusedBorderThickness,
+                    )
+                },
+            )
+        },
     )
 }
 
@@ -159,12 +246,16 @@ fun HeaderText(text: String, modifier: Modifier = Modifier, numeric: Boolean = f
     )
 }
 
-/** A message inside the screen; errors are never shown in dialogs. */
+/** A message inside the screen; errors are never shown in dialogs. An error is a [WarningPanel]. */
 @Composable
 fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) {
+    if (isError) {
+        WarningPanel(text, onDismiss = onDismiss)
+        return
+    }
     Surface(
-        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -173,7 +264,7 @@ fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) 
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            Icon(if (isError) Icons.Filled.Warning else Icons.Filled.Info, contentDescription = null)
+            Icon(Icons.Filled.Info, contentDescription = null)
             Text(text, modifier = Modifier.weight(1f).padding(vertical = Spacing.small), style = MaterialTheme.typography.bodyMedium)
             if (onDismiss != null) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Скрыть") }
@@ -252,17 +343,16 @@ fun ChoiceField(
     var expanded by remember { mutableStateOf(false) }
     val enabled = options.isNotEmpty()
     Box(modifier) {
-        OutlinedTextField(
+        OutlinedField(
             value = selected.orEmpty(),
             onValueChange = {},
-            readOnly = true,
-            enabled = enabled,
-            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
-            isError = error != null,
-            supportingText = error?.let { { Text(it) } },
-            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+            textStyle = LocalTextStyle.current,
+            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            error = error,
+            enabled = enabled,
+            readOnly = true,
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, contentDescription = null) },
         )
         // A read-only field takes no clicks of its own; this layer over it opens the menu.
         Box(

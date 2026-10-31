@@ -58,6 +58,7 @@ internal fun editorState(
     summary: PriceSummary?,
     calcErrors: List<ReadableError>,
     calcErrorsHint: String?,
+    epoch: Int,
 ): EditorState {
     val builder = StateBuilder(book, read.errors)
     return EditorState(
@@ -76,6 +77,7 @@ internal fun editorState(
         summary = summary,
         calcErrors = calcErrors,
         calcErrorsHint = calcErrorsHint.takeIf { calcErrors.isNotEmpty() },
+        epoch = epoch,
     )
 }
 

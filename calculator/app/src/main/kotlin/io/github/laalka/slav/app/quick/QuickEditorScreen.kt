@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -29,6 +30,7 @@ import io.github.laalka.slav.app.editor.CalculateBar
 import io.github.laalka.slav.app.editor.Choice
 import io.github.laalka.slav.app.editor.DiscountCard
 import io.github.laalka.slav.app.editor.ExtraRow
+import io.github.laalka.slav.app.editor.FillRandomButton
 import io.github.laalka.slav.app.editor.Header
 import io.github.laalka.slav.app.editor.NumberInput
 import io.github.laalka.slav.app.editor.TextInput
@@ -40,10 +42,10 @@ import io.github.laalka.slav.app.ui.SectionCard
 /**
  * The editor of a simplified calculation: the product, its drawings, the sheet, the cut and the discount.
  * It has no run size. «Рассчитать», the way back and the list of missing prices are the full editor's
- * own bar and header.
+ * own bar and header. [onFillRandom] is set in developer mode: the button that fills the editor with random data.
  */
 @Composable
-fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: () -> Unit) {
+fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: () -> Unit, onFillRandom: (() -> Unit)? = null) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(
@@ -54,6 +56,7 @@ fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: (
             },
             subtitle = if (state.inPlace) "${state.priceSource}. Расчёт не изменится, пока вы не нажмёте «Рассчитать»" else state.priceSource,
             onBack = onBack,
+            actions = { onFillRandom?.let { FillRandomButton(it, Modifier.testTag(QuickTags.FILL_RANDOM)) } },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val scroll = rememberScrollState()
@@ -62,47 +65,50 @@ fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: (
                     .padding(start = Spacing.large, end = Spacing.large, bottom = Spacing.large),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
-                SectionCard("Изделие") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-                        TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
-                        TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
-                    }
-                }
-                AttachmentsBlock(model.attachments, filePicker)
-                SectionCard("Материал", subtitle = "Один лист: масса по площади и толщине, цена за кг по марке и толщине") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-                        Choice(state.grade, Modifier.width(CHOICE_WIDTH)) { model.onGradeChange(state.grade.options[it]) }
-                        Choice(state.thickness, Modifier.width(CHOICE_WIDTH)) { model.onThicknessChange(state.thicknessOptions[it]) }
-                        NumberInput(state.sheetArea, "Площадь листа, м²", model::onSheetAreaChange, WIDE_NUMBER_WIDTH)
-                        Column(Modifier.padding(top = Spacing.small)) {
-                            Text("Масса листа", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(
-                                state.mass ?: "—",
-                                style = MaterialTheme.typography.titleMedium.tabular(),
-                                modifier = Modifier.testTag(QuickTags.MASS),
-                                softWrap = false,
-                            )
+                // The fields keep what was typed; a form replaced as a whole needs them created again.
+                key(state.epoch) {
+                    SectionCard("Изделие") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
+                            TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
+                            TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
                         }
                     }
-                    ExtraRow(
-                        state.materialExtra,
-                        state.currency,
-                        { model.onExtraAmountChange(QuickLine.MATERIAL, it) },
-                        { model.onExtraCommentChange(QuickLine.MATERIAL, it) },
-                    )
-                }
-                SectionCard("Резка", subtitle = "Лазер по времени: время реза × ставка «Лазер, ${state.currency}/мин» из настроек") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
-                        NumberInput(state.cutTime, "Время реза, мин", model::onCutTimeChange, WIDE_NUMBER_WIDTH)
+                    AttachmentsBlock(model.attachments, filePicker)
+                    SectionCard("Материал", subtitle = "Один лист: масса по площади и толщине, цена за кг по марке и толщине") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
+                            Choice(state.grade, Modifier.width(CHOICE_WIDTH)) { model.onGradeChange(state.grade.options[it]) }
+                            Choice(state.thickness, Modifier.width(CHOICE_WIDTH)) { model.onThicknessChange(state.thicknessOptions[it]) }
+                            NumberInput(state.sheetArea, "Площадь листа, м²", model::onSheetAreaChange, WIDE_NUMBER_WIDTH)
+                            Column(Modifier.padding(top = Spacing.small)) {
+                                Text("Масса листа", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    state.mass ?: "—",
+                                    style = MaterialTheme.typography.titleMedium.tabular(),
+                                    modifier = Modifier.testTag(QuickTags.MASS),
+                                    softWrap = false,
+                                )
+                            }
+                        }
+                        ExtraRow(
+                            state.materialExtra,
+                            state.currency,
+                            { model.onExtraAmountChange(QuickLine.MATERIAL, it) },
+                            { model.onExtraCommentChange(QuickLine.MATERIAL, it) },
+                        )
                     }
-                    ExtraRow(
-                        state.cutExtra,
-                        state.currency,
-                        { model.onExtraAmountChange(QuickLine.CUT, it) },
-                        { model.onExtraCommentChange(QuickLine.CUT, it) },
-                    )
+                    SectionCard("Резка", subtitle = "Лазер по времени: время реза × ставка «Лазер, ${state.currency}/мин» из настроек") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
+                            NumberInput(state.cutTime, "Время реза, мин", model::onCutTimeChange, WIDE_NUMBER_WIDTH)
+                        }
+                        ExtraRow(
+                            state.cutExtra,
+                            state.currency,
+                            { model.onExtraAmountChange(QuickLine.CUT, it) },
+                            { model.onExtraCommentChange(QuickLine.CUT, it) },
+                        )
+                    }
+                    DiscountCard(state.discount, model::onDiscountChange)
                 }
-                DiscountCard(state.discount, model::onDiscountChange)
             }
             VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }

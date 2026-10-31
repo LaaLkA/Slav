@@ -45,6 +45,8 @@ data class EditorState(
     /** Why the last «Рассчитать» stopped (spec 7.3); empty when it did not. */
     val calcErrors: List<ReadableError>,
     val calcErrorsHint: String?,
+    /** Grows when the form is replaced as a whole, so the fields, which keep what was typed, are created again. */
+    val epoch: Int,
 ) {
     val canCalculate: Boolean get() = missingCount == 0
 }

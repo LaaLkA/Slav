@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,6 +43,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
@@ -56,6 +59,8 @@ import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.SectionCard
+import io.github.laalka.slav.app.ui.WarningPanel
+import io.github.laalka.slav.app.ui.WarningWeight
 
 internal val NUMBER_WIDTH = 168.dp
 internal val CHOICE_WIDTH = 208.dp
@@ -75,8 +80,9 @@ private val PARAMS_INDENT = 48.dp
 // Lines a text up with the text of the outlined fields in the same row.
 private val FIELD_TEXT_OFFSET = 18.dp
 
+/** [onFillRandom] is set in developer mode: the button that fills the editor with random data. */
 @Composable
-fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit) {
+fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit, onFillRandom: (() -> Unit)? = null) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(
@@ -87,6 +93,7 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
             },
             subtitle = if (state.inPlace) "${state.priceSource}. Расчёт не изменится, пока вы не нажмёте «Рассчитать»" else state.priceSource,
             onBack = onBack,
+            actions = { onFillRandom?.let { FillRandomButton(it, Modifier.testTag(EditorTags.FILL_RANDOM)) } },
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val scroll = rememberScrollState()
@@ -95,25 +102,28 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
                     .padding(start = Spacing.large, end = Spacing.large, bottom = Spacing.large),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
-                SectionCard("Изделие") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-                        TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
-                        TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
-                        NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
+                // The fields keep what was typed; a form replaced as a whole needs them created again.
+                key(state.epoch) {
+                    SectionCard("Изделие") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
+                            TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
+                            TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
+                            NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
+                        }
                     }
+                    AttachmentsBlock(model.attachments, filePicker)
+                    AddFromLibraryRow(model.library)
+                    state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
+                    state.partsError?.let { WarningPanel(it) }
+                    OutlinedButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Text("Добавить деталь", modifier = Modifier.padding(start = Spacing.small))
+                    }
+                    SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
+                        state.productOperations.forEach { op -> key(op.ref) { OperationBlock(op, state.currency, model) } }
+                    }
+                    DiscountCard(state.discount, model::onDiscountChange)
                 }
-                AttachmentsBlock(model.attachments, filePicker)
-                AddFromLibraryRow(model.library)
-                state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
-                state.partsError?.let { ErrorText(it) }
-                OutlinedButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Text("Добавить деталь", modifier = Modifier.padding(start = Spacing.small))
-                }
-                SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
-                    state.productOperations.forEach { op -> key(op.ref) { OperationBlock(op, state.currency, model) } }
-                }
-                DiscountCard(state.discount, model::onDiscountChange)
             }
             VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
@@ -152,9 +162,12 @@ internal fun DiscountCard(discount: FieldView, onChange: (String) -> Unit) {
     }
 }
 
-/** The title of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK]. */
+/**
+ * The title of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK].
+ * [actions] stand at the right end of the bar.
+ */
 @Composable
-internal fun Header(title: String, subtitle: String, onBack: () -> Unit) {
+internal fun Header(title: String, subtitle: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = Spacing.small, end = Spacing.large, top = Spacing.medium, bottom = Spacing.small),
         verticalAlignment = Alignment.CenterVertically,
@@ -167,6 +180,16 @@ internal fun Header(title: String, subtitle: String, onBack: () -> Unit) {
             Text(title, style = MaterialTheme.typography.headlineSmall)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        actions()
+    }
+}
+
+/** Developer mode: «Заполнить случайными данными» in the bar of an editor. */
+@Composable
+internal fun FillRandomButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedButton(onClick = onClick, modifier = modifier) {
+        Icon(Icons.Filled.Refresh, contentDescription = null)
+        Text("Заполнить случайными данными", modifier = Modifier.padding(start = Spacing.small))
     }
 }
 
@@ -379,7 +402,7 @@ private fun CountRows(line: LineRef, rows: List<CountRowView>, lengthLabel: Stri
 
 @Composable
 private fun RowsFooter(error: String?, addLabel: String, addTag: String, onAdd: () -> Unit) {
-    error?.let { ErrorText(it) }
+    error?.let { WarningPanel(it) }
     TextButton(onClick = onAdd, modifier = Modifier.testTag(addTag)) {
         Icon(Icons.Filled.Add, contentDescription = null)
         Text(addLabel, modifier = Modifier.padding(start = Spacing.small))
@@ -426,11 +449,15 @@ internal fun CalculateBar(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                    Text(
-                        if (canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: $missingCount",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (canCalculate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                    )
+                    if (canCalculate) {
+                        Text(
+                            "Все обязательные поля заполнены",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        WarningPanel("Заполните выделенные поля: $missingCount", Modifier.testTag(EditorTags.MISSING))
+                    }
                     summary?.let { PriceSummaryRow(it) }
                 }
                 Button(onClick = onCalculate, enabled = canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
@@ -482,20 +509,11 @@ fun CalcErrors(
     title: String = "Расчёт не выполнен — не хватает данных",
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.medium,
-        modifier = modifier.fillMaxWidth(),
-    ) {
+    WarningPanel(title, modifier) {
         Column(
-            modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()).padding(Spacing.medium),
+            modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Warning, contentDescription = null)
-                Text(title, style = MaterialTheme.typography.titleSmall)
-            }
             val cells = errors.mapNotNull { it.cell }
             if (cells.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
@@ -505,18 +523,22 @@ fun CalcErrors(
                 }
                 cells.forEach { cell ->
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                        Text(cell.table, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodyMedium)
-                        Text(cell.row, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        Text(cell.column, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium.tabular())
-                        Text("Настройки → ${cell.tab.title}", modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodyMedium)
+                        Text(cell.table, modifier = Modifier.weight(2f), style = errorBody())
+                        Text(cell.row, modifier = Modifier.weight(1f), style = errorBody())
+                        Text(cell.column, modifier = Modifier.weight(1f), style = errorBody().tabular())
+                        Text("Настройки → ${cell.tab.title}", modifier = Modifier.weight(2f), style = errorBody())
                     }
                 }
             }
-            errors.filter { it.cell == null }.forEach { Text(it.message, style = MaterialTheme.typography.bodyMedium) }
+            errors.filter { it.cell == null }.forEach { Text(it.message, style = errorBody()) }
             hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
+
+/** The text of an error list: heavier than the body text around it. */
+@Composable
+private fun errorBody() = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
 
 @Composable
 internal fun TextInput(field: FieldView, label: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -549,14 +571,9 @@ internal fun Hint(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ErrorText(text: String) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-}
-
-@Composable
 private fun WarningText(text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+        Text(text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = WarningWeight), color = MaterialTheme.colorScheme.tertiary)
     }
 }

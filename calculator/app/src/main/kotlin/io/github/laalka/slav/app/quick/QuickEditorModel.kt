@@ -4,6 +4,7 @@ import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.calculations.priceSummary
+import io.github.laalka.slav.app.developer.RandomCalculation
 import io.github.laalka.slav.app.editor.CalculationEditor
 import io.github.laalka.slav.app.editor.EditorModel
 import io.github.laalka.slav.app.editor.ReadableError
@@ -30,6 +31,7 @@ import java.math.BigDecimal
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.random.Random
 import kotlin.time.Duration
 
 /**
@@ -97,6 +99,9 @@ class QuickEditorModel(
     private var pendingSave: Job? = null
     private var calcErrors: List<ReadableError> = emptyList()
 
+    /** Counts the times the form was replaced as a whole: the fields keep what was typed, so they are created again. */
+    private var epoch = 0
+
     private val _state = MutableStateFlow(build())
     val state: StateFlow<QuickEditorState> = _state.asStateFlow()
 
@@ -109,6 +114,15 @@ class QuickEditorModel(
         storedCalculationId = ::storedId,
         scope = scope,
     )
+
+    /**
+     * Developer mode: replaces the whole form with a random simplified calculation that is valid on the
+     * prices of the editor ([RandomCalculation]), so it can be calculated at once.
+     */
+    fun fillRandomly(random: Random = Random.Default) {
+        epoch++
+        edit { RandomCalculation(book, random).quickForm() }
+    }
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }
 
@@ -288,7 +302,7 @@ class QuickEditorModel(
             else -> "Заполните эти цены в «Настройках» и нажмите «Рассчитать» ещё раз. Расчёт сохранён как черновик."
         }
         val read = read()
-        return quickEditorState(form, read, book, isNew, inPlace, priceSource, summary(read), calcErrors, hint)
+        return quickEditorState(form, read, book, isNew, inPlace, priceSource, summary(read), calcErrors, hint, epoch)
     }
 
     private companion object {
