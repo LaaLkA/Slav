@@ -1,15 +1,19 @@
 package io.github.laalka.slav.data
 
 import io.github.laalka.slav.data.db.Attachment as AttachmentRow
+import java.awt.image.BufferedImage
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
+import javax.imageio.ImageIO
 import kotlin.io.path.createDirectories
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
+import kotlin.math.max
 
 /** A drawing attached to a calculation: a copy of the user's file kept in the data folder. */
 data class Attachment(
@@ -101,6 +105,27 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
     fun pathOf(attachment: Attachment): Path = folder(attachment.calculationId).resolve(attachment.storedName)
 
     /**
+     * A small picture of [attachment] for its row: the image itself, or the first page of a PDF,
+     * at most [maxPx] on its longer side with the aspect kept, never scaled up. Null when the file
+     * cannot be decoded (damaged, a PDF that asks for a password) or is not on the disk.
+     *
+     * The picture is kept as a PNG next to the file, in `.thumbs/<stored name>.png` of the folder
+     * of the calculation, and read from there the next time; it goes with the attachment
+     * ([remove], [removeAll]) and is not copied by [copyAll], the copy makes its own when it is asked.
+     * Slow, decodes the file: not for the UI thread.
+     */
+    fun thumbnail(attachment: Attachment, maxPx: Int): BufferedImage? {
+        require(maxPx > 0) { "maxPx must be positive, was $maxPx" }
+        val source = pathOf(attachment)
+        if (!source.isRegularFile()) return null
+        val cache = thumbnailPath(attachment)
+        cachedThumbnail(cache, maxPx)?.let { return it }
+        val picture = Thumbnails.render(source, maxPx) ?: return null
+        cacheThumbnail(cache, picture)
+        return picture
+    }
+
+    /**
      * Removes the attachment [id] and its file. When the file cannot be deleted (another program
      * holds it open) an [IOException] is thrown and the attachment stays. Does nothing when [id]
      * is already gone.
@@ -108,14 +133,15 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
     fun remove(id: UUID) {
         val attachment = queries.selectById(id.toString()).executeAsOneOrNull()?.toAttachment() ?: return
         Files.deleteIfExists(pathOf(attachment))
+        discard(thumbnailPath(attachment))
         queries.delete(id.toString())
     }
 
     /**
      * Gives [toCalculationId] its own copy of every file of [fromCalculationId], with the same names
      * and sizes, in the same order. A row whose file has vanished from the disk has nothing to copy
-     * and is skipped. When a copy fails, none of the files copied so far is kept and the exception
-     * is thrown.
+     * and is skipped. The thumbnails are not copied ([thumbnail] makes them again). When a copy fails,
+     * none of the files copied so far is kept and the exception is thrown.
      */
     fun copyAll(fromCalculationId: UUID, toCalculationId: UUID) {
         val copied = mutableListOf<Path>()
@@ -150,7 +176,7 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
     }
 
     /**
-     * Removes every attachment of [calculationId], rows and folder. A file another program holds
+     * Removes every attachment of [calculationId], rows and folder, thumbnails included. A file another program holds
      * open may stay on the disk; no row points to it any more, and the calculation id is never reused.
      */
     fun removeAll(calculationId: UUID) {
@@ -168,6 +194,39 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
         list(calculationId).filter { pathOf(it).isRegularFile() }.groupingBy { it.fileName to it.sizeBytes }.eachCount()
 
     private fun folder(calculationId: UUID): Path = root.resolve(calculationId.toString())
+
+    private fun thumbnailPath(attachment: Attachment): Path =
+        folder(attachment.calculationId).resolve(THUMBNAILS_FOLDER).resolve("${attachment.storedName}.png")
+
+    /**
+     * The picture saved at [cache], fitted to [maxPx]; null when there is none, it cannot be read, or
+     * it is smaller than [maxPx] (made for a smaller size, or from a small file: it is made again).
+     */
+    private fun cachedThumbnail(cache: Path, maxPx: Int): BufferedImage? {
+        if (!cache.isRegularFile()) return null
+        val picture = try {
+            ImageIO.read(cache.toFile())
+        } catch (_: IOException) {
+            null
+        } catch (_: RuntimeException) {
+            null
+        } ?: return null
+        return if (max(picture.width, picture.height) < maxPx) null else Thumbnails.scaledDown(picture, maxPx)
+    }
+
+    /** A picture that cannot be saved is still shown, it is made again next time. */
+    private fun cacheThumbnail(cache: Path, picture: BufferedImage) {
+        var temporary: Path? = null
+        try {
+            cache.parent.createDirectories()
+            // Written aside and moved, so a picture asked for twice at once never leaves a half-written file.
+            temporary = Files.createTempFile(cache.parent, "thumb", ".tmp")
+            if (!ImageIO.write(picture, "png", temporary.toFile())) throw IOException("No PNG writer")
+            Files.move(temporary, cache, StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: IOException) {
+            temporary?.let(::discard)
+        }
+    }
 
     private fun discard(file: Path) {
         try {
@@ -194,6 +253,9 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
         val ALLOWED_EXTENSIONS: Set<String> = setOf("pdf", "jpg", "jpeg", "png")
 
         private const val MEGABYTE = 1024L * 1024
+
+        // Inside the folder of a calculation; the stored files are named after an id, so a dot name cannot meet one.
+        private const val THUMBNAILS_FOLDER = ".thumbs"
 
         // The cleaned name is cut to this many bytes of UTF-8, so the name on disk (the id is 37 more) is far
         // below the 255 bytes of the file systems and the whole path stays short enough for Windows.

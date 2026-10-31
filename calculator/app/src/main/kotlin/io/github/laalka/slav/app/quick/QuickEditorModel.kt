@@ -76,14 +76,14 @@ class QuickEditorModel(
     private val _state = MutableStateFlow(build())
     val state: StateFlow<QuickEditorState> = _state.asStateFlow()
 
-    /** The drawings of the calculation; the editor only edits drafts, so removing one needs no password. */
+    /** The drawings of the calculation. */
     val attachments = AttachmentsModel(
         attachmentRepository,
         fileOpener,
         // this.id is the property, which follows the saves; a bare id here would be the constructor parameter.
         calculationId = { this.id },
         storedCalculationId = ::storedId,
-        passwordGuard = null,
+        scope = scope,
     )
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }

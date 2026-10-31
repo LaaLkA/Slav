@@ -1,15 +1,15 @@
 package io.github.laalka.slav.app.attachments
 
-import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
 import io.github.laalka.slav.app.RecordingOpener
 import io.github.laalka.slav.app.calculations.CardModel
-import io.github.laalka.slav.app.calculations.WRONG_PASSWORD
 import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.testAdminSeed
+import io.github.laalka.slav.app.testScope
 import io.github.laalka.slav.app.ui.formatFileSize
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationStatus
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
@@ -18,13 +18,11 @@ import java.util.UUID
 import kotlin.io.path.createDirectory
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.exists
-import kotlin.io.path.readBytes
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -56,6 +54,7 @@ class AttachmentsModelTest {
         deps.adminPassword,
         deps.attachments,
         deps.fileOpener,
+        testScope(),
         id,
         onRevision = {},
         onDeleted = {},
@@ -84,7 +83,7 @@ class AttachmentsModelTest {
     }
 
     @Test
-    fun `a draft attaches, opens and removes a drawing without a password`() {
+    fun `a draft attaches, opens and removes a drawing`() {
         val card = draftCard()
         val attachments = card.attachments
         assertEquals(emptyList(), attachments.rows())
@@ -101,67 +100,60 @@ class AttachmentsModelTest {
         assertNull(attachments.state.value.message)
 
         val file = card.fileOf(row)
-        attachments.requestRemove(row.id)
-        assertNull(attachments.state.value.removeQuestion, "a draft asks for nothing")
+        attachments.remove(row.id)
         assertEquals(emptyList(), attachments.rows())
         assertFalse(file.exists())
     }
 
     @Test
-    fun `a calculated record takes a drawing at once and is not changed by it`() {
+    fun `attaching to a calculated card adds the row to the same calculation, with no copy and no version`() {
         val card = calculatedCard()
         val before = assertNotNull(deps.calculations.get(card.id))
+        val listBefore = deps.calculations.list()
+        assertEquals(CalculationStatus.CALCULATED, before.status)
 
         card.attachments.attach(drawing("plan.pdf"))
+        card.attachments.attach(drawing("detail.png"))
 
-        assertEquals(listOf("plan.pdf"), card.attachments.rows().map { it.fileName })
-        assertEquals(before, deps.calculations.get(card.id), "the price, the result and the dates are as they were")
+        assertEquals(listOf("plan.pdf", "detail.png"), card.attachments.rows().map { it.fileName })
+        assertEquals(listOf("plan.pdf", "detail.png"), deps.attachments.list(card.id).map { it.fileName }, "the drawings belong to this calculation")
+        assertEquals(before, deps.calculations.get(card.id), "the id, status, price, result and dates are as they were")
+        assertEquals(listBefore, deps.calculations.list(), "no second record: no copy, no revision, no draft")
     }
 
     @Test
-    fun `removing a drawing from a calculated record asks the administrator password, and a wrong one keeps the file`() {
+    fun `removing a drawing from a calculated card asks for nothing and leaves the calculation as it was`() {
         val card = calculatedCard()
-        val attachments = card.attachments
-        attachments.attach(drawing("plan.pdf", size = 300))
-        val row = attachments.rows().single()
-        val file = card.fileOf(row)
-        val bytes = file.readBytes()
-
-        attachments.requestRemove(row.id)
-        assertEquals("plan.pdf", attachments.state.value.removeQuestion?.name)
-        attachments.onRemovePasswordChange("not-the-password")
-        attachments.confirmRemove()
-
-        assertEquals(WRONG_PASSWORD, attachments.state.value.removeQuestion?.error)
-        assertEquals(listOf(row), attachments.rows())
+        card.attachments.attach(drawing("plan.pdf", size = 300))
+        card.attachments.attach(drawing("detail.png"))
+        val before = assertNotNull(deps.calculations.get(card.id))
+        val listBefore = deps.calculations.list()
+        val removed = card.attachments.rows().first()
+        val kept = card.attachments.rows().last()
+        val file = card.fileOf(removed)
         assertTrue(file.exists())
-        assertContentEquals(bytes, file.readBytes())
-        assertEquals(1, deps.attachments.list(card.id).size)
 
-        // Typing again clears the error; the right password removes the drawing and its file.
-        attachments.onRemovePasswordChange(ADMIN_PASSWORD)
-        assertNull(attachments.state.value.removeQuestion?.error)
-        attachments.confirmRemove()
+        card.attachments.remove(removed.id)
 
-        assertNull(attachments.state.value.removeQuestion)
-        assertEquals(emptyList(), attachments.rows())
+        assertEquals(listOf(kept), card.attachments.rows())
+        assertNull(card.attachments.state.value.message)
         assertFalse(file.exists())
-        assertEquals(emptyList(), deps.attachments.list(card.id))
+        assertEquals(listOf("detail.png"), deps.attachments.list(card.id).map { it.fileName })
+        assertEquals(before, deps.calculations.get(card.id))
+        assertEquals(listBefore, deps.calculations.list())
     }
 
     @Test
-    fun `cancelling the question keeps the drawing`() {
+    fun `a drawing that is not there any more is removed without a word`() {
         val card = calculatedCard()
         card.attachments.attach(drawing("plan.pdf"))
         val row = card.attachments.rows().single()
 
-        card.attachments.requestRemove(row.id)
-        card.attachments.onRemovePasswordChange(ADMIN_PASSWORD)
-        card.attachments.cancelRemove()
+        card.attachments.remove(row.id)
+        card.attachments.remove(row.id)
 
-        assertNull(card.attachments.state.value.removeQuestion)
-        assertEquals(listOf(row), card.attachments.rows())
-        assertTrue(card.fileOf(row).exists())
+        assertEquals(emptyList(), card.attachments.rows())
+        assertNull(card.attachments.state.value.message)
     }
 
     @Test
@@ -229,7 +221,7 @@ class AttachmentsModelTest {
         assertTrue("plan.pdf" in message.text && "не найден" in message.text, message.text)
         assertEquals(emptyList(), opener.opened)
         // It can still be removed from the list.
-        card.attachments.requestRemove(row.id)
+        card.attachments.remove(row.id)
         assertEquals(emptyList(), card.attachments.rows())
     }
 
@@ -243,13 +235,10 @@ class AttachmentsModelTest {
         file.deleteExisting()
         file.createDirectory().resolve("inside").writeText("x")
 
-        card.attachments.requestRemove(row.id)
-        card.attachments.onRemovePasswordChange(ADMIN_PASSWORD)
-        card.attachments.confirmRemove()
+        card.attachments.remove(row.id)
 
         val message = assertNotNull(card.attachments.state.value.message)
         assertTrue(message.isError && "plan.pdf" in message.text, message.text)
         assertEquals(listOf(row), card.attachments.rows())
-        assertNull(card.attachments.state.value.removeQuestion)
     }
 }

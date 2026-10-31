@@ -15,6 +15,7 @@ import io.github.laalka.slav.app.calculations.updateSettings
 import io.github.laalka.slav.app.export.ExportFormat
 import io.github.laalka.slav.app.export.exportFileName
 import io.github.laalka.slav.app.testAdminSeed
+import io.github.laalka.slav.app.testScope
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Money
@@ -69,7 +70,7 @@ class QuickCardTest {
     private var deleted = 0
 
     private fun card(id: UUID) = CardModel(
-        deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, id,
+        deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, testScope(), id,
         onRevision = { revisions += it },
         onDeleted = { deleted++ },
     )
@@ -235,21 +236,21 @@ class QuickCardTest {
     }
 
     @Test
-    fun `a drawing is attached to the card, and removing it from a calculated record needs the password`() {
+    fun `a drawing is attached to the card and removed from it with no password, the calculation stays as it was`() {
         val id = deps.saveQuickCalculated()
+        val before = stored(id)
         val card = card(id)
         val file = temp.newFile("plan.pdf").toPath().also { it.writeBytes(byteArrayOf(1, 2, 3)) }
 
         card.attachments.attach(file)
 
         assertEquals(listOf("plan.pdf"), card.attachments.state.value.rows.map { it.fileName })
-        val row = card.attachments.state.value.rows.single()
-        card.attachments.requestRemove(row.id)
-        assertNotNull(card.attachments.state.value.removeQuestion)
-        assertEquals(1, deps.attachments.list(id).size, "not removed before the password")
-        card.attachments.onRemovePasswordChange(ADMIN_PASSWORD)
-        card.attachments.confirmRemove()
+        assertEquals(before, stored(id))
+        card.attachments.remove(card.attachments.state.value.rows.single().id)
+        assertEquals(emptyList(), card.attachments.state.value.rows)
         assertEquals(emptyList(), deps.attachments.list(id))
+        assertEquals(before, stored(id))
+        assertEquals(listOf(id), deps.calculations.list().map { it.id }, "no copy and no version")
     }
 
     @Test

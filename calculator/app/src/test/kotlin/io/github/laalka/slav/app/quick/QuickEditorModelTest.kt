@@ -2,6 +2,7 @@ package io.github.laalka.slav.app.quick
 
 import io.github.laalka.slav.app.DrawingPicker
 import io.github.laalka.slav.app.Deps
+import io.github.laalka.slav.app.testScope
 import io.github.laalka.slav.app.calculations.CardModel
 import io.github.laalka.slav.app.calculations.quickGoldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
@@ -286,7 +287,7 @@ class QuickEditorModelTest {
         val snapshot = stored(source).snapshot
         // Prices change after the calculation: the revision keeps the old ones.
         deps.updateSettings { it.copy(laserCutPerMinute = BigDecimal("80")) }
-        val card = CardModel(deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, source, onRevision = {}, onDeleted = {})
+        val card = CardModel(deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, testScope(), source, onRevision = {}, onDeleted = {})
         val draft = card.edit()
 
         val untouched = editor(draft)

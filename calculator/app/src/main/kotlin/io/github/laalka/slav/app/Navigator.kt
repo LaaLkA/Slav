@@ -173,6 +173,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             deps.adminPassword,
             deps.attachments,
             deps.fileOpener,
+            scope,
             id,
             onRevision = { revision -> show(card(revision)) },
             onDeleted = { show(Page.Calculations) },

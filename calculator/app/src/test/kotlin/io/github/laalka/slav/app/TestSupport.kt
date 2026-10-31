@@ -4,6 +4,9 @@ import io.github.laalka.slav.core.CalcResult
 import io.github.laalka.slav.core.CalculationInput
 import io.github.laalka.slav.data.PasswordSeed
 import io.github.laalka.slav.data.StoredCalculation
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import java.nio.file.Path
 
 /** The administrator password of the tests; the one of the program is not in the repository. */
@@ -11,6 +14,12 @@ const val ADMIN_PASSWORD = "test-admin-pass"
 
 /** The seed of [ADMIN_PASSWORD], with few rounds so the tests stay quick. */
 fun testAdminSeed(): PasswordSeed = PasswordSeed.of(ADMIN_PASSWORD.toCharArray(), ByteArray(16) { 3 }, iterations = 1_000)
+
+/**
+ * A scope for a model whose background work (the thumbnails of the drawings) the test does not look
+ * at. It runs on the thread that launches, so the test is not waiting for a dispatcher.
+ */
+fun testScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
 /** UI tests drive no file dialogs. */
 object NoFilePicker : FilePicker {

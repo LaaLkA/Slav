@@ -23,6 +23,8 @@ dependencies {
     api(project(":core"))
     implementation(libs.sqldelight.sqlite.driver)
     implementation(libs.kotlinx.serialization.json)
+    // The first page of a PDF drawing becomes its thumbnail.
+    implementation(libs.pdfbox)
     testImplementation(kotlin("test"))
 }
 

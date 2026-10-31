@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.calculations
 import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
 import io.github.laalka.slav.app.testAdminSeed
+import io.github.laalka.slav.app.testScope
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Material
@@ -50,6 +51,7 @@ class CardModelTest {
         deps.adminPassword,
         deps.attachments,
         deps.fileOpener,
+        testScope(),
         id,
         onRevision = { revisions += it },
         onDeleted = { deleted++ },

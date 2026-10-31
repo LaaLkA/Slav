@@ -84,14 +84,14 @@ class EditorModel(
     private val _state = MutableStateFlow(build())
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
-    /** The drawings of the calculation; the editor only edits drafts, so removing one needs no password. */
+    /** The drawings of the calculation. */
     val attachments = AttachmentsModel(
         attachmentRepository,
         fileOpener,
         // this.id is the property, which follows the saves; a bare id here would be the constructor parameter.
         calculationId = { this.id },
         storedCalculationId = ::storedId,
-        passwordGuard = null,
+        scope = scope,
     )
 
     /** «В библиотеку» on a part and «Добавить из библиотеки» above the parts; what they add is a copy, not a link. */

@@ -23,6 +23,7 @@ import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.CalculationSummary
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.StoredCalculation
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -95,6 +96,7 @@ class CardModel(
     adminPassword: AdminPassword,
     attachmentRepository: AttachmentRepository,
     fileOpener: FileOpener,
+    scope: CoroutineScope,
     val id: UUID,
     private val onRevision: (UUID) -> Unit,
     private val onDeleted: () -> Unit,
@@ -108,15 +110,16 @@ class CardModel(
     private val deletion = DeleteFlow(adminPassword, calculations::delete)
 
     /**
-     * The drawings of the card (spec 8.2). Adding one does not change the price, so it is always
-     * allowed; removing one from a calculated record needs the administrator password, from a draft it is free.
+     * The drawings of the card (spec 8.2). Adding or removing one changes only the drawings: it asks
+     * for no password, even on a calculated record, and makes no new version, so the id, status and
+     * price stay as they were. Only deleting the whole calculation needs the administrator password.
      */
     val attachments = AttachmentsModel(
         attachmentRepository,
         fileOpener,
         calculationId = { id },
         storedCalculationId = { id },
-        passwordGuard = adminPassword.takeIf { calculation.status != CalculationStatus.DRAFT },
+        scope = scope,
     )
 
     /** The pending «Пересчитать по текущим ценам»: its new unit price for the preview, and how to save it as previewed. */
