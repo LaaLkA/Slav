@@ -59,6 +59,8 @@ class AttachmentsModelTest {
         onRevision = {},
         onDeleted = {},
         onOpenEditor = { _, _ -> },
+        archive = deps.archive,
+        onArchived = {},
     )
 
     private fun draftCard(): CardModel = card(deps.calculations.saveDraft(goldenInput()))

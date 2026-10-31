@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -38,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,6 +52,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -79,6 +84,7 @@ private enum class ListColumn(val title: String, val sort: CalculationSortColumn
 }
 
 private val ACTIONS_WIDTH = 48.dp
+private val SELECT_WIDTH = 48.dp
 
 /**
  * The start page of «Расчёты» (spec 8.1): the stored calculations with search, filters and
@@ -97,10 +103,15 @@ fun CalculationsScreen(
         modifier = Modifier.fillMaxSize().padding(Spacing.large),
         verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
             Text("Готовые расчёты", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            // Nothing to select while the list is empty, and a selection already open has its own bar below.
+            if (!state.isEmpty && !state.selecting) {
+                OutlinedButton(onClick = model::startSelecting, modifier = Modifier.testTag(CalculationTags.SELECT)) { Text("Выбрать") }
+            }
             NewCalculationButton(onNew)
         }
+        if (state.selecting) SelectionBar(state, model, filePicker)
         state.message?.let { message ->
             Box(Modifier.testTag(CalculationTags.MESSAGE)) { NoticeCard(message.text, message.isError, onDismiss = model::dismissMessage) }
         }
@@ -115,6 +126,51 @@ fun CalculationsScreen(
 
     state.deleteQuestion?.let { question ->
         DeleteDialog(question, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
+    }
+    state.archiveQuestion?.let { question ->
+        ArchiveDialog(question, model::onArchivePasswordChange, onConfirm = model::confirmArchive, onCancel = model::cancelArchive)
+    }
+}
+
+/**
+ * «Выбрать все», how many rows are checked and «В архив (N)»: the file is chosen first, then the model
+ * asks the administrator password; nothing is written before both.
+ */
+@Composable
+private fun SelectionBar(state: ListState, model: CalculationListModel, filePicker: FilePicker) {
+    val checked = state.selected.size
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+        Row(
+            modifier = Modifier
+                .toggleable(
+                    value = state.rows.isNotEmpty() && checked == state.rows.size,
+                    role = Role.Checkbox,
+                    enabled = state.rows.isNotEmpty(),
+                    onValueChange = { model.toggleSelectAll() },
+                )
+                .testTag(CalculationTags.SELECT_ALL),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TriStateCheckbox(
+                state = when (checked) {
+                    0 -> ToggleableState.Off
+                    state.rows.size -> ToggleableState.On
+                    else -> ToggleableState.Indeterminate
+                },
+                onClick = null,
+            )
+            Text("Выбрать все", modifier = Modifier.padding(start = Spacing.small))
+        }
+        Text("Выбрано: $checked", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.weight(1f))
+        Button(
+            onClick = {
+                filePicker.chooseSaveTarget(ARCHIVE_DIALOG_TITLE, model.suggestedArchiveName(), ARCHIVE_EXTENSION)?.let(model::requestArchive)
+            },
+            enabled = checked > 0,
+            modifier = Modifier.testTag(CalculationTags.ARCHIVE),
+        ) { Text("В архив ($checked)") }
+        TextButton(onClick = model::stopSelecting, modifier = Modifier.testTag(CalculationTags.SELECT_CANCEL)) { Text("Отмена") }
     }
 }
 
@@ -235,6 +291,7 @@ private fun Table(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
+            if (state.selecting) Box(Modifier.width(SELECT_WIDTH))
             ListColumn.entries.forEach { column -> SortHeader(column, state, model) }
             Box(Modifier.width(ACTIONS_WIDTH))
         }
@@ -259,6 +316,8 @@ private fun Table(
                         TableRow(
                             row = row,
                             tag = CalculationTags.row(index),
+                            checked = if (state.selecting) row.id in state.selected else null,
+                            onToggle = { model.toggleSelected(row.id) },
                             onOpen = { onOpen(row) },
                             onCopy = { onCopy(row.id) },
                             onDelete = { model.requestDelete(row.id) },
@@ -309,16 +368,23 @@ private fun RowScope.SortHeader(column: ListColumn, state: ListState, model: Cal
 private fun TableRow(
     row: ListRow,
     tag: String,
+    /** Whether the row is checked; null while rows are not being selected, when there is no check box. */
+    checked: Boolean?,
+    onToggle: () -> Unit,
     onOpen: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
     onExport: (ExportFormat) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onOpen).padding(horizontal = Spacing.small).testTag(tag),
+        // While rows are being selected a click on the row checks it, and «Открыть» in its menu is how to open it.
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = if (checked == null) onOpen else onToggle).padding(horizontal = Spacing.small).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {
+        if (checked != null) {
+            Checkbox(checked = checked, onCheckedChange = { onToggle() }, modifier = Modifier.width(SELECT_WIDTH).testTag("$tag/check"))
+        }
         Row(cell(ListColumn.NAME), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
             Text(
                 row.name,

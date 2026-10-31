@@ -11,13 +11,19 @@ import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.ProductOperation
 import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.AttachResult
+import io.github.laalka.slav.data.CalculationArchive
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.StoredCalculation
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 import java.math.BigDecimal
+import java.nio.file.Path
 import java.time.LocalDate
 import java.util.UUID
+import java.util.zip.ZipFile
+import kotlin.io.path.listDirectoryEntries
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -48,7 +54,10 @@ class CardModelTest {
     /** The editors the card asked for: the id and whether it is edited in place. */
     private val opened = mutableListOf<Pair<UUID, Boolean>>()
 
-    private fun card(id: UUID) = CardModel(
+    /** What the card said about the calculations it archived. */
+    private val archived = mutableListOf<ArchiveOutcome.Sent>()
+
+    private fun card(id: UUID, archive: CalculationArchive = deps.archive) = CardModel(
         deps.calculations,
         deps.settings,
         deps.adminPassword,
@@ -59,6 +68,8 @@ class CardModelTest {
         onRevision = { revisions += it },
         onDeleted = { deleted++ },
         onOpenEditor = { edited, inPlace -> opened += edited to inPlace },
+        archive = archive,
+        onArchived = { archived += it },
     )
 
     private fun stored(id: UUID): StoredCalculation.Full = assertIs<StoredCalculation.Full>(deps.calculations.get(id))
@@ -527,5 +538,91 @@ class CardModelTest {
         card.confirmDelete()
         assertNull(deps.calculations.get(id))
         assertEquals(1, deleted)
+    }
+
+    private fun archiveTarget(): Path = temp.newFolder("out").toPath().resolve("a.zip")
+
+    @Test
+    fun `В архив asks the administrator password, and a wrong one writes nothing and deletes nothing`() {
+        val id = deps.saveCalculated()
+        val target = archiveTarget()
+        val card = card(id)
+
+        card.requestArchive(target)
+        assertEquals(ArchiveQuestion(1, "Кронштейн", target.toString(), null), card.state.value.archiveQuestion)
+        card.onArchivePasswordChange("not-the-password")
+        card.confirmArchive()
+
+        assertEquals(WRONG_PASSWORD, card.state.value.archiveQuestion?.error)
+        assertNotNull(deps.calculations.get(id))
+        assertEquals(emptyList(), target.parent.listDirectoryEntries())
+        assertEquals(emptyList(), archived)
+        card.cancelArchive()
+        assertNull(card.state.value.archiveQuestion)
+        assertNotNull(deps.calculations.get(id))
+    }
+
+    @Test
+    fun `В архив with the password writes the zip, deletes the calculation with its drawings and hands the outcome over`() {
+        val id = deps.saveCalculated()
+        val drawing = temp.newFile("узел.png").also { it.writeBytes(byteArrayOf(1, 2, 3)) }
+        assertIs<AttachResult.Added>(deps.attachments.add(id, drawing.toPath()))
+        val target = archiveTarget()
+        val card = card(id)
+
+        card.requestArchive(target)
+        card.onArchivePasswordChange(ADMIN_PASSWORD)
+        card.confirmArchive()
+
+        assertNull(deps.calculations.get(id))
+        assertEquals(emptyList(), deps.attachments.list(id))
+        assertEquals(listOf(ArchiveOutcome.Sent(1, target)), archived)
+        assertEquals(0, deleted, "it is archived, not deleted from the card")
+        val folder = "Кронштейн__${id.toString().take(8)}"
+        ZipFile(target.toFile()).use { zip ->
+            assertEquals(
+                setOf("manifest.json", "$folder/calculation.json", "$folder/calculation.pdf", "$folder/drawings/узел.png"),
+                zip.entries().asSequence().map { it.name }.toSet(),
+            )
+        }
+        assertEquals(listOf(target), target.parent.listDirectoryEntries())
+    }
+
+    @Test
+    fun `a failed archive stays on the card as a message and deletes nothing`() {
+        val id = deps.saveCalculated()
+        val target = archiveTarget()
+        val failing = CalculationArchive(deps.calculations, deps.attachments, pdf = { throw IOException("PDF failed") })
+        val card = card(id, failing)
+
+        card.requestArchive(target)
+        card.onArchivePasswordChange(ADMIN_PASSWORD)
+        card.confirmArchive()
+
+        assertNotNull(deps.calculations.get(id))
+        assertEquals(emptyList(), archived)
+        val message = assertNotNull(card.state.value.message)
+        assertTrue(message.isError)
+        assertEquals("Не удалось отправить в архив: не удалось записать архив в $target: PDF failed. Ничего не удалено.", message.text)
+        assertNull(card.state.value.archiveQuestion)
+        assertEquals(emptyList(), target.parent.listDirectoryEntries())
+        card.dismissMessage()
+        assertNull(card.state.value.message)
+    }
+
+    @Test
+    fun `a draft can be archived too, without a PDF`() {
+        val id = deps.calculations.saveDraft(goldenInput())
+        val target = archiveTarget()
+        val card = card(id)
+
+        card.requestArchive(target)
+        card.onArchivePasswordChange(ADMIN_PASSWORD)
+        card.confirmArchive()
+
+        assertNull(deps.calculations.get(id))
+        ZipFile(target.toFile()).use { zip ->
+            assertEquals(setOf("manifest.json", "Кронштейн__${id.toString().take(8)}/calculation.json"), zip.entries().asSequence().map { it.name }.toSet())
+        }
     }
 }

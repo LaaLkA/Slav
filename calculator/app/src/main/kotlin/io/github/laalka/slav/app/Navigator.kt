@@ -68,7 +68,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     val settings = SettingsModel(deps.settings, deps.settingsTransfer, deps.preferences, deps.adminPassword)
 
     /** Created once as well: search, filters and sorting stay while calculations are opened. */
-    val calculationList = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
+    val calculationList = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword, deps.archive)
 
     /** Created once: the search of «Детали» stays while the user visits other screens. */
     val library = LibraryModel(deps.partTemplates)
@@ -205,7 +205,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         inPlace = inPlace,
     )
 
-    // A new version (recalculation, new run size) opens as its own card; a deleted calculation leaves nothing to show.
+    // A new version (recalculation, new run size) opens as its own card; a deleted or archived calculation leaves nothing to show.
     private fun card(id: UUID): Page.Card = Page.Card(
         CardModel(
             deps.calculations,
@@ -218,6 +218,12 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             onRevision = { revision -> show(card(revision)) },
             onDeleted = { show(Page.Calculations) },
             onOpenEditor = { edited, inPlace -> navigate(Screen.Editor(edited, inPlace = inPlace)) },
+            archive = deps.archive,
+            // The calculation is gone with its card: the list says where it went.
+            onArchived = { outcome ->
+                calculationList.announce(outcome)
+                show(Page.Calculations)
+            },
         ),
     )
 }

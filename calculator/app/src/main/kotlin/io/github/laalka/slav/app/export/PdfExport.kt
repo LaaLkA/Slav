@@ -1,18 +1,23 @@
 package io.github.laalka.slav.app.export
 
 import io.github.laalka.slav.app.calculations.Breakdown
+import io.github.laalka.slav.app.calculations.breakdown
 import io.github.laalka.slav.app.calculations.discountLabel
 import io.github.laalka.slav.app.calculations.formatDiscount
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.app.ui.formatMoney
+import io.github.laalka.slav.data.StoredCalculation
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.common.PDRectangle
 import org.apache.pdfbox.pdmodel.font.PDFont
 import org.apache.pdfbox.pdmodel.font.PDType0Font
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.ZoneId
 
 // Noto Sans (SIL Open Font License, fonts/OFL.txt): the standard PDF fonts have no Cyrillic, so
 // the font is embedded, as a subset of the glyphs used.
@@ -23,14 +28,20 @@ private const val MARGIN = 56f
 private const val ROW_GAP = 10f
 private const val GREY = 0.4f
 
+/** Writes the client's copy of [breakdown] ([clientPdfBytes]) to [target], replacing the file. */
+fun writeClientPdf(breakdown: Breakdown, currency: String, target: Path) {
+    // Made whole before the file is touched, so a PDF that cannot be made leaves the old file as it was.
+    Files.write(target, clientPdfBytes(breakdown, currency))
+}
+
 /**
  * The client's copy of a calculation (spec 8.5): its name, the counterparty when there is one, the
  * date of its prices, the run size, the sum before the discount and the discount when there is
  * one, the unit price and the total, on one A4 page. A simplified calculation has no run size, so
  * it shows neither the run size nor a total: its unit price is its price. No breakdown and no
- * company details.
+ * company details. The PDF comes as bytes, for a place that is not a file of its own: the archive of calculations.
  */
-fun writeClientPdf(breakdown: Breakdown, currency: String, target: Path) {
+fun clientPdfBytes(breakdown: Breakdown, currency: String): ByteArray = ByteArrayOutputStream().also { out ->
     PDDocument().use { document ->
         val regular = loadFont(document, REGULAR_FONT)
         val bold = loadFont(document, BOLD_FONT)
@@ -64,9 +75,13 @@ fun writeClientPdf(breakdown: Breakdown, currency: String, target: Path) {
                 writer.row("Цена за единицу", formatMoney(breakdown.unitPrice, currency), bold, bold, 14f)
             }
         }
-        document.save(target.toFile())
+        document.save(out)
     }
-}
+}.toByteArray()
+
+/** The client's copy of [calculation] for the archive; null for a draft, which has no price to show. */
+fun clientPdfBytes(calculation: StoredCalculation, currency: String, zone: ZoneId): ByteArray? =
+    calculation.breakdown(zone)?.let { clientPdfBytes(it, currency) }
 
 private fun loadFont(document: PDDocument, resource: String): PDFont {
     val stream = PageWriter::class.java.getResourceAsStream(resource) ?: throw IOException("Font $resource is missing from the program")

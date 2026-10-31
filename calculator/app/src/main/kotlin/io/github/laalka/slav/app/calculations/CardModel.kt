@@ -18,6 +18,7 @@ import io.github.laalka.slav.core.QuickCalculator
 import io.github.laalka.slav.core.QuickOutcome
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AttachmentRepository
+import io.github.laalka.slav.data.CalculationArchive
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.math.BigDecimal
+import java.nio.file.Path
 import java.time.ZoneId
 import java.util.UUID
 
@@ -89,6 +91,10 @@ data class CardState(
     val deleteQuestion: DeleteQuestion?,
     /** The administrator password asked before a calculated record is edited in place. */
     val editQuestion: EditQuestion?,
+    /** The administrator password asked before this calculation is sent to an archive file and deleted. */
+    val archiveQuestion: ArchiveQuestion?,
+    /** Why «В архив» did not go through; the card is still here, and nothing was deleted. */
+    val message: ListMessage?,
 ) {
     val isPriced: Boolean get() = unitPrice != null
 
@@ -105,6 +111,9 @@ data class CardState(
  * the new calculation only once confirmed, under the name «… №N»; a new run size keeps the snapshot
  * and the result, so the total follows from the stored unit price. A draft is edited as it is,
  * with no password. Deleting needs the administrator password; [onDeleted] is called when it is done.
+ * «В архив» writes the calculation to a zip file the user has chosen and then deletes it ([ArchiveFlow]),
+ * after the administrator password; [onArchived] is called once it is done, the calculation being gone
+ * with the card, and a failure is shown on the card ([CardState.message]) with nothing deleted.
  *
  * [onOpenEditor] gets the id to edit and whether it is edited in place.
  */
@@ -119,6 +128,8 @@ class CardModel(
     private val onRevision: (UUID) -> Unit,
     private val onDeleted: () -> Unit,
     private val onOpenEditor: (id: UUID, inPlace: Boolean) -> Unit,
+    archive: CalculationArchive,
+    private val onArchived: (ArchiveOutcome.Sent) -> Unit,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
     private var calculation: StoredCalculation = read()
@@ -127,7 +138,9 @@ class CardModel(
     private var source: StoredCalculation? = null
     private var revisions: List<CalculationSummary> = emptyList()
     private val deletion = PasswordFlow(adminPassword, calculations::delete)
-    private val editing = PasswordFlow(adminPassword) { onOpenEditor(it, true) }
+    private val editing = PasswordFlow<UUID>(adminPassword) { onOpenEditor(it, true) }
+    private val archiving = ArchiveFlow(archive, calculations, adminPassword, onFinished = ::archived)
+    private var message: ListMessage? = null
 
     /**
      * The drawings of the card (spec 8.2). Adding or removing one changes only the drawings: it asks
@@ -163,6 +176,8 @@ class CardModel(
         recalcErrors = emptyList()
         deletion.cancel()
         editing.cancel()
+        archiving.cancel()
+        message = null
         readLinks()
         attachments.reload()
         refresh()
@@ -249,7 +264,7 @@ class CardModel(
         onRevision(revision)
     }
 
-    /** Отправлен, В работе or Архив, set by hand (spec 8.1). */
+    /** Отправлен, В работе or Завершён, set by hand (spec 8.1). */
     fun setStatus(status: CalculationStatus) {
         if (status == calculation.status) return
         calculations.setStatus(id, status)
@@ -330,6 +345,43 @@ class CardModel(
         if (deleted) onDeleted()
     }
 
+    /** What the save dialog of «В архив» offers: the file name of today. */
+    fun suggestedArchiveName(): String = suggestedArchiveName(zone)
+
+    /** «В архив» after the user has chosen the file [target]: asks the administrator password, then writes the file and deletes this calculation. */
+    fun requestArchive(target: Path) {
+        archiving.request(listOf(id), target)
+        refresh()
+    }
+
+    fun onArchivePasswordChange(text: String) {
+        archiving.onPasswordChange(text)
+        refresh()
+    }
+
+    /** A wrong password is flagged and nothing is written; a failure after it is shown on the card. */
+    fun confirmArchive() {
+        archiving.confirm()
+        refresh()
+    }
+
+    fun cancelArchive() {
+        archiving.cancel()
+        refresh()
+    }
+
+    fun dismissMessage() {
+        message = null
+        refresh()
+    }
+
+    private fun archived(outcome: ArchiveOutcome) {
+        when (outcome) {
+            is ArchiveOutcome.Sent -> onArchived(outcome)
+            is ArchiveOutcome.Failed -> message = outcome.toMessage()
+        }
+    }
+
     private fun read(): StoredCalculation = requireNotNull(calculations.get(id)) { "No calculation $id" }
 
     private fun readLinks() {
@@ -383,6 +435,8 @@ class CardModel(
             revisions = revisions.map { it.toLink() },
             deleteQuestion = deletion.pending?.let { DeleteQuestion(calculation.name.ifBlank { UNNAMED }, deletion.error) },
             editQuestion = editing.pending?.let { EditQuestion(calculation.name.ifBlank { UNNAMED }, editing.error) },
+            archiveQuestion = archiving.question,
+            message = message,
         )
     }
 

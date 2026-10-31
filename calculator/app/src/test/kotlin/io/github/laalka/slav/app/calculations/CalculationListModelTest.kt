@@ -48,7 +48,7 @@ class CalculationListModelTest {
         frame = deps.calculations.saveDraft(goldenInput("Рама").copy(parts = emptyList()))
     }
 
-    private fun model() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
+    private fun model() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword, deps.archive)
 
     private val CalculationListModel.names: List<String> get() = state.value.rows.map { it.name }
 

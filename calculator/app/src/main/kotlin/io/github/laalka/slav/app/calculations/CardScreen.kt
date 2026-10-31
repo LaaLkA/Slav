@@ -44,6 +44,7 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.PasswordDialog
@@ -78,8 +79,11 @@ fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onO
                 modifier = Modifier.width(SUMMARY_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
+                state.message?.let { message ->
+                    Box(Modifier.testTag(CalculationTags.CARD_MESSAGE)) { NoticeCard(message.text, message.isError, onDismiss = model::dismissMessage) }
+                }
                 Summary(state, model)
-                Actions(state, model)
+                Actions(state, model, filePicker)
                 AttachmentsBlock(model.attachments, filePicker)
                 if (state.recalcErrors.isNotEmpty()) {
                     CalcErrors(
@@ -102,6 +106,7 @@ fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onO
         DeleteDialog(it, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
     }
     state.editQuestion?.let { EditDialog(it, model::onEditPasswordChange, onConfirm = model::confirmEdit, onCancel = model::cancelEdit) }
+    state.archiveQuestion?.let { ArchiveDialog(it, model::onArchivePasswordChange, onConfirm = model::confirmArchive, onCancel = model::cancelArchive) }
 }
 
 /** «Изменить расчёт?»: editing a calculated record in place needs the administrator password; the error of a wrong one is shown under the field. */
@@ -266,7 +271,7 @@ private fun SummaryRow(label: String, value: String, tag: String, emphasized: Bo
 }
 
 @Composable
-private fun Actions(state: CardState, model: CardModel) {
+private fun Actions(state: CardState, model: CardModel, filePicker: FilePicker) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
         // A draft is edited as it is; a calculated record is changed in place only under the administrator password.
         OutlinedButton(onClick = model::requestEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
@@ -282,6 +287,15 @@ private fun Actions(state: CardState, model: CardModel) {
                 Icon(Icons.Filled.Refresh, contentDescription = null)
                 Text("Пересчитать по текущим ценам", modifier = Modifier.padding(start = Spacing.small))
             }
+        }
+        // The file is chosen first; the password is asked after it, and the calculation is deleted once the file is written and checked.
+        OutlinedButton(
+            onClick = {
+                filePicker.chooseSaveTarget(ARCHIVE_DIALOG_TITLE, model.suggestedArchiveName(), ARCHIVE_EXTENSION)?.let(model::requestArchive)
+            },
+            modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_ARCHIVE),
+        ) {
+            Text("В архив")
         }
         OutlinedButton(onClick = model::requestDelete, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_DELETE)) {
             Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)

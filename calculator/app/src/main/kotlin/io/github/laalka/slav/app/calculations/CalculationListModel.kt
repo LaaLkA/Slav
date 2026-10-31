@@ -6,6 +6,7 @@ import io.github.laalka.slav.app.ui.formatDateTime
 import io.github.laalka.slav.app.ui.formatMoney
 import io.github.laalka.slav.app.ui.parseDate
 import io.github.laalka.slav.data.AdminPassword
+import io.github.laalka.slav.data.CalculationArchive
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationSort
@@ -62,6 +63,12 @@ data class ListState(
     val filterEpoch: Int,
     /** The calculation waiting for the administrator password to be deleted. */
     val deleteQuestion: DeleteQuestion?,
+    /** Every row has a check box and «В архив» is offered for the checked ones. */
+    val selecting: Boolean,
+    /** The checked rows; always some of [rows], so what is checked is what is shown. */
+    val selected: Set<UUID>,
+    /** The calculations waiting for the administrator password to be sent to the archive file. */
+    val archiveQuestion: ArchiveQuestion?,
     val message: ListMessage?,
 )
 
@@ -69,11 +76,17 @@ data class ListState(
  * «Готовые расчёты» (spec 8.1). Search, filters and sorting are the repository's: the name is
  * matched in any letter case, Cyrillic included. Created once per window, so the filters stay
  * while the user opens calculations; [reload] reads the list again when the page is shown.
+ *
+ * «Выбрать» turns the rows into a selection: the checked rows are sent to an archive file with
+ * [requestArchive], which deletes them once the file is written and verified ([ArchiveFlow]). The
+ * selection is cut to the rows shown whenever the list is read, so a filter never leaves a calculation
+ * checked that the user cannot see.
  */
 class CalculationListModel(
     private val calculations: CalculationRepository,
     private val settings: SettingsRepository,
     adminPassword: AdminPassword,
+    archive: CalculationArchive,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
     private var query = ""
@@ -83,6 +96,9 @@ class CalculationListModel(
     private var sort = CalculationSort.DEFAULT
     private var filterEpoch = 0
     private val deletion = PasswordFlow(adminPassword, calculations::delete)
+    private val archiving = ArchiveFlow(archive, calculations, adminPassword, onFinished = ::archived)
+    private var selecting = false
+    private var selected: Set<UUID> = emptySet()
     private var message: ListMessage? = null
 
     private val _state = MutableStateFlow(build())
@@ -156,6 +172,81 @@ class CalculationListModel(
         refresh()
     }
 
+    /** «Выбрать»: the rows get check boxes, none checked. */
+    fun startSelecting() {
+        selecting = true
+        selected = emptySet()
+        refresh()
+    }
+
+    /** «Отмена»: back to the plain list; an open question about the archive is dropped with the selection. */
+    fun stopSelecting() {
+        selecting = false
+        selected = emptySet()
+        archiving.cancel()
+        refresh()
+    }
+
+    /** Checks or unchecks the row [id]; a row that is not shown cannot be checked. */
+    fun toggleSelected(id: UUID) {
+        if (!selecting) return
+        val shown = _state.value.rows.any { it.id == id }
+        selected = if (id in selected) selected - id else if (shown) selected + id else selected
+        refresh()
+    }
+
+    /** «Выбрать все»: checks every row shown, or unchecks them all when they are all checked already. */
+    fun toggleSelectAll() {
+        if (!selecting) return
+        val shown = _state.value.rows.map { it.id }.toSet()
+        selected = if (shown.isNotEmpty() && selected == shown) emptySet() else shown
+        refresh()
+    }
+
+    /** What the save dialog of «В архив» offers: the file name of today. */
+    fun suggestedArchiveName(): String = suggestedArchiveName(zone)
+
+    /**
+     * «В архив (N)» after the user has chosen the file [target]: asks the administrator password, then
+     * writes the checked rows there and deletes them. Does nothing when no row is checked.
+     */
+    fun requestArchive(target: Path) {
+        val ids = _state.value.rows.map { it.id }.filter { it in selected }
+        if (ids.isEmpty()) return
+        archiving.request(ids, target)
+        refresh()
+    }
+
+    fun onArchivePasswordChange(text: String) {
+        archiving.onPasswordChange(text)
+        refresh()
+    }
+
+    /** Sends the checked rows to the archive file when the password is the administrator's; a wrong one is flagged and nothing is written. */
+    fun confirmArchive() {
+        archiving.confirm()
+        refresh()
+    }
+
+    fun cancelArchive() {
+        archiving.cancel()
+        refresh()
+    }
+
+    /** Shows [outcome] above the list: the archive was made from a card, which has gone with its calculation. */
+    fun announce(outcome: ArchiveOutcome) {
+        message = outcome.toMessage()
+        refresh()
+    }
+
+    private fun archived(outcome: ArchiveOutcome) {
+        message = outcome.toMessage()
+        if (outcome is ArchiveOutcome.Sent) {
+            selecting = false
+            selected = emptySet()
+        }
+    }
+
     /** What the save dialog offers: the calculation name with the extension of [format]. */
     fun suggestedFileName(id: UUID, format: ExportFormat): String =
         exportFileName(requireNotNull(calculations.get(id)) { "No calculation $id" }.name, format)
@@ -196,6 +287,8 @@ class CalculationListModel(
         )
         val hasFilters = query.isNotBlank() || statuses.isNotEmpty() || fromText.isNotBlank() || toText.isNotBlank()
         val rows = summaries.map { it.toRow(currency) }
+        val shown = rows.map { it.id }.toSet()
+        selected = selected.filterTo(HashSet()) { it in shown }
         return ListState(
             query = query,
             statuses = statuses,
@@ -210,6 +303,9 @@ class CalculationListModel(
             filterEpoch = filterEpoch,
             // The row is asked about from the list itself, whose filters the open question leaves as they are.
             deleteQuestion = deletion.pending?.let { id -> rows.firstOrNull { it.id == id } }?.let { DeleteQuestion(it.name, deletion.error) },
+            selecting = selecting,
+            selected = selected,
+            archiveQuestion = archiving.question,
             message = message,
         )
     }

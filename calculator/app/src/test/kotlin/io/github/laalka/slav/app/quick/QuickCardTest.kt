@@ -77,11 +77,13 @@ class QuickCardTest {
         onRevision = { revisions += it },
         onDeleted = { deleted++ },
         onOpenEditor = { edited, inPlace -> opened += edited to inPlace },
+        archive = deps.archive,
+        onArchived = {},
     )
 
     private fun stored(id: UUID): StoredCalculation.Quick = assertIs<StoredCalculation.Quick>(deps.calculations.get(id))
 
-    private fun list() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
+    private fun list() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword, deps.archive)
 
     @Test
     fun `the card shows the material and the cut, the unit price and the mass of the golden case, and no run size`() {

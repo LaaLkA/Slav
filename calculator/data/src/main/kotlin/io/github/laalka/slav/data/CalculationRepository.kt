@@ -14,13 +14,17 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
-/** Statuses of spec 8.1 in their workflow order, which is also the order the list sorts them in. */
+/**
+ * Statuses of spec 8.1 in their workflow order, which is also the order the list sorts them in.
+ * [ARCHIVED] is a workflow mark shown as «Завершён»; the name is what rows already stored hold. It is not
+ * the archive file of [CalculationArchive], which takes calculations out of the program.
+ */
 enum class CalculationStatus(val title: String) {
     DRAFT("Черновик"),
     CALCULATED("Рассчитан"),
     SENT("Отправлен"),
     IN_WORK("В работе"),
-    ARCHIVED("Архив"),
+    ARCHIVED("Завершён"),
     ;
 
     companion object {

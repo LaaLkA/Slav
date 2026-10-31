@@ -25,6 +25,13 @@ object CalculationTags {
     const val DELETE_CONFIRM = "calculations/delete/confirm"
     const val DELETE_CANCEL = "calculations/delete/cancel"
     const val DELETE_PASSWORD = "calculations/delete/password"
+    const val SELECT = "calculations/select"
+    const val SELECT_ALL = "calculations/select/all"
+    const val SELECT_CANCEL = "calculations/select/cancel"
+    const val ARCHIVE = "calculations/archive"
+    const val ARCHIVE_PASSWORD = "calculations/archive/password"
+    const val ARCHIVE_CONFIRM = "calculations/archive/confirm"
+    const val ARCHIVE_CANCEL = "calculations/archive/cancel"
 
     const val CARD_NAME = "card/name"
     const val CARD_STATUS = "card/status"
@@ -37,6 +44,8 @@ object CalculationTags {
     const val CARD_QUANTITY_CANCEL = "card/quantity/cancel"
     const val CARD_SOURCE = "card/source"
     const val CARD_DELETE = "card/delete"
+    const val CARD_ARCHIVE = "card/archive"
+    const val CARD_MESSAGE = "card/message"
     const val CARD_TOTAL = "card/total"
     const val CARD_UNIT_MASS = "card/unit-mass"
     const val CARD_RUN_MASS = "card/run-mass"
@@ -64,7 +73,7 @@ object CalculationTags {
 
     fun sort(column: CalculationSortColumn) = "calculations/sort/${column.name}"
 
-    /** A row of the list by its position; its cells and actions are "<row>/name", "<row>/menu", "<row>/copy"… */
+    /** A row of the list by its position; its cells and actions are "<row>/name", "<row>/check", "<row>/menu", "<row>/copy"… */
     fun row(index: Int) = "calculations/row/$index"
 }
 

@@ -1,7 +1,6 @@
 package io.github.laalka.slav.app.calculations
 
 import io.github.laalka.slav.data.AdminPassword
-import java.util.UUID
 
 const val WRONG_PASSWORD = "Неверный пароль"
 
@@ -13,13 +12,13 @@ data class EditQuestion(val name: String, val error: String?)
 
 /**
  * A step on a calculation that needs the administrator password: deleting it, removing a drawing
- * from a calculated one, editing a calculated record in place. A wrong password does nothing and
- * leaves the question open with an error under the field; [onVerified] is called with the id asked
- * about once the password is right.
+ * from a calculated one, editing a calculated record in place, sending it to an archive file. A
+ * wrong password does nothing and leaves the question open with an error under the field;
+ * [onVerified] is called with what was asked about, an id or a request, once the password is right.
  */
-class PasswordFlow(private val adminPassword: AdminPassword, private val onVerified: (UUID) -> Unit) {
-    /** The id waiting for the password, null while nothing is being asked. */
-    var pending: UUID? = null
+class PasswordFlow<T : Any>(private val adminPassword: AdminPassword, private val onVerified: (T) -> Unit) {
+    /** What is waiting for the password, null while nothing is being asked. */
+    var pending: T? = null
         private set
 
     var error: String? = null
@@ -27,8 +26,8 @@ class PasswordFlow(private val adminPassword: AdminPassword, private val onVerif
 
     private var password = ""
 
-    fun request(id: UUID) {
-        pending = id
+    fun request(subject: T) {
+        pending = subject
         password = ""
         error = null
     }
@@ -44,14 +43,14 @@ class PasswordFlow(private val adminPassword: AdminPassword, private val onVerif
         error = null
     }
 
-    /** True when the password was right and [onVerified] has been called with the id. */
+    /** True when the password was right and [onVerified] has been called with what was asked about. */
     fun confirm(): Boolean {
-        val id = pending ?: return false
+        val subject = pending ?: return false
         if (!adminPassword.verify(password.toCharArray())) {
             error = WRONG_PASSWORD
             return false
         }
-        onVerified(id)
+        onVerified(subject)
         cancel()
         return true
     }

@@ -10,10 +10,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import io.github.laalka.slav.app.export.clientPdfBytes
 import io.github.laalka.slav.app.theme.SlavTheme
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AppPaths
 import io.github.laalka.slav.data.AttachmentRepository
+import io.github.laalka.slav.data.CalculationArchive
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.DatabaseFactory
 import io.github.laalka.slav.data.PartTemplateRepository
@@ -23,6 +25,7 @@ import io.github.laalka.slav.data.SettingsTransfer
 import java.awt.Desktop
 import java.awt.Dimension
 import java.awt.desktop.QuitStrategy
+import java.time.ZoneId
 import kotlin.io.path.Path
 
 /**
@@ -32,7 +35,7 @@ import kotlin.io.path.Path
  */
 class Deps(
     paths: AppPaths,
-    appVersion: String,
+    val appVersion: String,
     adminSeed: PasswordSeed = PasswordSeed.PRODUCTION,
     /** How «Открыть» shows a drawing; a test passes one that records the file instead of starting a program. */
     val fileOpener: FileOpener = DesktopFileOpener,
@@ -43,6 +46,14 @@ class Deps(
     // The calculations copy and delete the drawings with themselves, so they share this one.
     val attachments = AttachmentRepository(database)
     val calculations = CalculationRepository(database, attachments = attachments)
+
+    // The PDF export is part of this module, so the archive is given its renderer here.
+    val archive = CalculationArchive(
+        calculations,
+        attachments,
+        pdf = { calculation -> clientPdfBytes(calculation, settings.load().general.currencySymbol, ZoneId.systemDefault()) },
+        appVersion = appVersion,
+    )
     val partTemplates = PartTemplateRepository(database)
     val adminPassword = AdminPassword(database, adminSeed)
     val settingsTransfer = SettingsTransfer(settings, paths, appVersion)

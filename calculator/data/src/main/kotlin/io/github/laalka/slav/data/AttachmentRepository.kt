@@ -265,12 +265,18 @@ class AttachmentRepository(database: AppDatabase, private val clock: Clock = Clo
         private val UNSAFE_CHARACTERS = Regex("""[\\/:*?"<>|\u0000-\u001F\u007F]""")
 
         /** `<attachment id>-<name cleaned of path separators and the like, shortened to fit>`; the extension is kept. */
-        internal fun storedName(id: UUID, fileName: String): String {
+        internal fun storedName(id: UUID, fileName: String): String = "$id-${cleanFileName(fileName)}"
+
+        /**
+         * [fileName] with the characters no file system takes replaced by "_", outer spaces cut and, when
+         * longer than [MAX_NAME_BYTES] in UTF-8, shortened before the extension, which is kept.
+         */
+        internal fun cleanFileName(fileName: String): String {
             val cleaned = UNSAFE_CHARACTERS.replace(fileName, "_").trim()
-            if (cleaned.toByteArray().size <= MAX_NAME_BYTES) return "$id-$cleaned"
+            if (cleaned.toByteArray().size <= MAX_NAME_BYTES) return cleaned
             val dot = cleaned.lastIndexOf('.')
             val extension = if (dot < 0) "" else cleaned.substring(dot)
-            return "$id-${cleaned.dropLast(extension.length).truncatedToBytes(MAX_NAME_BYTES - extension.toByteArray().size)}$extension"
+            return "${cleaned.dropLast(extension.length).truncatedToBytes(MAX_NAME_BYTES - extension.toByteArray().size)}$extension"
         }
 
         /** The longest beginning of the text that fits [maxBytes] in UTF-8, cut between characters, never inside a surrogate pair. */
