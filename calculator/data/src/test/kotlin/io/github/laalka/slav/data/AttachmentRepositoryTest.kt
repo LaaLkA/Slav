@@ -117,6 +117,17 @@ class AttachmentRepositoryTest {
     }
 
     @Test
+    fun `files attached within one millisecond are listed in the order they were attached, not in the order of their ids`() {
+        val calculation = UUID.randomUUID()
+        // The clock does not move, so every file has the same instant; the ids are random.
+        val names = (0 until 20).map { "f%02d.pdf".format(it) }
+
+        names.forEach { added(calculation, file(it)) }
+
+        assertEquals(names, attachments.list(calculation).map { it.fileName })
+    }
+
+    @Test
     fun `pdf, jpg, jpeg and png are accepted in any letter case`() {
         val calculation = UUID.randomUUID()
         val names = listOf("a.pdf", "B.PDF", "c.jpg", "D.JPG", "e.jpeg", "F.JpEg", "g.png", "Чертёж.PNG")

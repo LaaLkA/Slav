@@ -16,8 +16,9 @@ CREATE INDEX attachment_calculation_id ON attachment(calculation_id);
 selectById:
 SELECT * FROM attachment WHERE id = :id;
 
+-- Files attached within one millisecond keep the order they were attached in: rowid grows with each insert.
 selectByCalculation:
-SELECT * FROM attachment WHERE calculation_id = :calculationId ORDER BY added_at, id;
+SELECT * FROM attachment WHERE calculation_id = :calculationId ORDER BY added_at, rowid;
 
 insert:
 INSERT INTO attachment(id, calculation_id, file_name, stored_name, size_bytes, added_at)
