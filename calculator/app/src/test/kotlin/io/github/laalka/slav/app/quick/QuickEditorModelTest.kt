@@ -110,7 +110,7 @@ class QuickEditorModelTest {
     }
 
     @Test
-    fun `the golden quick case is calculated and saved as 5 400,00, 54 000,00 for a run of 10`() = runTest {
+    fun `the golden quick case is calculated and saved as 5 400,00, and the run of 10 typed is not kept`() = runTest {
         val editor = editor()
         editor.fillQuickGoldenCase()
         assertEquals("24 кг", editor.view.mass)
@@ -123,9 +123,9 @@ class QuickEditorModelTest {
         val saved = stored(id)
         assertEquals(CalculationKind.QUICK, saved.kind)
         assertEquals(CalculationStatus.CALCULATED, saved.status)
-        assertEquals(quickGoldenInput(quantity = 10), saved.input)
+        assertEquals(quickGoldenInput(quantity = 1), saved.input)
         assertEquals("5400.00", saved.unitPrice?.amount?.toPlainString())
-        assertEquals("54000.00", saved.unitPrice?.times(saved.quantity)?.amount?.toPlainString())
+        assertEquals("5400.00", saved.unitPrice?.times(saved.quantity)?.amount?.toPlainString())
         assertEquals(deps.settings.load(), saved.snapshot)
         assertEquals(listOf(id), deps.calculations.list().map { it.id }, "the draft became the calculation, no second row")
     }
@@ -194,7 +194,8 @@ class QuickEditorModelTest {
         val again = editor(id).view
         assertFalse(again.isNew)
         assertEquals("Лист", again.name.text)
-        assertEquals("4", again.quantity.text)
+        // A simplified calculation has no run size: the 4 typed is not kept.
+        assertEquals("1", again.quantity.text)
         assertNull(again.grade.selected)
         assertEquals("3", again.thickness.selected)
         assertEquals("2,5", again.sheetArea.text)

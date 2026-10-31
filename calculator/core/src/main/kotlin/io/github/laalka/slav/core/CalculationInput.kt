@@ -4,14 +4,26 @@ import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 
-/** What the manager enters for one calculation (spec 3, 7.1); [quantity] is the run size. */
+/**
+ * What the manager enters for one calculation (spec 3, 7.1); [quantity] is the run size.
+ * [counterparty] is the customer the calculation is for, free text, empty when not given.
+ * [discountPercent] is the discount on the price of the product: null or 0 for none, otherwise
+ * 0 < p < 100 (the editor checks it; a value outside 0 ≤ p < 100 is refused here). Defaults are always
+ * encoded, so an input stored before these two fields existed reads as no counterparty and no discount.
+ */
 @Serializable
 data class CalculationInput(
     val name: String,
     val quantity: Int,
     val parts: List<Part>,
     val productOperations: List<ProductOperation>,
-)
+    @EncodeDefault val counterparty: String = "",
+    @EncodeDefault val discountPercent: Decimal? = null,
+) {
+    init {
+        requireValidDiscount(discountPercent)
+    }
+}
 
 /**
  * One piece of the product: identical parts are entered as copies. [materialExtra] is the manual

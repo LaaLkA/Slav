@@ -6,5 +6,8 @@ import java.util.Locale
 /** SQLite folds case for ASCII only; a stored name and a search text are both lowercased here instead. */
 internal fun searchForm(text: String): String = text.lowercase()
 
+/** What names are compared by: the search form of the trimmed name, so «Рама » is «рама». */
+internal fun nameKey(name: String): String = searchForm(name.trim())
+
 /** Orders names the Russian way, letter case aside; sorting is done in Kotlin, not in SQL. */
 internal val nameCollator: Collator = Collator.getInstance(Locale.forLanguageTag("ru")).apply { strength = Collator.SECONDARY }

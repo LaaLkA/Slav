@@ -115,7 +115,7 @@ class CalculationRepositoryTest {
         val other = book.copy(paintingPerM2 = dec("400"))
         val changed = sheetInput("Другой", quantity = 5)
         for (status in listOf(CalculationStatus.CALCULATED, CalculationStatus.SENT, CalculationStatus.IN_WORK, CalculationStatus.ARCHIVED)) {
-            val id = calculated(sheetInput("Кронштейн", quantity = 3), prices = old)
+            val id = calculated(sheetInput("Кронштейн $status", quantity = 3), prices = old)
             if (status != CalculationStatus.CALCULATED) calculations.setStatus(id, status)
             val before = row(id)
             clock.advance(Duration.ofHours(1))
@@ -157,7 +157,10 @@ class CalculationRepositoryTest {
 
         val draft = assertNotNull(calculations.get(revision))
         assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertEquals(input, draft.input)
+        // The name is the program's own, in the input as well as in the column.
+        assertEquals(input.copy(name = "Кронштейн №2"), draft.input)
+        assertEquals("Кронштейн №2", draft.name)
+        assertEquals("Кронштейн №2", row(revision).name)
         assertEquals(old, draft.snapshot)
         assertEquals(takenAt, draft.snapshotAt)
         assertEquals(source, draft.sourceId)
@@ -188,10 +191,10 @@ class CalculationRepositoryTest {
         val revision = calculations.createRevisionDraft(source)
         clock.advance(Duration.ofHours(1))
 
-        calculations.saveDraft(sheetInput("Кронштейн", quantity = 2), revision)
+        calculations.saveDraft(sheetInput("Кронштейн №2", quantity = 2), revision)
         assertEquals(old, assertNotNull(calculations.get(revision)).snapshot, "an autosave keeps the snapshot")
 
-        val edited = sheetInput("Кронштейн", quantity = 2, cutExtra = "0")
+        val edited = sheetInput("Кронштейн №2", quantity = 2, cutExtra = "0")
         calculations.saveCalculated(edited, old, old.priced(edited), revision, snapshotAt = takenAt)
 
         val stored = assertNotNull(calculations.get(revision))
@@ -269,7 +272,7 @@ class CalculationRepositoryTest {
         val source = calculated(sheetInput("Кронштейн"))
         val untouched = calculations.createRevisionDraft(source)
         val changed = calculations.createRevisionDraft(source)
-        calculations.saveDraft(sheetInput("Кронштейн", quantity = 2), changed)
+        calculations.saveDraft(sheetInput("Кронштейн №3", quantity = 2), changed)
         val plain = calculations.saveDraft(sheetInput("Рама"))
         val input = sheetInput("Кронштейн")
         val revision = calculations.createRevision(source, input, book, book.priced(input))
@@ -306,7 +309,8 @@ class CalculationRepositoryTest {
         assertNotEquals(source, copy)
         val stored = assertNotNull(calculations.get(copy))
         assertEquals(CalculationStatus.DRAFT, stored.status)
-        assertEquals(input, stored.input)
+        assertEquals(input.copy(name = "Кронштейн (2)"), stored.input)
+        assertEquals("Кронштейн (2)", row(copy).name)
         assertNull(stored.snapshot)
         assertNull(stored.result)
         assertNull(stored.sourceId)

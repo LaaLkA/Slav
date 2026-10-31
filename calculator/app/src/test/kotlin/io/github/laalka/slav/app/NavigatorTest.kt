@@ -237,7 +237,8 @@ class NavigatorTest {
         navigator.quickEditor.fillQuickGoldenCase()
         navigator.quickEditor.calculate()
         val card = assertIs<Page.Card>(navigator.page.value).model
-        assertEquals("54 000,00 ₽", card.state.value.total)
+        // A simplified calculation has no run size: the run of 10 typed is not kept, the total is the unit price.
+        assertEquals("5 400,00 ₽", card.state.value.total)
         val before = assertNotNull(deps.calculations.get(card.id))
 
         // The kind of the saved calculation, not the one the screen names, picks the editor.
@@ -270,7 +271,7 @@ class NavigatorTest {
 
         navigator.navigate(Screen.Calculations)
         navigator.copy(row.id)
-        assertEquals("Лист", navigator.quickEditor.state.value.name.text)
+        assertEquals("Лист (2)", navigator.quickEditor.state.value.name.text)
         assertEquals(2, deps.calculations.list().size)
         assertEquals(setOf(CalculationKind.QUICK), deps.calculations.list().map { it.kind }.toSet())
     }

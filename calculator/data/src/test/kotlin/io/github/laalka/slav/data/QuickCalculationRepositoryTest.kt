@@ -91,7 +91,9 @@ class QuickCalculationRepositoryTest {
 
         val draft = quick(id)
         assertEquals("Лист на раскрой", draft.name)
-        assertEquals(4, draft.quantity)
+        // A simplified calculation has no run size: it is written with 1 whatever the input says.
+        assertEquals(1, draft.quantity)
+        assertEquals(1, draft.input.quantity)
         assertEquals(clock.now, draft.updatedAt)
         assertEquals(1, calculations.list().size)
     }
@@ -111,7 +113,9 @@ class QuickCalculationRepositoryTest {
         assertEquals(clock.now, stored.snapshotAt)
         val summary = calculations.list().single()
         assertEquals("5750.50", summary.unitPrice?.amount?.toPlainString())
-        assertEquals("17251.50", summary.total?.amount?.toPlainString())
+        // The input asked for a run of 3, which a simplified calculation does not have: the total is the unit price.
+        assertEquals(1, summary.quantity)
+        assertEquals("5750.50", summary.total?.amount?.toPlainString())
     }
 
     @Test
@@ -120,7 +124,7 @@ class QuickCalculationRepositoryTest {
         val other = book.copy(laserCutPerMinute = dec("60"))
         val changed = quickInput("Другой", quantity = 5)
         for (status in listOf(CalculationStatus.CALCULATED, CalculationStatus.SENT, CalculationStatus.IN_WORK, CalculationStatus.ARCHIVED)) {
-            val id = calculated(quickInput("Лист", quantity = 3), prices = old)
+            val id = calculated(quickInput("Лист $status", quantity = 3), prices = old)
             if (status != CalculationStatus.CALCULATED) calculations.setStatus(id, status)
             val before = row(id)
             clock.advance(Duration.ofHours(1))
@@ -129,7 +133,8 @@ class QuickCalculationRepositoryTest {
             assertFailsWith<IllegalStateException>("$status: saveCalculated") {
                 calculations.saveCalculated(changed, other, other.quickPriced(changed), id)
             }
-            assertFailsWith<IllegalStateException>("$status: setQuantity") { calculations.setQuantity(id, 10) }
+            // There is no run size to set, in any status.
+            assertFailsWith<IllegalArgumentException>("$status: setQuantity") { calculations.setQuantity(id, 10) }
 
             assertEquals(before, row(id), "$status: the row changed")
         }
@@ -149,13 +154,44 @@ class QuickCalculationRepositoryTest {
     }
 
     @Test
-    fun `the run size of a quick draft is changed in place, a calculated one is not`() {
+    fun `a simplified calculation has no run size, a draft or a calculated one`() {
         val draft = calculations.saveDraft(quickInput("Лист", quantity = 2))
-        calculations.setQuantity(draft, 9)
-        assertEquals(9, quick(draft).quantity)
-        assertEquals(quickInput("Лист", quantity = 9), quick(draft).input)
-        assertEquals(9, calculations.list().single().quantity)
+        val calculated = calculated(quickInput("Заготовка"))
+        val before = listOf(row(draft), row(calculated))
+
+        assertFailsWith<IllegalArgumentException> { calculations.setQuantity(draft, 9) }
+        assertFailsWith<IllegalArgumentException> { calculations.setQuantity(calculated, 9) }
         assertFailsWith<IllegalArgumentException> { calculations.setQuantity(draft, 0) }
+        assertFailsWith<NoSuchElementException> { calculations.setQuantity(UUID.randomUUID(), 2) }
+
+        assertEquals(before, listOf(row(draft), row(calculated)), "nothing was written")
+        assertEquals(1, quick(draft).quantity)
+        assertEquals(1, quick(draft).input.quantity, "saved with 1 though the input said 2")
+        assertEquals(setOf(1), calculations.list().map { it.quantity }.toSet())
+    }
+
+    @Test
+    fun `a quick row stored with another run size reads as 1 and its total is its unit price`() {
+        val id = calculated(quickInput("Лист"))
+        // What a program that still had a run size left in the row: 10 in the column and in the input.
+        val old = row(id)
+        db.database.calculationQueries.updateQuantity(10, old.input_json.replace("\"quantity\":1", "\"quantity\":10"), old.updated_at, id.toString())
+        assertEquals(10, row(id).quantity)
+        assertTrue("\"quantity\":10" in row(id).input_json)
+
+        val stored = quick(id)
+        assertEquals(1, stored.quantity)
+        assertEquals("5750.50", stored.unitPrice?.amount?.toPlainString())
+        val summary = calculations.list().single()
+        assertEquals(1, summary.quantity)
+        assertEquals("5750.50", summary.total?.amount?.toPlainString())
+        assertEquals(listOf(1), calculations.list(sort = CalculationSort(CalculationSortColumn.QUANTITY, descending = true)).map { it.quantity })
+
+        // Written again, it is written with 1.
+        val revision = calculations.createRevision(id, stored.input, book, book.quickPriced(stored.input))
+        assertEquals(1, row(revision).quantity)
+        assertTrue("\"quantity\":1" in row(revision).input_json)
+        assertEquals(1, calculations.revisionsOf(id).single().quantity)
     }
 
     @Test
@@ -191,7 +227,9 @@ class QuickCalculationRepositoryTest {
 
         val draft = quick(revision)
         assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertEquals(input, draft.input)
+        // Named by the program, and with the run size of 1 a simplified calculation is written with.
+        assertEquals(input.copy(name = "Лист №2", quantity = 1), draft.input)
+        assertEquals("Лист №2", row(revision).name)
         assertEquals(old, draft.snapshot)
         assertEquals(takenAt, draft.snapshotAt)
         assertEquals(source, draft.sourceId)
@@ -209,7 +247,7 @@ class QuickCalculationRepositoryTest {
         val revision = calculations.createRevisionDraft(source)
         clock.advance(Duration.ofHours(1))
 
-        val edited = quickInput("Лист", cutExtra = "0")
+        val edited = quickInput("Лист №2", cutExtra = "0")
         calculations.saveCalculated(edited, old, old.quickPriced(edited), revision, snapshotAt = takenAt)
 
         val stored = quick(revision)
@@ -222,7 +260,7 @@ class QuickCalculationRepositoryTest {
     }
 
     @Test
-    fun `a revision on current prices and one with a new run size are new rows, the source stays as it was`() {
+    fun `a revision on current prices and one on the same prices are new rows, the source stays as it was`() {
         val source = calculated(quickInput("Лист", quantity = 1))
         calculations.setStatus(source, CalculationStatus.SENT)
         val original = quick(source)
@@ -231,7 +269,7 @@ class QuickCalculationRepositoryTest {
 
         val current = book.copy(laserCutPerMinute = dec("80"))
         val onCurrent = calculations.createRevision(source, original.input, current, current.quickPriced(original.input))
-        val resized = calculations.createRevision(
+        val sameResult = calculations.createRevision(
             source,
             original.input.copy(quantity = 10),
             assertNotNull(original.snapshot),
@@ -243,10 +281,12 @@ class QuickCalculationRepositoryTest {
         assertEquals(current, quick(onCurrent).snapshot)
         assertEquals(clock.now, quick(onCurrent).snapshotAt)
         assertNotEquals(original.unitPrice, quick(onCurrent).unitPrice)
-        assertEquals(original.result, quick(resized).result)
-        assertEquals(original.snapshotAt, quick(resized).snapshotAt)
-        assertEquals("57505.00", calculations.list().single { it.id == resized }.total?.amount?.toPlainString())
-        assertEquals(setOf(onCurrent, resized), calculations.revisionsOf(source).map { it.id }.toSet())
+        assertEquals(original.result, quick(sameResult).result)
+        assertEquals(original.snapshotAt, quick(sameResult).snapshotAt)
+        // A run of 10 asked for is not kept: the total of a simplified calculation is its unit price.
+        assertEquals("5750.50", calculations.list().single { it.id == sameResult }.total?.amount?.toPlainString())
+        assertEquals(setOf("Лист №2", "Лист №3"), setOf(quick(onCurrent).name, quick(sameResult).name))
+        assertEquals(setOf(onCurrent, sameResult), calculations.revisionsOf(source).map { it.id }.toSet())
     }
 
     @Test
@@ -268,7 +308,7 @@ class QuickCalculationRepositoryTest {
         val source = calculated(quickInput("Лист"))
         val untouched = calculations.createRevisionDraft(source)
         val changed = calculations.createRevisionDraft(source)
-        calculations.saveDraft(quickInput("Лист", quantity = 2), changed)
+        calculations.saveDraft(quickInput("Лист №3", cutExtra = "0"), changed)
 
         assertTrue(calculations.deleteUntouchedRevisionDraft(untouched))
         assertFalse(calculations.deleteUntouchedRevisionDraft(changed))
@@ -286,7 +326,7 @@ class QuickCalculationRepositoryTest {
 
         val stored = quick(copy)
         assertEquals(CalculationStatus.DRAFT, stored.status)
-        assertEquals(input, stored.input)
+        assertEquals(input.copy(name = "Лист (2)", quantity = 1), stored.input)
         assertNull(stored.snapshot)
         assertNull(stored.result)
         assertNull(stored.sourceId)
@@ -355,11 +395,12 @@ class QuickCalculationRepositoryTest {
         assertEquals(setOf(quickId, quickDraft), calculations.list(from = start.plusDays(1)).map { it.id }.toSet())
         assertEquals(setOf(fullId, quickId), calculations.list(to = start.plusDays(1)).map { it.id }.toSet())
 
-        // Sorting: the draft has no price and comes last in either direction, the others by their own totals.
+        // Sorting: the draft has no price and comes last in either direction, the others by their own totals:
+        // the simplified one is 5 750,50 whatever run it was asked for, the full one 7 950,50.
         val byTotal = calculations.list(sort = CalculationSort(CalculationSortColumn.TOTAL, descending = false)).map { it.id }
-        assertEquals(listOf(fullId, quickId, quickDraft), byTotal)
+        assertEquals(listOf(quickId, fullId, quickDraft), byTotal)
         val byTotalDesc = calculations.list(sort = CalculationSort(CalculationSortColumn.TOTAL, descending = true)).map { it.id }
-        assertEquals(listOf(quickId, fullId, quickDraft), byTotalDesc)
+        assertEquals(listOf(fullId, quickId, quickDraft), byTotalDesc)
         assertEquals(
             listOf(quickDraft, quickId, fullId),
             calculations.list(sort = CalculationSort(CalculationSortColumn.UPDATED_AT, descending = true)).map { it.id },

@@ -1,0 +1,4 @@
+-- The counterparty («Контрагент») of a calculation, free text, and its search form (lowercased, as
+-- name_search is). Every calculation stored so far has none.
+ALTER TABLE calculation ADD COLUMN counterparty TEXT NOT NULL DEFAULT '';
+ALTER TABLE calculation ADD COLUMN counterparty_search TEXT NOT NULL DEFAULT '';

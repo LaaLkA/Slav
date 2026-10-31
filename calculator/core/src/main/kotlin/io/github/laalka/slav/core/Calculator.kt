@@ -15,7 +15,7 @@ class Calculator(private val priceBook: PriceBook) {
             OperationLine(op.kind, lineCost(priceProductOperation(op, input.parts, errors), op.manualExtra), op.manualExtra)
         }
         val found = errors.all
-        return if (found.isEmpty()) CalcOutcome.Ok(CalcResult(parts, productLines)) else CalcOutcome.Failed(found)
+        return if (found.isEmpty()) CalcOutcome.Ok(CalcResult(parts, productLines, input.discountPercent)) else CalcOutcome.Failed(found)
     }
 
     /** Null when the grade is unknown; the error is recorded and the outcome is Failed. */
@@ -80,17 +80,33 @@ sealed interface CalcOutcome {
 }
 
 /**
- * The breakdown of spec 8.2. Every line is already rounded, so part cost, unit price and total are
- * sums of rounded lines and agree with the breakdown to the kopeck (spec 10).
+ * The breakdown of spec 8.2. Every line is already rounded, so part cost, subtotal, discount, unit
+ * price and total are sums and differences of rounded amounts and agree with the breakdown to the
+ * kopeck (spec 10). [discountPercent] is the discount of the input the result was priced for, null
+ * for none; a result stored before discounts existed has none.
  */
-data class CalcResult(val parts: List<PartResult>, val productLines: List<OperationLine>) {
-    /** Σ part cost + Σ product lines. */
-    val unitPrice: Money = parts.map { it.cost }.sum() + productLines.map { it.cost }.sum()
+data class CalcResult(
+    val parts: List<PartResult>,
+    val productLines: List<OperationLine>,
+    val discountPercent: BigDecimal? = null,
+) {
+    init {
+        requireValidDiscount(discountPercent)
+    }
+
+    /** Σ part cost + Σ product lines: the price of the product before the discount. */
+    val subtotal: Money = parts.map { it.cost }.sum() + productLines.map { it.cost }.sum()
+
+    /** [subtotal] × [discountPercent] / 100, rounded half-up to kopecks; zero without a discount. */
+    val discount: Money = discountOf(subtotal, discountPercent)
+
+    /** The price of one product, the one quoted: [subtotal] − [discount]. */
+    val unitPrice: Money = subtotal - discount
 
     /** Σ part mass. */
     val unitMassKg: BigDecimal = parts.sumOf { it.massKg }
 
-    /** The run total; the run size is changed on the card without recalculating (spec 8.2). */
+    /** The run total, [unitPrice] × [quantity]; the run size is changed on the card without recalculating (spec 8.2). */
     fun total(quantity: Int): Money = unitPrice * quantity
 }
 

@@ -10,6 +10,7 @@ import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.OperationLine
 import io.github.laalka.slav.core.PartResult
 import io.github.laalka.slav.core.QuickResult
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -22,15 +23,22 @@ import kotlinx.serialization.json.jsonArray
 /** Settings and calculations are stored in the JSON form of the core model. */
 internal val storageJson: Json = Json
 
-// The stored form of CalcResult. The core result is not serializable: its unit price, mass and
-// part costs are derived from the lines, so only the lines are stored and the rest is rebuilt.
+// The stored form of CalcResult. The core result is not serializable: its subtotal, discount, unit
+// price, mass and part costs are derived from the lines and the discount percent, so only those are
+// stored and the rest is rebuilt. A result stored before discounts existed has no percent and reads as
+// one without a discount, which is what it was.
 
 @Serializable
-internal data class StoredResult(val parts: List<StoredPart>, val productLines: List<StoredLine>) {
-    fun toResult() = CalcResult(parts.map(StoredPart::toPart), productLines.map(StoredLine::toLine))
+internal data class StoredResult(
+    val parts: List<StoredPart>,
+    val productLines: List<StoredLine>,
+    @EncodeDefault val discountPercent: Decimal? = null,
+) {
+    fun toResult() = CalcResult(parts.map(StoredPart::toPart), productLines.map(StoredLine::toLine), discountPercent)
 
     companion object {
-        fun of(result: CalcResult) = StoredResult(result.parts.map(StoredPart::of), result.productLines.map(StoredLine::of))
+        fun of(result: CalcResult) =
+            StoredResult(result.parts.map(StoredPart::of), result.productLines.map(StoredLine::of), result.discountPercent)
     }
 }
 
@@ -70,16 +78,26 @@ internal data class StoredLine(val kind: OperationKind, val cost: Money, val man
     }
 }
 
-/** The stored form of [QuickResult]: the mass and the two rounded lines; the unit price is rebuilt from them. */
+/**
+ * The stored form of [QuickResult]: the mass, the two rounded lines and the discount percent; the
+ * subtotal, discount and unit price are rebuilt from them. A result stored without a percent has no discount.
+ */
 @Serializable
-internal data class StoredQuickResult(val massKg: Decimal, val material: StoredMaterialLine, val cut: StoredCutLine) {
-    fun toResult() = QuickResult(massKg, MaterialLine(material.cost, material.manualExtra), CutLine(cut.cost, cut.manualExtra))
+internal data class StoredQuickResult(
+    val massKg: Decimal,
+    val material: StoredMaterialLine,
+    val cut: StoredCutLine,
+    @EncodeDefault val discountPercent: Decimal? = null,
+) {
+    fun toResult() =
+        QuickResult(massKg, MaterialLine(material.cost, material.manualExtra), CutLine(cut.cost, cut.manualExtra), discountPercent)
 
     companion object {
         fun of(result: QuickResult) = StoredQuickResult(
             massKg = result.massKg,
             material = StoredMaterialLine(result.material.cost, result.material.manualExtra),
             cut = StoredCutLine(result.cut.cost, result.cut.manualExtra),
+            discountPercent = result.discountPercent,
         )
     }
 }

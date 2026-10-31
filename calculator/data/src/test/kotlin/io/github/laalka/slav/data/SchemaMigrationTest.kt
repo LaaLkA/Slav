@@ -21,9 +21,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3; 3.sqm, 3 → 4; 4.sqm, 4 → 5). The database
- * each starts from is the file the SQLDelight plugin made from the schema before the change
- * (databases/1.db … 4.db, the ones it also replays the migrations on at build time), with the rows a
+ * The migrations (1.sqm, schema version 1 → 2; 2.sqm, 2 → 3; 3.sqm, 3 → 4; 4.sqm, 4 → 5; 5.sqm, 5 → 6).
+ * The database each starts from is the file the SQLDelight plugin made from the schema before the change
+ * (databases/1.db … 5.db, the ones it also replays the migrations on at build time), with the rows a
  * program of that version stored.
  */
 class SchemaMigrationTest {
@@ -83,7 +83,7 @@ class SchemaMigrationTest {
 
     @Test
     fun `a database written by schema version 1 opens with its rows intact`() {
-        assertEquals(5L, SlavDatabase.Schema.version)
+        assertEquals(6L, SlavDatabase.Schema.version)
         paths.root.createDirectories()
         snapshot("1.db").copyTo(paths.databaseFile)
         val calculated = UUID.randomUUID()
@@ -248,16 +248,70 @@ class SchemaMigrationTest {
 
         assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
         assertTrue("kind" in columns(paths.databaseFile, "calculation"))
+        // The way on to the current schema gives every old row an empty counterparty.
+        assertEquals(List(3) { "" }, names(paths.databaseFile, "SELECT counterparty FROM calculation"))
+        assertEquals(List(3) { "" }, names(paths.databaseFile, "SELECT counterparty_search FROM calculation"))
         // The copy taken before migrating is the old database: schema 4, no kind.
         assertEquals(4L, userVersion(backup))
         assertFalse("kind" in columns(backup, "calculation"))
     }
 
     @Test
+    fun `a database written by schema version 5 gets the counterparty, empty on every old row, and keeps its rows`() {
+        paths.root.createDirectories()
+        snapshot("5.db").copyTo(paths.databaseFile)
+        val calculated = UUID.randomUUID()
+        val draft = UUID.randomUUID()
+        DriverManager.getConnection("jdbc:sqlite:${paths.databaseFile}").use { connection ->
+            connection.insertWithoutSource(calculated, CalculationStatus.CALCULATED, "Кронштейн", quantity = 3, priced = true)
+            connection.insertWithoutSource(draft, CalculationStatus.DRAFT, "Рама", quantity = 2, priced = false)
+            connection.createStatement().use { it.execute("PRAGMA user_version = 5") }
+        }
+        assertEquals(5L, userVersion(paths.databaseFile))
+        assertTrue("kind" in columns(paths.databaseFile, "calculation"))
+        assertFalse("counterparty" in columns(paths.databaseFile, "calculation"))
+        assertFalse("counterparty_search" in columns(paths.databaseFile, "calculation"))
+
+        val backup = DatabaseFactory(paths, clock).open().use { db ->
+            val calculations = CalculationRepository(db, clock)
+
+            val stored = assertIs<StoredCalculation.Full>(assertNotNull(calculations.get(calculated)))
+            assertEquals(CalculationStatus.CALCULATED, stored.status)
+            assertEquals(sheetInput("Кронштейн", 3), stored.input)
+            assertEquals(book.priced(sheetInput("Кронштейн", 3)), stored.result)
+            assertEquals("", stored.counterparty)
+            assertNull(stored.result?.discountPercent)
+            assertEquals(CalculationStatus.DRAFT, assertNotNull(calculations.get(draft)).status)
+            assertEquals(setOf("Кронштейн", "Рама"), calculations.list().map { it.name }.toSet())
+            assertEquals(listOf("", ""), calculations.list().map { it.counterparty })
+
+            // The new columns are usable: a counterparty is stored and found, an old row without one is not.
+            val added = calculations.saveDraft(sheetInput("Опора", counterparty = "ООО «Вектор»"))
+            assertEquals("ООО «Вектор»", assertNotNull(calculations.get(added)).counterparty)
+            assertEquals(listOf(added), calculations.list(query = "ВЕКТОР").map { it.id })
+            assertEquals(3, calculations.list().size)
+            checkNotNull(db.startupBackup)
+        }
+
+        assertEquals(SlavDatabase.Schema.version, userVersion(paths.databaseFile))
+        assertTrue("counterparty" in columns(paths.databaseFile, "calculation"))
+        assertTrue("counterparty_search" in columns(paths.databaseFile, "calculation"))
+        // The old rows hold the empty text, the columns are not null.
+        assertEquals(listOf("", "", "ООО «Вектор»").sorted(), names(paths.databaseFile, "SELECT counterparty FROM calculation").sorted())
+        assertEquals(
+            listOf("", "", "ооо «вектор»").sorted(),
+            names(paths.databaseFile, "SELECT counterparty_search FROM calculation").sorted(),
+        )
+        // The copy taken before migrating is the old database: schema 5, no counterparty.
+        assertEquals(5L, userVersion(backup))
+        assertFalse("counterparty" in columns(backup, "calculation"))
+    }
+
+    @Test
     fun `a new database has the current schema and the same columns and indexes as a migrated one`() {
         DatabaseFactory(paths, clock).open().use { }
 
-        listOf("1.db" to 1, "2.db" to 2, "3.db" to 3, "4.db" to 4).forEach { (name, version) ->
+        listOf("1.db" to 1, "2.db" to 2, "3.db" to 3, "4.db" to 4, "5.db" to 5).forEach { (name, version) ->
             val migratedPaths = AppPaths(dir.resolve("migrated-$version"))
             migratedPaths.root.createDirectories()
             snapshot(name).copyTo(migratedPaths.databaseFile)

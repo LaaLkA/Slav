@@ -46,7 +46,13 @@ class TestClock(var now: Instant = Instant.parse("2026-10-22T09:00:00Z"), privat
  * A sheet of Ст3, 2 mm, cut on the laser, with manual extras on both lines; [cutExtra] varies the
  * unit price. Priceable with [PriceBook.default].
  */
-fun sheetInput(name: String, quantity: Int = 1, cutExtra: String = "150") = CalculationInput(
+fun sheetInput(
+    name: String,
+    quantity: Int = 1,
+    cutExtra: String = "150",
+    counterparty: String = "",
+    discountPercent: String? = null,
+) = CalculationInput(
     name = name,
     quantity = quantity,
     parts = listOf(
@@ -60,6 +66,8 @@ fun sheetInput(name: String, quantity: Int = 1, cutExtra: String = "150") = Calc
         ),
     ),
     productOperations = emptyList(),
+    counterparty = counterparty,
+    discountPercent = discountPercent?.let(::dec),
 )
 
 fun PriceBook.priced(input: CalculationInput): CalcResult =
@@ -70,7 +78,13 @@ fun PriceBook.priced(input: CalculationInput): CalcResult =
  * on both lines; [cutExtra] varies the unit price. Priceable with [PriceBook.default]: 4 800,00 +
  * 200,50 for the material and 600,00 + [cutExtra] for the cut.
  */
-fun quickInput(name: String, quantity: Int = 1, cutExtra: String = "150") = QuickCalculationInput(
+fun quickInput(
+    name: String,
+    quantity: Int = 1,
+    cutExtra: String = "150",
+    counterparty: String = "",
+    discountPercent: String? = null,
+) = QuickCalculationInput(
     name = name,
     quantity = quantity,
     grade = "Ст3",
@@ -79,6 +93,8 @@ fun quickInput(name: String, quantity: Int = 1, cutExtra: String = "150") = Quic
     cutTimeMin = dec("12"),
     materialExtra = ManualExtra(Money(dec("200.50")), "Доставка листа"),
     cutExtra = ManualExtra(Money(dec(cutExtra)), "Снятие фаски"),
+    counterparty = counterparty,
+    discountPercent = discountPercent?.let(::dec),
 )
 
 fun PriceBook.quickPriced(input: QuickCalculationInput): QuickResult =

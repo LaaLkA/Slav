@@ -74,6 +74,8 @@ class Beta1UpgradeTest {
             id = id.toString(),
             name = "Из beta.1",
             nameSearch = "из beta.1",
+            counterparty = "",
+            counterpartySearch = "",
             status = status.name,
             quantity = quantity.toLong(),
             unitPrice = unitPrice,

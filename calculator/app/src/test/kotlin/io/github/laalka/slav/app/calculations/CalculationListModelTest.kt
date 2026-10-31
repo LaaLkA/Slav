@@ -209,7 +209,7 @@ class CalculationListModelTest {
         val copy = assertNotNull(deps.calculations.get(list.copy(support)))
 
         assertEquals(CalculationStatus.DRAFT, copy.status)
-        assertEquals(assertNotNull(deps.calculations.get(support)).input, copy.input)
+        assertEquals(assertNotNull(deps.calculations.get(support)).input.copy(name = "Опора (2)"), copy.input)
         assertNull(copy.snapshot)
         assertEquals(4, list.names.size)
     }

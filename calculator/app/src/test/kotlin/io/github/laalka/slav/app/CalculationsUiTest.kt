@@ -87,7 +87,8 @@ class CalculationsUiTest {
 
             node(CalculationTags.CARD_EDIT).performClick()
             compose.waitForIdle()
-            node(EditorTags.NAME).assertTextContains("Кронштейн")
+            // The revision draft is named by the program: «Кронштейн №2».
+            node(EditorTags.NAME).assertTextContains("Кронштейн №2")
             assertEquals(2, deps.calculations.list().size)
             val draft = deps.calculations.list().single { it.status == CalculationStatus.DRAFT }
             assertEquals(id, assertNotNull(deps.calculations.get(draft.id)).sourceId)
@@ -132,7 +133,8 @@ class CalculationsUiTest {
             node("${CalculationTags.row(0)}/copy").performClick()
             compose.waitForIdle()
 
-            node(EditorTags.NAME).assertTextContains("Кронштейн")
+            // A copy is named by the program too: «Кронштейн (2)».
+            node(EditorTags.NAME).assertTextContains("Кронштейн (2)")
             val copy = deps.calculations.list().single { it.status == CalculationStatus.DRAFT }
             assertNull(assertNotNull(deps.calculations.get(copy.id)).snapshot)
         }

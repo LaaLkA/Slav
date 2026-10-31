@@ -82,9 +82,6 @@ internal fun mergeSettings(local: PriceBook, incoming: PriceBook): MergeResult {
     return MergeResult(merged, summaryOf(changes))
 }
 
-/** Names match trimmed and in any letter case. */
-private fun nameKey(name: String) = name.trim().lowercase()
-
 /** Sizes match by value: 2 and 2.0 are one thickness, though BigDecimal.equals tells them apart. */
 private fun sizeKey(size: BigDecimal): BigDecimal = size.stripTrailingZeros()
 

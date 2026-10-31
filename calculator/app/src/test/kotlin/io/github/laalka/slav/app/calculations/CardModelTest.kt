@@ -136,8 +136,15 @@ class CardModelTest {
     @Test
     fun `the material line names the shape of a sheet`() {
         val golden = goldenInput()
+        var saved = 0
+        // Names are unique, so every calculation saved here has one of its own.
         fun title(shape: SheetShape) = card(
-            deps.saveCalculated(golden.copy(parts = golden.parts.map { it.copy(material = Material.Sheet("Ст3", BigDecimal("2"), shape), operations = emptyList()) })),
+            deps.saveCalculated(
+                golden.copy(
+                    name = "Кронштейн ${++saved}",
+                    parts = golden.parts.map { it.copy(material = Material.Sheet("Ст3", BigDecimal("2"), shape), operations = emptyList()) },
+                ),
+            ),
         ).state.value.parts.single().lines.first().title
 
         assertEquals("Материал: Лист Ст3, 2 мм, круг R 50 мм", title(SheetShape.Circle(BigDecimal("50"))))
@@ -309,7 +316,7 @@ class CardModelTest {
 
         assertEquals(CalculationStatus.DRAFT, draft.status)
         assertEquals(id, draft.sourceId)
-        assertEquals(goldenInput(quantity = 4), draft.input)
+        assertEquals(goldenInput(name = "Кронштейн №2", quantity = 4), draft.input)
         assertEquals(before.snapshot, draft.snapshot)
         assertEquals(before.snapshotAt, draft.snapshotAt)
         assertEquals(before, stored(id))

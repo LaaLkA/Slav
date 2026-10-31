@@ -62,7 +62,7 @@ class QuickUiTest {
     }
 
     @Test
-    fun `the golden quick case entered through the quick editor shows 5 400,00 and 54 000,00 on the card`() {
+    fun `the golden quick case entered through the quick editor shows 5 400,00 as the price and as the total on the card`() {
         Deps(AppPaths(temp.root.toPath()), appVersion = "test").use { deps ->
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
@@ -81,16 +81,17 @@ class QuickUiTest {
 
             node(CalculationTags.CARD_NAME).assertTextEquals("Лист на раскрой")
             node(CalculationTags.CARD_UNIT_PRICE).assertTextContains("5 400,00", substring = true)
-            node(CalculationTags.CARD_TOTAL).assertTextContains("54 000,00", substring = true)
+            // The run of 10 typed above is not kept: a simplified calculation has no run size.
+            node(CalculationTags.CARD_TOTAL).assertTextContains("5 400,00", substring = true)
             node(CalculationTags.CARD_UNIT_MASS).assertTextEquals("24 кг")
             compose.onNodeWithText(QUICK_MATERIAL_TITLE).assertExists()
             compose.onNodeWithText(QUICK_CUT_TITLE).assertExists()
             val saved = assertIs<StoredCalculation.Quick>(deps.calculations.get(deps.calculations.list().single().id))
             assertEquals(CalculationStatus.CALCULATED, saved.status)
-            assertEquals(10, saved.quantity)
+            assertEquals(1, saved.quantity)
             assertEquals(0, BigDecimal("5400.00").compareTo(assertNotNull(saved.unitPrice).amount))
             assertEquals(
-                QuickCalculationInput("Лист на раскрой", 10, "Ст3", BigDecimal("2"), BigDecimal("1.5"), BigDecimal("12")).copy(),
+                QuickCalculationInput("Лист на раскрой", 1, "Ст3", BigDecimal("2"), BigDecimal("1.5"), BigDecimal("12")).copy(),
                 saved.input,
             )
         }

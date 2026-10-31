@@ -20,7 +20,11 @@ CREATE TABLE calculation (
     source_id TEXT,
     -- 'FULL' (parts and operations) or 'QUICK' (the simplified calculation). It decides how input_json
     -- and result_json are read, and never changes for a row.
-    kind TEXT NOT NULL DEFAULT 'FULL'
+    kind TEXT NOT NULL DEFAULT 'FULL',
+    -- The customer, free text; '' when not given.
+    counterparty TEXT NOT NULL DEFAULT '',
+    -- counterparty.lowercase(), for the same reason as name_search.
+    counterparty_search TEXT NOT NULL DEFAULT ''
 );
 
 selectById:
@@ -29,42 +33,54 @@ SELECT * FROM calculation WHERE id = :id;
 selectStatusAndKind:
 SELECT status, kind FROM calculation WHERE id = :id;
 
+-- Whether another calculation (not :exceptId, when given) has this name search form.
+selectNameTaken:
+SELECT EXISTS(
+    SELECT 1 FROM calculation WHERE name_search = :nameSearch AND (:exceptId IS NULL OR id <> :exceptId)
+);
+
 selectRevisions:
-SELECT id, name, status, quantity, unit_price, created_at, updated_at, kind
+SELECT id, name, counterparty, status, quantity, unit_price, created_at, updated_at, kind
 FROM calculation
 WHERE source_id = :sourceId;
 
 -- instr, not LIKE: the search text is literal, so '%' and '_' typed by the user match themselves.
+-- The text is looked for in the name and in the counterparty.
 selectSummaries:
-SELECT id, name, status, quantity, unit_price, created_at, updated_at, kind
+SELECT id, name, counterparty, status, quantity, unit_price, created_at, updated_at, kind
 FROM calculation
-WHERE instr(name_search, :search) > 0
+WHERE (instr(name_search, :search) > 0 OR instr(counterparty_search, :search) > 0)
   AND status IN :statuses
   AND (:fromMillis IS NULL OR updated_at >= :fromMillis)
   AND (:untilMillis IS NULL OR updated_at < :untilMillis);
 
 insert:
 INSERT INTO calculation(
-    id, name, name_search, status, quantity, unit_price, created_at, updated_at,
+    id, name, name_search, counterparty, counterparty_search, status, quantity, unit_price, created_at, updated_at,
     snapshot_at, input_json, snapshot_json, result_json, source_id, kind
 ) VALUES (
-    :id, :name, :nameSearch, :status, :quantity, :unitPrice, :createdAt, :updatedAt,
+    :id, :name, :nameSearch, :counterparty, :counterpartySearch, :status, :quantity, :unitPrice, :createdAt, :updatedAt,
     :snapshotAt, :inputJson, :snapshotJson, :resultJson, :sourceId, :kind
 );
 
--- The updates below are only run on a draft (CalculationRepository checks it): a calculated row is
--- never rewritten, apart from its status.
+-- updateDraft is only run on a draft (CalculationRepository checks it): a calculated row is rewritten
+-- only by updateCalculated through CalculationRepository.overwriteCalculated, which the caller has put
+-- behind the administrator password, and otherwise changes its status alone.
 --
 -- A draft has no price; the snapshot stays, so finishing the edit recalculates on the same prices.
 updateDraft:
 UPDATE calculation
-SET name = :name, name_search = :nameSearch, status = :status, quantity = :quantity, unit_price = NULL,
+SET name = :name, name_search = :nameSearch, counterparty = :counterparty, counterparty_search = :counterpartySearch,
+    status = :status, quantity = :quantity, unit_price = NULL,
     updated_at = :updatedAt, input_json = :inputJson, result_json = NULL
 WHERE id = :id;
 
+-- Run on a draft that is being calculated, and on a calculated row that is rewritten in place: id,
+-- created_at, source_id and the drawings stay, the status becomes CALCULATED.
 updateCalculated:
 UPDATE calculation
-SET name = :name, name_search = :nameSearch, status = :status, quantity = :quantity, unit_price = :unitPrice,
+SET name = :name, name_search = :nameSearch, counterparty = :counterparty, counterparty_search = :counterpartySearch,
+    status = :status, quantity = :quantity, unit_price = :unitPrice,
     updated_at = :updatedAt, snapshot_at = :snapshotAt, input_json = :inputJson,
     snapshot_json = :snapshotJson, result_json = :resultJson
 WHERE id = :id;

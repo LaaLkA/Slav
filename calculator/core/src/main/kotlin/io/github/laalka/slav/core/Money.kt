@@ -16,6 +16,8 @@ import java.math.RoundingMode
 value class Money(val amount: Decimal) : Comparable<Money> {
     operator fun plus(other: Money) = Money(amount + other.amount)
 
+    operator fun minus(other: Money) = Money(amount - other.amount)
+
     operator fun times(factor: BigDecimal) = Money(amount * factor)
 
     operator fun times(count: Int) = Money(amount * count.toBigDecimal())

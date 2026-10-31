@@ -372,7 +372,8 @@ class EditorModelTest {
         editor.onNameChange("Кронштейн 2")
         editor.flush()
         assertEquals("Кронштейн 2", stored(revision).name)
-        editor.onNameChange("Кронштейн")
+        // The name the program gave the revision draft is the one that makes it untouched again.
+        editor.onNameChange("Кронштейн №2")
 
         editor.leave()
 
@@ -394,7 +395,8 @@ class EditorModelTest {
 
     @Test
     fun `a plain draft is never deleted by leaving it`() = runTest {
-        val draft = deps.calculations.saveDraft(deps.calculations.copy(calculateGoldenCase()).let { stored(it).input })
+        // A copy has the input of its source but no source: it is a plain draft.
+        val draft = deps.calculations.copy(calculateGoldenCase())
 
         editor(draft).leave()
 
