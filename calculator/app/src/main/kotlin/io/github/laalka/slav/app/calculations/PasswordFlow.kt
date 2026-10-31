@@ -8,14 +8,17 @@ const val WRONG_PASSWORD = "Неверный пароль"
 /** The question in front of a delete: which calculation or drawing, and what is wrong with the password typed so far. */
 data class DeleteQuestion(val name: String, val error: String?)
 
+/** The question in front of an edit in place: which calculation, and what is wrong with the password typed so far. */
+data class EditQuestion(val name: String, val error: String?)
+
 /**
- * Deleting any calculation, whatever its status, needs the administrator password, and so does
- * removing a drawing from a calculated one. A wrong password deletes nothing and leaves the
- * question open with an error under the field; [delete] is called with the id asked about once
- * the password is right.
+ * A step on a calculation that needs the administrator password: deleting it, removing a drawing
+ * from a calculated one, editing a calculated record in place. A wrong password does nothing and
+ * leaves the question open with an error under the field; [onVerified] is called with the id asked
+ * about once the password is right.
  */
-class DeleteFlow(private val adminPassword: AdminPassword, private val delete: (UUID) -> Unit) {
-    /** The id waiting for the password, null while nothing is being deleted. */
+class PasswordFlow(private val adminPassword: AdminPassword, private val onVerified: (UUID) -> Unit) {
+    /** The id waiting for the password, null while nothing is being asked. */
     var pending: UUID? = null
         private set
 
@@ -41,14 +44,14 @@ class DeleteFlow(private val adminPassword: AdminPassword, private val delete: (
         error = null
     }
 
-    /** True when the password was right and the id is deleted. */
+    /** True when the password was right and [onVerified] has been called with the id. */
     fun confirm(): Boolean {
         val id = pending ?: return false
         if (!adminPassword.verify(password.toCharArray())) {
             error = WRONG_PASSWORD
             return false
         }
-        delete(id)
+        onVerified(id)
         cancel()
         return true
     }

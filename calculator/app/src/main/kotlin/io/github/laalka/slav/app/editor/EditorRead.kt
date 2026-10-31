@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.editor
 import io.github.laalka.slav.app.settings.NumberInput
 import io.github.laalka.slav.app.settings.REQUIRED
 import io.github.laalka.slav.app.settings.SortamentKind
+import io.github.laalka.slav.app.settings.readDiscount
 import io.github.laalka.slav.app.settings.readPositive
 import io.github.laalka.slav.app.settings.readPrice
 import io.github.laalka.slav.app.settings.toInputText
@@ -32,12 +33,22 @@ import java.math.BigDecimal
 /** Test tags of the editor. A field's tag is also the key of its error; parts and rows are tagged by position. */
 object EditorTags {
     const val NAME = "editor/name"
+    const val COUNTERPARTY = "editor/counterparty"
     const val QUANTITY = "editor/quantity"
+    const val DISCOUNT = "editor/discount"
     const val PARTS = "editor/parts"
     const val ADD_PART = "editor/add-part"
     const val CALCULATE = "editor/calculate"
     const val BACK = "editor/back"
     const val ERRORS = "editor/errors"
+    const val LEAVE_CONFIRM = "editor/leave/confirm"
+    const val LEAVE_STAY = "editor/leave/stay"
+
+    // The price in the bottom bar, shared by both kinds of editor.
+    const val SUMMARY_SUBTOTAL = "editor/summary/subtotal"
+    const val SUMMARY_DISCOUNT = "editor/summary/discount"
+    const val SUMMARY_UNIT_PRICE = "editor/summary/unit-price"
+    const val SUMMARY_TOTAL = "editor/summary/total"
     const val PRODUCT = "product"
 
     fun part(index: Int) = "part/$index"
@@ -56,6 +67,7 @@ object EditorTags {
 }
 
 const val NOT_CHOSEN = "Выберите"
+const val NAME_TAKEN = "Расчёт с таким названием уже есть"
 const val NOT_A_COUNT = "Целое число больше нуля"
 const val NO_ROWS = "Добавьте хотя бы одну строку"
 const val NO_PARTS = "Добавьте деталь"
@@ -100,6 +112,8 @@ internal class FormReader {
             productOperations = OperationKind.entries.mapNotNull { kind ->
                 form.productOperations[kind]?.let { productOperation(EditorTags.operation(EditorTags.PRODUCT, kind), it) }
             },
+            counterparty = form.counterparty.trim(),
+            discountPercent = optionalDiscount(EditorTags.DISCOUNT, form.discount),
         )
     }
 
@@ -223,6 +237,13 @@ internal class FormReader {
         return BigDecimal.ZERO
     }
 
+    /** Blank is allowed and means no discount; anything typed is above 0 and below 100. */
+    fun optionalDiscount(tag: String, text: String): BigDecimal? = when (val input = readDiscount(text)) {
+        NumberInput.Empty -> null
+        is NumberInput.Valid -> input.value
+        is NumberInput.Invalid -> null.also { errors[tag] = input.message }
+    }
+
     /** Blank is allowed and means "not set". */
     private fun optionalPositive(tag: String, text: String): BigDecimal? = when (val input = readPositive(text)) {
         NumberInput.Empty -> null
@@ -256,7 +277,9 @@ private val UNSET_BEAM = BeamSize("", BigDecimal.ZERO, BigDecimal.ZERO, BigDecim
 /** The form of a stored input, drafts included; [newId] numbers the parts and rows. */
 fun CalculationInput.toForm(newId: () -> Long): CalculationForm = CalculationForm(
     name = name,
+    counterparty = counterparty,
     quantity = countText(quantity),
+    discount = discountText(discountPercent),
     parts = parts.map { it.toForm(newId) },
     productOperations = productOperations.associate { op ->
         op.kind to when (op) {
@@ -338,3 +361,6 @@ internal fun ManualExtra?.toForm() = if (this == null) ExtraForm() else ExtraFor
 internal fun positiveText(value: BigDecimal) = if (value.signum() > 0) value.toInputText() else ""
 
 internal fun countText(value: Int) = if (value > 0) value.toString() else ""
+
+/** The discount as typed: blank for none, which a stored 0 is as well. */
+internal fun discountText(value: BigDecimal?) = if (value != null && value.signum() > 0) value.toInputText() else ""

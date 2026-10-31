@@ -4,6 +4,8 @@ import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.attachments.AttachmentsBlock
+import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.library.AddFromLibraryRow
 import io.github.laalka.slav.app.library.EditorLibraryDialogs
 import io.github.laalka.slav.app.library.LibraryTags
@@ -76,8 +80,12 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(
-            title = if (state.isNew) "Новый расчёт" else "Редактирование расчёта",
-            subtitle = state.priceSource,
+            title = when {
+                state.isNew -> "Новый расчёт"
+                state.inPlace -> "Изменение расчёта"
+                else -> "Редактирование расчёта"
+            },
+            subtitle = if (state.inPlace) "${state.priceSource}. Расчёт не изменится, пока вы не нажмёте «Рассчитать»" else state.priceSource,
             onBack = onBack,
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -90,6 +98,7 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
                 SectionCard("Изделие") {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
                         TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
+                        TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
                         NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
                     }
                 }
@@ -104,13 +113,43 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit)
                 SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
                     state.productOperations.forEach { op -> key(op.ref) { OperationBlock(op, state.currency, model) } }
                 }
+                DiscountCard(state.discount, model::onDiscountChange)
             }
             VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
         HorizontalDivider()
-        CalculateBar(state.canCalculate, state.missingCount, state.calcErrors, state.calcErrorsHint, model::calculate)
+        CalculateBar(state.canCalculate, state.missingCount, state.summary, state.calcErrors, state.calcErrorsHint, model::calculate)
     }
     EditorLibraryDialogs(model.library)
+}
+
+/**
+ * «Отменить изменения?»: a calculated record edited in place is rewritten only by «Рассчитать», so leaving
+ * the editor with changes loses them. The buttons are tagged [EditorTags.LEAVE_CONFIRM] and [EditorTags.LEAVE_STAY].
+ */
+@Composable
+fun DiscardEditsDialog(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onKeepEditing,
+        title = { Text("Отменить изменения?") },
+        text = { Text("Расчёт останется таким, каким он был: всё, что вы изменили, будет потеряно. Чертежи, прикреплённые при редактировании, остаются.") },
+        confirmButton = {
+            TextButton(onClick = onDiscard, modifier = Modifier.testTag(EditorTags.LEAVE_CONFIRM)) {
+                Text("Отменить изменения", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepEditing, modifier = Modifier.testTag(EditorTags.LEAVE_STAY)) { Text("Продолжить редактирование") }
+        },
+    )
+}
+
+/** «Скидка»: one optional percent, taken off the price of the product, shared by both kinds of editor. */
+@Composable
+internal fun DiscountCard(discount: FieldView, onChange: (String) -> Unit) {
+    SectionCard("Скидка", subtitle = "Необязательно: процент от цены изделия, больше 0 и меньше 100") {
+        NumberInput(discount, "Скидка, %", onChange)
+    }
 }
 
 /** The title of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK]. */
@@ -364,11 +403,19 @@ internal fun ExtraRow(extra: ExtraView, currency: String, onAmountChange: (Strin
 }
 
 /**
- * The bar under an editor, shared by both kinds of calculation: why «Рассчитать» is disabled, the errors of the
- * last attempt (spec 7.3) and the button itself, tagged [EditorTags.CALCULATE].
+ * The bar under an editor, shared by both kinds of calculation: why «Рассчитать» is disabled, the price of the
+ * input as it stands ([summary], when there is one), the errors of the last attempt (spec 7.3) and the button
+ * itself, tagged [EditorTags.CALCULATE].
  */
 @Composable
-internal fun CalculateBar(canCalculate: Boolean, missingCount: Int, calcErrors: List<ReadableError>, calcErrorsHint: String?, onCalculate: () -> Unit) {
+internal fun CalculateBar(
+    canCalculate: Boolean,
+    missingCount: Int,
+    summary: PriceSummary?,
+    calcErrors: List<ReadableError>,
+    calcErrorsHint: String?,
+    onCalculate: () -> Unit,
+) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.large, vertical = Spacing.medium),
@@ -378,17 +425,49 @@ internal fun CalculateBar(canCalculate: Boolean, missingCount: Int, calcErrors: 
                 CalcErrors(calcErrors, calcErrorsHint, modifier = Modifier.testTag(EditorTags.ERRORS))
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                Text(
-                    if (canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: $missingCount",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (canCalculate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
+                    Text(
+                        if (canCalculate) "Все обязательные поля заполнены" else "Заполните выделенные поля: $missingCount",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (canCalculate) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    )
+                    summary?.let { PriceSummaryRow(it) }
+                }
                 Button(onClick = onCalculate, enabled = canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
                     Text("Рассчитать")
                 }
             }
         }
+    }
+}
+
+/** The price of the input: the sum before the discount, the discount, the price of one piece and, for a full calculation, the run total. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PriceSummaryRow(summary: PriceSummary) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.large),
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+    ) {
+        summary.discount?.let { discount ->
+            SummaryItem("Сумма без скидки", discount.subtotal, EditorTags.SUMMARY_SUBTOTAL)
+            SummaryItem(discount.label, discount.amount, EditorTags.SUMMARY_DISCOUNT)
+        }
+        SummaryItem("Цена за единицу", summary.unitPrice, EditorTags.SUMMARY_UNIT_PRICE, strong = true)
+        summary.total?.let { SummaryItem("Итого за тираж", it, EditorTags.SUMMARY_TOTAL, strong = true) }
+    }
+}
+
+@Composable
+private fun SummaryItem(label: String, value: String, tag: String, strong: Boolean = false) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            modifier = Modifier.testTag(tag),
+            style = (if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium).tabular(),
+            softWrap = false,
+        )
     }
 }
 

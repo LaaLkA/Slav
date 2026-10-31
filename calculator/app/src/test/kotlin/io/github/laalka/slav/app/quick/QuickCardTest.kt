@@ -69,10 +69,14 @@ class QuickCardTest {
     private val revisions = mutableListOf<UUID>()
     private var deleted = 0
 
+    /** The editors the card asked for: the id and whether it is edited in place. */
+    private val opened = mutableListOf<Pair<UUID, Boolean>>()
+
     private fun card(id: UUID) = CardModel(
         deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, testScope(), id,
         onRevision = { revisions += it },
         onDeleted = { deleted++ },
+        onOpenEditor = { edited, inPlace -> opened += edited to inPlace },
     )
 
     private fun stored(id: UUID): StoredCalculation.Quick = assertIs<StoredCalculation.Quick>(deps.calculations.get(id))
@@ -80,18 +84,21 @@ class QuickCardTest {
     private fun list() = CalculationListModel(deps.calculations, deps.settings, deps.adminPassword)
 
     @Test
-    fun `the card shows the material and the cut, the unit price, the total and the mass of the golden case`() {
+    fun `the card shows the material and the cut, the unit price and the mass of the golden case, and no run size`() {
         val id = deps.saveQuickCalculated(quickGoldenInput(quantity = 10))
 
         val state = card(id).state.value
 
         assertEquals("Лист на раскрой", state.name)
         assertEquals("5 400,00 ₽", state.unitPrice)
-        // The run of 10 asked for is not kept: a simplified calculation has no run size, its total is its unit price.
-        assertEquals("5 400,00 ₽", state.total)
+        // The run of 10 asked for is not kept: a simplified calculation has no run size, so the card shows
+        // neither the run size, nor a total for it, nor the mass of the run.
+        assertNull(state.quantity)
+        assertNull(state.total)
+        assertNull(state.runMass)
         assertEquals("24 кг", state.unitMass)
-        assertEquals("24 кг", state.runMass)
-        assertEquals("1", state.quantity)
+        assertEquals(CalculationKind.QUICK, state.kind)
+        assertNull(state.discount)
         assertEquals(formatDate(LocalDate.now()), state.snapshotDate)
         assertEquals(emptyList(), state.parts, "a simplified calculation has no parts")
         assertEquals(
@@ -136,27 +143,19 @@ class QuickCardTest {
     }
 
     @Test
-    fun `the run size action still makes a version with the same snapshot and result, and its total stays the unit price`() {
+    fun `a simplified calculation has no run size to change, so asking to change it does nothing`() {
         val id = deps.saveQuickCalculated(quickGoldenInput(quantity = 1))
         val original = stored(id)
         val card = card(id)
 
         card.requestQuantityChange()
+        assertNull(card.state.value.quantityDialog)
         card.onQuantityChange("10")
         card.confirmQuantityChange()
 
-        val revision = stored(revisions.single())
-        // A simplified calculation has no run size: the 10 typed is not kept.
-        assertEquals(1, revision.quantity)
-        assertEquals(original.result, revision.result)
-        assertEquals(original.snapshot, revision.snapshot)
-        assertEquals(original.snapshotAt, revision.snapshotAt)
-        assertEquals(id, revision.sourceId)
-        assertEquals("5 400,00 ₽", card(revision.id).state.value.total)
+        assertEquals(emptyList(), revisions)
         assertEquals(original, stored(id), "the original is as it was")
-        assertEquals(setOf(CalculationKind.QUICK), deps.calculations.list().map { it.kind }.toSet())
-        card.reload()
-        assertEquals(listOf(revision.id), card.state.value.revisions.map { it.id })
+        assertEquals(1, deps.calculations.list().size)
     }
 
     @Test
@@ -171,14 +170,16 @@ class QuickCardTest {
         assertEquals("5 400,00 ₽", preview.oldUnitPrice)
         // 4 800 for the material and 12 min × 80 ₽/min for the cut.
         assertEquals("5 760,00 ₽", preview.newUnitPrice)
-        assertEquals("5 400,00 ₽", preview.oldTotal)
-        assertEquals("5 760,00 ₽", preview.newTotal)
+        // No run size, so no run total to compare.
+        assertNull(preview.oldTotal)
+        assertNull(preview.newTotal)
         assertFalse(preview.unchanged)
         assertEquals(1, deps.calculations.list().size, "a preview creates nothing")
 
         card.confirmRecalc()
 
         val revision = stored(revisions.single())
+        assertEquals("Лист на раскрой №2", revision.name, "named by the repository, not by the card")
         assertEquals("5760.00", revision.unitPrice?.amount?.toPlainString())
         assertEquals(deps.settings.load(), revision.snapshot)
         assertEquals("5400.00", stored(id).unitPrice?.amount?.toPlainString())
@@ -203,18 +204,50 @@ class QuickCardTest {
     }
 
     @Test
-    fun `Изменить makes a quick revision draft, and a draft is edited as it is`() {
+    fun `Изменить on a simplified calculation asks the password and opens the editor on the same calculation in place`() {
         val id = deps.saveQuickCalculated()
+        val before = stored(id)
         val card = card(id)
 
-        val draft = card.edit()
+        card.requestEdit()
+        assertEquals("Лист на раскрой", card.state.value.editQuestion?.name)
+        card.onEditPasswordChange("not-the-password")
+        card.confirmEdit()
 
-        assertNotEquals(id, draft)
-        val stored = stored(draft)
-        assertEquals(CalculationStatus.DRAFT, stored.status)
-        assertEquals(id, stored.sourceId)
-        assertEquals(stored(id).snapshot, stored.snapshot)
-        assertEquals(draft, card(draft).edit())
+        assertEquals("Неверный пароль", card.state.value.editQuestion?.error)
+        assertEquals(emptyList(), opened, "a wrong password opens nothing")
+
+        card.onEditPasswordChange(ADMIN_PASSWORD)
+        card.confirmEdit()
+
+        assertEquals(listOf(id to true), opened)
+        assertNull(card.state.value.editQuestion)
+        assertEquals(before, stored(id))
+        assertEquals(1, deps.calculations.list().size)
+    }
+
+    @Test
+    fun `Сделать копию и изменить makes a quick draft named with a copy number and opens it, a draft is edited as it is`() {
+        val id = deps.saveQuickCalculated()
+        val before = stored(id)
+        val card = card(id)
+
+        card.copyAndEdit()
+
+        val (copy, inPlace) = opened.single()
+        assertEquals(false, inPlace)
+        assertNotEquals(id, copy)
+        val draft = stored(copy)
+        assertEquals(CalculationStatus.DRAFT, draft.status)
+        assertEquals("Лист на раскрой (2)", draft.name)
+        assertNull(draft.snapshot, "a copy takes the current prices")
+        assertEquals(before, stored(id), "the source is untouched")
+
+        opened.clear()
+        card(copy).requestEdit()
+        assertEquals(listOf(copy to false), opened, "a draft is edited as it is, with no password")
+        card(copy).copyAndEdit()
+        assertEquals(1, opened.size, "a draft has no copy to make here")
     }
 
     @Test
@@ -267,7 +300,10 @@ class QuickCardTest {
         )
         val row = rows.single { it.id == quick }
         assertEquals("5 400,00 ₽", row.unitPrice)
+        // No run size: a dash in the column, and the total is the unit price.
+        assertEquals("—", row.quantity)
         assertEquals("5 400,00 ₽", row.total)
+        assertEquals("1", rows.single { it.id == full }.quantity)
 
         model.onQueryChange("опорн")
         assertEquals(setOf(quick, draft), model.state.value.rows.map { it.id }.toSet())
@@ -289,7 +325,7 @@ class QuickCardTest {
     }
 
     @Test
-    fun `the client PDF of a simplified calculation holds the name, the unit price and the total, and no lines`() {
+    fun `the client PDF of a simplified calculation holds the name and the price, with no run size, no total and no lines`() {
         val id = deps.saveQuickCalculated(quickGoldenInput("Лист на раскрой", quantity = 10))
         val target = temp.root.toPath().resolve("client.pdf")
         val model = list()
@@ -299,15 +335,15 @@ class QuickCardTest {
         assertNull(model.state.value.message?.takeIf { it.isError })
         val text = Loader.loadPDF(target.toFile()).use { PDFTextStripper().getText(it) }
         assertTrue("Лист на раскрой" in text, text)
-        assertTrue("Тираж 1 шт" in text, text)
-        assertTrue("Цена изделия 5 400,00 ₽" in text, text)
-        assertTrue("Итог 5 400,00 ₽" in text, text)
+        assertTrue("Цена за единицу 5 400,00 ₽" in text, text)
+        assertFalse("Тираж" in text, text)
+        assertFalse("Итого" in text, text)
         assertFalse("Резка" in text, text)
         assertEquals("Лист на раскрой.pdf", model.suggestedFileName(id, ExportFormat.PDF))
     }
 
     @Test
-    fun `the xlsx of a simplified calculation holds the two lines as numbers and the totals`() {
+    fun `the xlsx of a simplified calculation holds the two lines as numbers, with no run size, run total or run mass`() {
         val input = quickGoldenInput(quantity = 10).copy(cutExtra = ManualExtra(Money(BigDecimal("150")), "Снятие фаски"))
         val id = deps.saveQuickCalculated(input)
         val breakdown = assertNotNull(deps.calculations.get(id)?.breakdown(ZoneId.systemDefault()))
@@ -318,11 +354,12 @@ class QuickCardTest {
         XSSFWorkbook(target.toFile()).use { workbook ->
             val sheet = workbook.getSheetAt(0)
             assertEquals("Лист на раскрой", sheet.getRow(0).cell(0))
-            assertEquals(5550.0, sheet.rowLabelled("Цена изделия, ₽").getCell(1).numericCellValue)
-            assertEquals(5550.0, sheet.rowLabelled("Итог, ₽").getCell(1).numericCellValue)
-            assertEquals(1.0, sheet.rowLabelled("Тираж, шт").getCell(1).numericCellValue)
+            assertEquals(5550.0, sheet.rowLabelled("Цена за единицу, ₽").getCell(1).numericCellValue)
             assertEquals(24.0, sheet.rowLabelled("Масса изделия, кг").getCell(1).numericCellValue, 1e-9)
-            assertEquals(24.0, sheet.rowLabelled("Масса тиража, кг").getCell(1).numericCellValue, 1e-9)
+            val labels = sheet.map { it.cell(0) }
+            assertFalse("Тираж, шт" in labels, labels.toString())
+            assertFalse("Итого за тираж, ₽" in labels, labels.toString())
+            assertFalse("Масса тиража, кг" in labels, labels.toString())
 
             val material = sheet.first { it.cell(1) == "Материал" }
             val cut = sheet.first { it.cell(1) == "Резка (время)" }
@@ -332,7 +369,7 @@ class QuickCardTest {
             assertEquals(150.0, cut.getCell(3).numericCellValue)
             assertEquals("Снятие фаски", cut.cell(4))
             val last = sheet.getRow(sheet.lastRowNum)
-            assertEquals("Цена изделия", last.cell(1))
+            assertEquals("Цена за единицу", last.cell(1))
             assertEquals(5550.0, last.getCell(5).numericCellValue)
             assertEquals(24.0, last.getCell(2).numericCellValue, 1e-9)
             assertEquals(exportFileName("Лист на раскрой", ExportFormat.XLSX), "Лист на раскрой.xlsx")

@@ -58,6 +58,7 @@ class AttachmentsModelTest {
         id,
         onRevision = {},
         onDeleted = {},
+        onOpenEditor = { _, _ -> },
     )
 
     private fun draftCard(): CardModel = card(deps.calculations.saveDraft(goldenInput()))

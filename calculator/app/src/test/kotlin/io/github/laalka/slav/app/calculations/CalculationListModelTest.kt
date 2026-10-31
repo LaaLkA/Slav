@@ -91,6 +91,47 @@ class CalculationListModelTest {
     }
 
     @Test
+    fun `rows carry the counterparty, search finds a calculation by it, and the column sorts in Russian order`() {
+        deps.saveCalculated(goldenInput("Кронштейн").copy(counterparty = "ООО Ромашка"))
+        deps.saveCalculated(goldenInput("Опора").copy(counterparty = "ИП Иванов"))
+        deps.saveCalculated(goldenInput("Рама"))
+        val model = model()
+
+        assertEquals(
+            mapOf("Кронштейн" to "ООО Ромашка", "Опора" to "ИП Иванов", "Рама" to ""),
+            model.state.value.rows.associate { it.name to it.counterparty },
+        )
+
+        // The search covers the name and the counterparty, in any letter case.
+        model.onQueryChange("РОМАШ")
+        assertEquals(listOf("Кронштейн"), model.names)
+        model.onQueryChange("иван")
+        assertEquals(listOf("Опора"), model.names)
+        model.onQueryChange("а")
+        assertEquals(setOf("Кронштейн", "Опора", "Рама"), model.names.toSet())
+        model.onQueryChange("")
+
+        model.sortBy(CalculationSortColumn.COUNTERPARTY)
+        assertEquals(listOf("Рама", "Опора", "Кронштейн"), model.names, "no counterparty first, then ИП Иванов, then ООО Ромашка")
+        model.sortBy(CalculationSortColumn.COUNTERPARTY)
+        assertEquals(listOf("Кронштейн", "Опора", "Рама"), model.names)
+    }
+
+    @Test
+    fun `a simplified calculation shows a dash for the run size and its unit price as the total`() {
+        deps.saveQuickCalculated(quickGoldenInput("Лист", quantity = 7))
+        deps.saveCalculated(goldenInput("Кронштейн", quantity = 3))
+        val rows = model().state.value.rows.associateBy { it.name }
+
+        val quick = assertNotNull(rows["Лист"])
+        assertEquals("—", quick.quantity)
+        assertEquals("5 400,00 ₽", quick.unitPrice)
+        assertEquals("5 400,00 ₽", quick.total)
+        assertEquals("3", assertNotNull(rows["Кронштейн"]).quantity)
+        assertEquals("34 020,00 ₽", assertNotNull(rows["Кронштейн"]).total)
+    }
+
+    @Test
     fun `the status filter shows only the chosen statuses`() {
         stored()
         deps.calculations.setStatus(support, CalculationStatus.SENT)

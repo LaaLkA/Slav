@@ -70,9 +70,10 @@ private val DATE_WIDTH = 168.dp
 /** A table column: its width (null takes the rest of the row) and whether it holds numbers. */
 private enum class ListColumn(val title: String, val sort: CalculationSortColumn, val width: Dp?, val numeric: Boolean) {
     NAME("Название", CalculationSortColumn.NAME, null, numeric = false),
+    COUNTERPARTY("Контрагент", CalculationSortColumn.COUNTERPARTY, 176.dp, numeric = false),
     UPDATED("Изменён", CalculationSortColumn.UPDATED_AT, 144.dp, numeric = false),
     STATUS("Статус", CalculationSortColumn.STATUS, 120.dp, numeric = false),
-    UNIT_PRICE("Цена изделия", CalculationSortColumn.UNIT_PRICE, 136.dp, numeric = true),
+    UNIT_PRICE("Цена за единицу", CalculationSortColumn.UNIT_PRICE, 152.dp, numeric = true),
     QUANTITY("Тираж", CalculationSortColumn.QUANTITY, 64.dp, numeric = true),
     TOTAL("Итог", CalculationSortColumn.TOTAL, 152.dp, numeric = true),
 }
@@ -168,7 +169,8 @@ private fun Filters(state: ListState, model: CalculationListModel) {
             value = state.query,
             onValueChange = model::onQueryChange,
             modifier = Modifier.width(SEARCH_WIDTH).testTag(CalculationTags.SEARCH),
-            label = "Поиск по названию",
+            label = "Поиск",
+            placeholder = "По названию и контрагенту",
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         )
         InputField(
@@ -327,10 +329,17 @@ private fun TableRow(
             )
             if (row.kind == CalculationKind.QUICK) QuickChip(Modifier.testTag("$tag/quick"))
         }
+        Text(
+            row.counterparty,
+            modifier = cell(ListColumn.COUNTERPARTY).testTag("$tag/counterparty"),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Text(row.updatedAt, modifier = cell(ListColumn.UPDATED), style = MaterialTheme.typography.bodyMedium.tabular(), maxLines = 1)
         Box(cell(ListColumn.STATUS)) { StatusChip(row.status) }
         MoneyCell(row.unitPrice ?: "—", cell(ListColumn.UNIT_PRICE))
-        MoneyCell(row.quantity, cell(ListColumn.QUANTITY))
+        MoneyCell(row.quantity, cell(ListColumn.QUANTITY).testTag("$tag/quantity"))
         MoneyCell(row.total ?: "—", cell(ListColumn.TOTAL).testTag("$tag/total"))
         RowMenu(row, tag, onOpen, onCopy, onDelete, onExport)
     }

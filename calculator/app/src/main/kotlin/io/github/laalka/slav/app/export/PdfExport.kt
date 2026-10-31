@@ -1,6 +1,8 @@
 package io.github.laalka.slav.app.export
 
 import io.github.laalka.slav.app.calculations.Breakdown
+import io.github.laalka.slav.app.calculations.discountLabel
+import io.github.laalka.slav.app.calculations.formatDiscount
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.app.ui.formatMoney
 import org.apache.pdfbox.pdmodel.PDDocument
@@ -22,8 +24,11 @@ private const val ROW_GAP = 10f
 private const val GREY = 0.4f
 
 /**
- * The client's copy of a calculation (spec 8.5): its name, the date of its prices, the run size,
- * the unit price and the total, on one A4 page. No breakdown and no company details.
+ * The client's copy of a calculation (spec 8.5): its name, the counterparty when there is one, the
+ * date of its prices, the run size, the sum before the discount and the discount when there is
+ * one, the unit price and the total, on one A4 page. A simplified calculation has no run size, so
+ * it shows neither the run size nor a total: its unit price is its price. No breakdown and no
+ * company details.
  */
 fun writeClientPdf(breakdown: Breakdown, currency: String, target: Path) {
     PDDocument().use { document ->
@@ -38,13 +43,26 @@ fun writeClientPdf(breakdown: Breakdown, currency: String, target: Path) {
             writer.text("Расчёт стоимости", regular, 11f, grey = true)
             writer.gap(6f)
             wrap(breakdown.name.ifBlank { "Без названия" }, bold, 20f, width).forEach { writer.text(it, bold, 20f) }
+            if (breakdown.counterparty.isNotBlank()) {
+                writer.gap(4f)
+                wrap("Контрагент: ${breakdown.counterparty}", regular, 12f, width).forEach { writer.text(it, regular, 12f) }
+            }
             writer.gap(4f)
             writer.text("Дата: ${formatDate(breakdown.snapshotDate)}", regular, 11f, grey = true)
             writer.gap(28f)
-            writer.row("Тираж", "${breakdown.quantity} шт", regular, regular, 12f)
-            writer.row("Цена изделия", formatMoney(breakdown.unitPrice, currency), regular, regular, 12f)
-            writer.rule()
-            writer.row("Итог", formatMoney(breakdown.total, currency), bold, bold, 14f)
+            if (breakdown.hasRunSize) writer.row("Тираж", "${breakdown.quantity} шт", regular, regular, 12f)
+            breakdown.discountPercent?.takeIf { breakdown.hasDiscount }?.let { percent ->
+                writer.row("Сумма без скидки", formatMoney(breakdown.subtotal, currency), regular, regular, 12f)
+                writer.row(discountLabel(percent), formatDiscount(breakdown.discount, currency), regular, regular, 12f)
+            }
+            if (breakdown.hasRunSize) {
+                writer.row("Цена за единицу", formatMoney(breakdown.unitPrice, currency), regular, regular, 12f)
+                writer.rule()
+                writer.row("Итого за тираж", formatMoney(breakdown.total, currency), bold, bold, 14f)
+            } else {
+                writer.rule()
+                writer.row("Цена за единицу", formatMoney(breakdown.unitPrice, currency), bold, bold, 14f)
+            }
         }
         document.save(target.toFile())
     }

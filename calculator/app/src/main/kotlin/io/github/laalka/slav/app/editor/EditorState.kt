@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.editor
 
+import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.core.OperationKind
 import java.math.BigDecimal
@@ -24,16 +25,23 @@ data class ExtraView(val amount: FieldView, val comment: FieldView)
 data class EditorState(
     /** Opened by «Новый расчёт» rather than on a saved calculation. */
     val isNew: Boolean,
+    /** A saved calculation edited in place: nothing is written until «Рассчитать». */
+    val inPlace: Boolean,
     /** Which prices «Рассчитать» uses: the current settings or the calculation's snapshot (spec 8.3). */
     val priceSource: String,
     val currency: String,
     val name: FieldView,
+    val counterparty: FieldView,
     val quantity: FieldView,
+    /** «Скидка, %»: optional, above 0 and below 100. */
+    val discount: FieldView,
     val parts: List<PartView>,
     val partsError: String?,
     val productOperations: List<OperationView>,
     /** How many fields keep «Рассчитать» disabled; each of them is highlighted. */
     val missingCount: Int,
+    /** The price of the input as it stands; null while a field is missing or a price is not filled in. */
+    val summary: PriceSummary?,
     /** Why the last «Рассчитать» stopped (spec 7.3); empty when it did not. */
     val calcErrors: List<ReadableError>,
     val calcErrorsHint: String?,

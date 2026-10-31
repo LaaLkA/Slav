@@ -25,9 +25,10 @@ sealed interface Screen {
 
     /**
      * [id] is null for «Новый расчёт», which is then a calculation of [kind]; a saved one is opened in
-     * the editor of its own kind, whatever [kind] says.
+     * the editor of its own kind, whatever [kind] says. With [inPlace] the editor is open on a
+     * calculated record, which «Рассчитать» then rewrites; the caller has asked the administrator password.
      */
-    data class Editor(val id: UUID?, val kind: CalculationKind = CalculationKind.FULL) : Screen
+    data class Editor(val id: UUID?, val kind: CalculationKind = CalculationKind.FULL, val inPlace: Boolean = false) : Screen
 
     data class Card(val id: UUID) : Screen
 
@@ -57,6 +58,10 @@ sealed interface Page {
  * a price filled in there is one click away from the calculation that needed it. Leaving the editor in
  * any other way, closing the window included, goes through [EditorModel.leave], which saves the
  * draft and drops a revision draft nothing was changed in (spec 8.3).
+ *
+ * A calculated record edited in place writes nothing until «Рассчитать», so leaving its editor with
+ * changes loses them: the navigator then asks first ([discardQuestion]) and goes on only once
+ * [confirmDiscard] is called; [keepEditing] stays in the editor.
  */
 class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     /** Created once: the settings tabs keep their state while the user visits other screens. */
@@ -72,6 +77,12 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     private val _page = MutableStateFlow<Page>(Page.Calculations)
     val page: StateFlow<Page> = _page.asStateFlow()
 
+    private var leaveAfterDiscard: (() -> Unit)? = null
+    private val _discardQuestion = MutableStateFlow(false)
+
+    /** «Отменить изменения?»: an edit in place with changes is about to be left. */
+    val discardQuestion: StateFlow<Boolean> = _discardQuestion.asStateFlow()
+
     fun navigate(to: Screen) {
         when (to) {
             Screen.Settings -> {
@@ -83,9 +94,36 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
                 library.reload()
                 _page.value = Page.Library
             }
-            Screen.Calculations -> leaveThen { show(Page.Calculations) }
-            is Screen.Editor -> leaveThen { show(editorPage(to)) }
-            is Screen.Card -> leaveThen { show(card(to.id)) }
+            Screen.Calculations -> askBeforeLeaving { leaveThen { show(Page.Calculations) } }
+            is Screen.Editor -> askBeforeLeaving { leaveThen { show(editorPage(to)) } }
+            is Screen.Card -> askBeforeLeaving { leaveThen { show(card(to.id)) } }
+        }
+    }
+
+    /** The back button of an editor: to the card of a calculation edited in place, otherwise to the list. */
+    fun closeEditor() = navigate(openEditor()?.inPlaceId?.let(Screen::Card) ?: Screen.Calculations)
+
+    /** The changes of the edit in place are given up: the editor is left as it was asked to be. */
+    fun confirmDiscard() {
+        val leave = leaveAfterDiscard
+        dismissDiscardQuestion()
+        leave?.invoke()
+    }
+
+    /** The edit in place goes on; the editor stays open with its changes. */
+    fun keepEditing() = dismissDiscardQuestion()
+
+    private fun dismissDiscardQuestion() {
+        leaveAfterDiscard = null
+        _discardQuestion.value = false
+    }
+
+    private fun askBeforeLeaving(leave: () -> Unit) {
+        if (openEditor()?.discardsOnLeave == true) {
+            leaveAfterDiscard = leave
+            _discardQuestion.value = true
+        } else {
+            leave()
         }
     }
 
@@ -115,7 +153,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     }
 
     /** Closes the window through [exit] once the open editor, if any, has been left. */
-    fun requestExit(exit: () -> Unit) = leaveThen(exit)
+    fun requestExit(exit: () -> Unit) = askBeforeLeaving { leaveThen(exit) }
 
     private fun leaveThen(action: () -> Unit) {
         openEditor()?.leave()
@@ -137,12 +175,12 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
     private fun editorPage(to: Screen.Editor): Page {
         val kind = to.id?.let { id -> requireNotNull(deps.calculations.get(id)) { "No calculation $id" }.kind } ?: to.kind
         return when (kind) {
-            CalculationKind.FULL -> Page.Editor(editor(to.id))
-            CalculationKind.QUICK -> Page.QuickEditor(quickEditor(to.id))
+            CalculationKind.FULL -> Page.Editor(editor(to.id, to.inPlace))
+            CalculationKind.QUICK -> Page.QuickEditor(quickEditor(to.id, to.inPlace))
         }
     }
 
-    private fun quickEditor(id: UUID?) = QuickEditorModel(
+    private fun quickEditor(id: UUID?, inPlace: Boolean) = QuickEditorModel(
         calculations = deps.calculations,
         settings = deps.settings,
         attachmentRepository = deps.attachments,
@@ -151,9 +189,10 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         id = id,
         // The editor has saved the calculation and has nothing left to ask.
         onCalculated = { saved -> show(card(saved)) },
+        inPlace = inPlace,
     )
 
-    private fun editor(id: UUID?) = EditorModel(
+    private fun editor(id: UUID?, inPlace: Boolean) = EditorModel(
         calculations = deps.calculations,
         settings = deps.settings,
         attachmentRepository = deps.attachments,
@@ -163,6 +202,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
         id = id,
         // The editor has saved the calculation and has nothing left to ask.
         onCalculated = { saved -> show(card(saved)) },
+        inPlace = inPlace,
     )
 
     // A new version (recalculation, new run size) opens as its own card; a deleted calculation leaves nothing to show.
@@ -177,6 +217,7 @@ class Navigator(private val deps: Deps, private val scope: CoroutineScope) {
             id,
             onRevision = { revision -> show(card(revision)) },
             onDeleted = { show(Page.Calculations) },
+            onOpenEditor = { edited, inPlace -> navigate(Screen.Editor(edited, inPlace = inPlace)) },
         ),
     )
 }

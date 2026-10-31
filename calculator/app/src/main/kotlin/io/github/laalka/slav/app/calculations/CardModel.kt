@@ -18,6 +18,7 @@ import io.github.laalka.slav.core.QuickCalculator
 import io.github.laalka.slav.core.QuickOutcome
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AttachmentRepository
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.CalculationSummary
@@ -37,13 +38,13 @@ data class CardLine(val title: String, val extra: String?, val cost: String)
 /** One part, one piece of the product; [details] says its mass. */
 data class CardPart(val title: String, val details: String, val lines: List<CardLine>, val cost: String)
 
-/** «Пересчитать по текущим ценам» before the user's answer (spec 8.3). */
+/** «Пересчитать по текущим ценам» before the user's answer (spec 8.3); the totals are null for a calculation without a run size. */
 data class RecalcPreview(
     val snapshotDate: String,
     val oldUnitPrice: String,
     val newUnitPrice: String,
-    val oldTotal: String,
-    val newTotal: String,
+    val oldTotal: String?,
+    val newTotal: String?,
     val unchanged: Boolean,
 )
 
@@ -55,16 +56,24 @@ data class QuantityDialog(val text: String, val error: String?)
 
 /**
  * The card of spec 8.2. Money texts carry the currency label of the settings. A draft has no
- * price: its price, masses and breakdown are null or empty and it has no [statusOptions].
+ * price: its price, masses and breakdown are null or empty and it has no [statusOptions]. A
+ * simplified calculation has no run size: [quantity], [total] and [runMass] are null for it, and
+ * it is one piece whose price is [unitPrice].
  */
 data class CardState(
     val name: String,
+    /** The customer the calculation is for; empty when not given. */
+    val counterparty: String,
+    val kind: CalculationKind,
     val status: CalculationStatus,
     /** The statuses the user sets by hand; empty for a draft. */
     val statusOptions: List<CalculationStatus>,
-    val quantity: String,
+    val quantity: String?,
     val quantityDialog: QuantityDialog?,
+    /** The price of one piece, the discount already taken off. */
     val unitPrice: String?,
+    /** The sum before the discount and the discount with its percent; null without a discount. */
+    val discount: DiscountLines?,
     val total: String?,
     val unitMass: String?,
     val runMass: String?,
@@ -78,17 +87,26 @@ data class CardState(
     /** «Новые версии»: the calculations made from this one, newest first. */
     val revisions: List<CardLink>,
     val deleteQuestion: DeleteQuestion?,
+    /** The administrator password asked before a calculated record is edited in place. */
+    val editQuestion: EditQuestion?,
 ) {
     val isPriced: Boolean get() = unitPrice != null
+
+    val isDraft: Boolean get() = status == CalculationStatus.DRAFT
 }
 
 /**
- * The card of one calculation of either kind (spec 8.2, 8.3). A calculated record is never changed in place:
- * «Изменить», «Пересчитать по текущим ценам» and «Изменить тираж» each make a new calculation and
- * leave this one as it was; [onRevision] receives the id of the new one. «Пересчитать по текущим
- * ценам» prices the input on the current settings and creates the new calculation only once
- * confirmed; a new run size keeps the snapshot and the result, so the total follows from the stored
- * unit price. Deleting needs the administrator password; [onDeleted] is called when it is done.
+ * The card of one calculation of either kind (spec 8.2, 8.3). A calculated record is changed in
+ * place only by «Изменить», after the administrator password: [onOpenEditor] then opens the editor
+ * on this very record. «Сделать копию и изменить», «Пересчитать по текущим ценам» and «Изменить
+ * тираж» (a full calculation only; a simplified one has no run size) leave this one as it was:
+ * the copy is a draft named «… (N)», the others make a new calculation, and [onRevision] receives
+ * the id of it. «Пересчитать по текущим ценам» prices the input on the current settings and creates
+ * the new calculation only once confirmed, under the name «… №N»; a new run size keeps the snapshot
+ * and the result, so the total follows from the stored unit price. A draft is edited as it is,
+ * with no password. Deleting needs the administrator password; [onDeleted] is called when it is done.
+ *
+ * [onOpenEditor] gets the id to edit and whether it is edited in place.
  */
 class CardModel(
     private val calculations: CalculationRepository,
@@ -100,6 +118,7 @@ class CardModel(
     val id: UUID,
     private val onRevision: (UUID) -> Unit,
     private val onDeleted: () -> Unit,
+    private val onOpenEditor: (id: UUID, inPlace: Boolean) -> Unit,
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) {
     private var calculation: StoredCalculation = read()
@@ -107,7 +126,8 @@ class CardModel(
     private var quantityDialog: QuantityDialog? = null
     private var source: StoredCalculation? = null
     private var revisions: List<CalculationSummary> = emptyList()
-    private val deletion = DeleteFlow(adminPassword, calculations::delete)
+    private val deletion = PasswordFlow(adminPassword, calculations::delete)
+    private val editing = PasswordFlow(adminPassword) { onOpenEditor(it, true) }
 
     /**
      * The drawings of the card (spec 8.2). Adding or removing one changes only the drawings: it asks
@@ -142,20 +162,54 @@ class CardModel(
         pendingRecalc = null
         recalcErrors = emptyList()
         deletion.cancel()
+        editing.cancel()
         readLinks()
         attachments.reload()
         refresh()
     }
 
     /**
-     * «Изменить» (spec 8.3): the id of the draft to open in the editor. A calculated record is
-     * not edited itself, a revision draft with its input and prices is; a draft is edited as it is.
+     * «Изменить»: a draft is opened in the editor as it is; a calculated record asks the
+     * administrator password first, and the editor then opens on this same record.
      */
-    fun edit(): UUID = if (calculation.status == CalculationStatus.DRAFT) id else calculations.createRevisionDraft(id)
+    fun requestEdit() {
+        if (calculation.status == CalculationStatus.DRAFT) {
+            onOpenEditor(id, false)
+        } else {
+            editing.request(id)
+            refresh()
+        }
+    }
 
-    /** «Изменить тираж»: asks for the new run size. */
-    fun requestQuantityChange() {
+    fun onEditPasswordChange(text: String) {
+        editing.onPasswordChange(text)
+        refresh()
+    }
+
+    fun cancelEdit() {
+        editing.cancel()
+        refresh()
+    }
+
+    /** Opens the editor on this record when the password is the administrator's; a wrong one is flagged and nothing opens. */
+    fun confirmEdit() {
+        editing.confirm()
+        refresh()
+    }
+
+    /**
+     * «Сделать копию и изменить»: a draft with the input of this calculation, named «<base> (N)» and
+     * priced on the current settings, opened in the editor. This one stays as it was. A draft has
+     * no copy to make here: it is edited as it is.
+     */
+    fun copyAndEdit() {
         if (!calculation.isPriced) return
+        onOpenEditor(calculations.copy(id), false)
+    }
+
+    /** «Изменить тираж»: asks for the new run size. A simplified calculation has none. */
+    fun requestQuantityChange() {
+        if (!calculation.isPriced || calculation !is StoredCalculation.Full) return
         quantityDialog = QuantityDialog(calculation.quantity.toString(), error = null)
         refresh()
     }
@@ -180,20 +234,16 @@ class CardModel(
         val dialog = quantityDialog ?: return
         val error = quantityError(dialog.text)
         val quantity = dialog.text.trim().toIntOrNull()
-        if (error != null || quantity == null) {
+        val current = calculation as? StoredCalculation.Full
+        if (error != null || quantity == null || current == null) {
             quantityDialog = dialog.copy(error = error)
             refresh()
             return
         }
         val snapshot = checkNotNull(calculation.snapshot) { "Calculation $id has no price snapshot" }
-        val revision = when (val current = calculation) {
-            is StoredCalculation.Full -> calculations.createRevision(
-                id, current.input.copy(quantity = quantity), snapshot, checkNotNull(current.result) { "Calculation $id has no result" }, current.snapshotAt,
-            )
-            is StoredCalculation.Quick -> calculations.createRevision(
-                id, current.input.copy(quantity = quantity), snapshot, checkNotNull(current.result) { "Calculation $id has no result" }, current.snapshotAt,
-            )
-        }
+        val revision = calculations.createRevision(
+            id, current.input.copy(quantity = quantity), snapshot, checkNotNull(current.result) { "Calculation $id has no result" }, current.snapshotAt,
+        )
         quantityDialog = null
         refresh()
         onRevision(revision)
@@ -303,16 +353,20 @@ class CardModel(
 
     private fun build(): CardState {
         val breakdown = calculation.breakdown(zone)
+        val hasRunSize = calculation.kind == CalculationKind.FULL
         return CardState(
             name = calculation.name,
+            counterparty = calculation.counterparty,
+            kind = calculation.kind,
             status = calculation.status,
             statusOptions = if (breakdown == null) emptyList() else CalculationStatus.MANUAL.sortedBy { it.ordinal },
-            quantity = calculation.quantity.toString(),
+            quantity = calculation.quantity.toString().takeIf { hasRunSize },
             quantityDialog = quantityDialog,
             unitPrice = breakdown?.let { money(it.unitPrice) },
-            total = breakdown?.let { money(it.total) },
+            discount = breakdown?.let { discountLines(it.subtotal, it.discountPercent, it.discount, currency) },
+            total = breakdown?.takeIf { hasRunSize }?.let { money(it.total) },
             unitMass = breakdown?.let { kg(it.unitMassKg) },
-            runMass = breakdown?.let { kg(it.runMassKg) },
+            runMass = breakdown?.takeIf { hasRunSize }?.let { kg(it.runMassKg) },
             snapshotDate = breakdown?.let { formatDate(it.snapshotDate) },
             parts = breakdown?.parts.orEmpty().map { part ->
                 CardPart(
@@ -328,6 +382,7 @@ class CardModel(
             source = source?.let { CardLink(it.id, "${it.name.ifBlank { UNNAMED }} от ${formatDate(it.createdAt.atZone(zone).toLocalDate())}", null, it.status == CalculationStatus.DRAFT) },
             revisions = revisions.map { it.toLink() },
             deleteQuestion = deletion.pending?.let { DeleteQuestion(calculation.name.ifBlank { UNNAMED }, deletion.error) },
+            editQuestion = editing.pending?.let { EditQuestion(calculation.name.ifBlank { UNNAMED }, editing.error) },
         )
     }
 
@@ -335,7 +390,8 @@ class CardModel(
     private fun CalculationSummary.toLink() = CardLink(
         id = id,
         title = "${name.ifBlank { UNNAMED }} от ${formatDateTime(createdAt, zone)}",
-        details = "${status.title}, ${unitPrice?.let(::money) ?: "без цены"} × $quantity",
+        // A simplified calculation is one piece: there is no run size to multiply by.
+        details = "${status.title}, ${unitPrice?.let(::money) ?: "без цены"}" + if (kind == CalculationKind.FULL) " × $quantity" else "",
         isDraft = status == CalculationStatus.DRAFT,
     )
 
@@ -345,8 +401,8 @@ class CardModel(
             snapshotDate = formatDate(breakdown.snapshotDate),
             oldUnitPrice = money(breakdown.unitPrice),
             newUnitPrice = money(recalc.unitPrice),
-            oldTotal = money(breakdown.total),
-            newTotal = money(recalc.unitPrice * breakdown.quantity),
+            oldTotal = breakdown.takeIf { it.hasRunSize }?.let { money(it.total) },
+            newTotal = breakdown.takeIf { it.hasRunSize }?.let { money(recalc.unitPrice * it.quantity) },
             unchanged = recalc.unitPrice.compareTo(breakdown.unitPrice) == 0,
         )
     }

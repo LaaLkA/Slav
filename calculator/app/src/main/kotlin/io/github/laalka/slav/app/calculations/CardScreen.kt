@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
@@ -43,17 +44,21 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.SectionCard
+import io.github.laalka.slav.app.ui.PasswordDialog
 
 private val SUMMARY_WIDTH = 400.dp
 private val STATUS_WIDTH = 200.dp
+
+private val EDIT_TAGS = PasswordDialogTags(CalculationTags.EDIT_PASSWORD, CalculationTags.EDIT_CONFIRM, CalculationTags.EDIT_CANCEL)
 
 /**
  * The calculation card (spec 8.2, 8.3): the breakdown on the left, the price, run size and actions
  * on the right. [onOpenLink] opens the calculation this one was made from, or a newer version of it.
  */
 @Composable
-fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onEdit: () -> Unit, onOpenLink: (CardLink) -> Unit) {
+fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onOpenLink: (CardLink) -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(state, model, onBack, onOpenLink)
@@ -74,7 +79,7 @@ fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onE
                 verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             ) {
                 Summary(state, model)
-                Actions(state, model, onEdit)
+                Actions(state, model)
                 AttachmentsBlock(model.attachments, filePicker)
                 if (state.recalcErrors.isNotEmpty()) {
                     CalcErrors(
@@ -96,6 +101,23 @@ fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onE
     state.deleteQuestion?.let {
         DeleteDialog(it, model::onDeletePasswordChange, onConfirm = model::confirmDelete, onCancel = model::cancelDelete)
     }
+    state.editQuestion?.let { EditDialog(it, model::onEditPasswordChange, onConfirm = model::confirmEdit, onCancel = model::cancelEdit) }
+}
+
+/** «Изменить расчёт?»: editing a calculated record in place needs the administrator password; the error of a wrong one is shown under the field. */
+@Composable
+private fun EditDialog(question: EditQuestion, onPasswordChange: (String) -> Unit, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    PasswordDialog(
+        title = "Изменить расчёт?",
+        message = "Расчёт «${question.name}» будет изменён на месте, без создания нового: после «Рассчитать» прежние данные пропадут. " +
+            "Чтобы сохранить его как есть, отмените и выберите «Сделать копию и изменить». Нужен пароль администратора.",
+        confirmLabel = "Изменить",
+        error = question.error,
+        tags = EDIT_TAGS,
+        onPasswordChange = onPasswordChange,
+        onConfirm = onConfirm,
+        onCancel = onCancel,
+    )
 }
 
 @Composable
@@ -116,6 +138,13 @@ private fun Header(state: CardState, model: CardModel, onBack: () -> Unit, onOpe
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.testTag(CalculationTags.CARD_NAME),
             )
+            if (state.counterparty.isNotBlank()) {
+                Text(
+                    "Контрагент: ${state.counterparty}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.testTag(CalculationTags.CARD_COUNTERPARTY),
+                )
+            }
             state.snapshotDate?.let {
                 Text(
                     "Цены — снимок от $it",
@@ -170,7 +199,13 @@ private fun BreakdownCard(state: CardState) {
             state.productLines.forEach { LineRow(it) }
         }
         HorizontalDivider(Modifier.padding(vertical = Spacing.small))
-        AmountLine("Цена изделия", state.unitPrice.orEmpty(), strong = true)
+        // The lines add up to the sum before the discount; without one that sum is the price.
+        val discount = state.discount
+        if (discount != null) {
+            AmountLine("Сумма без скидки", discount.subtotal, strong = true)
+        } else {
+            AmountLine("Цена за единицу", state.unitPrice.orEmpty(), strong = true)
+        }
     }
 }
 
@@ -197,19 +232,26 @@ private fun AmountLine(label: String, value: String, strong: Boolean = false) {
 @Composable
 private fun Summary(state: CardState, model: CardModel) {
     SectionCard("Стоимость") {
-        SummaryRow("Цена изделия", state.unitPrice ?: "—", CalculationTags.CARD_UNIT_PRICE, emphasized = true)
-        // The run size of a calculated record is not edited in place: a new run size is a new version.
-        SummaryRow("Тираж, шт", state.quantity, CalculationTags.CARD_QUANTITY)
-        if (state.isPriced) {
-            OutlinedButton(onClick = model::requestQuantityChange, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_CHANGE)) {
-                Text("Изменить тираж")
-            }
+        state.discount?.let { discount ->
+            SummaryRow("Сумма без скидки", discount.subtotal, CalculationTags.CARD_SUBTOTAL)
+            SummaryRow(discount.label, discount.amount, CalculationTags.CARD_DISCOUNT)
         }
-        SummaryRow("Итог", state.total ?: "—", CalculationTags.CARD_TOTAL, emphasized = true)
+        SummaryRow("Цена за единицу", state.unitPrice ?: "—", CalculationTags.CARD_UNIT_PRICE, emphasized = true)
+        // A simplified calculation is one piece: it has no run size, so nothing here shows one.
+        state.quantity?.let { quantity ->
+            // The run size of a calculated record is not edited in place: a new run size is a new version.
+            SummaryRow("Тираж, шт", quantity, CalculationTags.CARD_QUANTITY)
+            if (state.isPriced) {
+                OutlinedButton(onClick = model::requestQuantityChange, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_CHANGE)) {
+                    Text("Изменить тираж")
+                }
+            }
+            SummaryRow("Итого за тираж", state.total ?: "—", CalculationTags.CARD_TOTAL, emphasized = true)
+        }
         if (state.isPriced) {
             HorizontalDivider(Modifier.padding(vertical = Spacing.small))
             SummaryRow("Масса изделия", state.unitMass.orEmpty(), CalculationTags.CARD_UNIT_MASS)
-            SummaryRow("Масса тиража", state.runMass.orEmpty(), CalculationTags.CARD_RUN_MASS)
+            state.runMass?.let { SummaryRow("Масса тиража", it, CalculationTags.CARD_RUN_MASS) }
         }
     }
 }
@@ -224,14 +266,18 @@ private fun SummaryRow(label: String, value: String, tag: String, emphasized: Bo
 }
 
 @Composable
-private fun Actions(state: CardState, model: CardModel, onEdit: () -> Unit) {
+private fun Actions(state: CardState, model: CardModel) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-        // A calculated record is not changed itself: «Изменить» opens a copy of it with the same prices.
-        OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
+        // A draft is edited as it is; a calculated record is changed in place only under the administrator password.
+        OutlinedButton(onClick = model::requestEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
             Icon(Icons.Filled.Edit, contentDescription = null)
             Text("Изменить", modifier = Modifier.padding(start = Spacing.small))
         }
         if (state.isPriced) {
+            OutlinedButton(onClick = model::copyAndEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_COPY_EDIT)) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Text("Сделать копию и изменить", modifier = Modifier.padding(start = Spacing.small))
+            }
             OutlinedButton(onClick = model::prepareRecalc, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_RECALC)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null)
                 Text("Пересчитать по текущим ценам", modifier = Modifier.padding(start = Spacing.small))
@@ -298,9 +344,11 @@ private fun RecalcDialog(preview: RecalcPreview, onConfirm: () -> Unit, onCancel
         title = { Text("Пересчитать по текущим ценам?") },
         text = {
             Column(Modifier.width(420.dp), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                AmountLine("Цена изделия по снимку от ${preview.snapshotDate}", preview.oldUnitPrice)
-                AmountLine("Цена изделия по текущим ценам", preview.newUnitPrice, strong = true)
-                AmountLine("Итог за тираж", "${preview.oldTotal} → ${preview.newTotal}")
+                AmountLine("Цена за единицу по снимку от ${preview.snapshotDate}", preview.oldUnitPrice)
+                AmountLine("Цена за единицу по текущим ценам", preview.newUnitPrice, strong = true)
+                if (preview.oldTotal != null && preview.newTotal != null) {
+                    AmountLine("Итого за тираж", "${preview.oldTotal} → ${preview.newTotal}")
+                }
                 Text(
                     (if (preview.unchanged) "Цена не изменится. " else "") +
                         "Будет создана новая версия расчёта по текущим ценам из настроек, этот расчёт останется как есть.",

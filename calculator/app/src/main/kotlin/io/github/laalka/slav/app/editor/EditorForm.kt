@@ -174,9 +174,12 @@ data class PartForm(
 /** [productOperations] holds the checked ones: WELDING is assembly welding, PAINTING the product painting. */
 data class CalculationForm(
     val name: String = "",
+    val counterparty: String = "",
     val quantity: String = "1",
     val parts: List<PartForm>,
     val productOperations: Map<OperationKind, ProductOperationForm> = emptyMap(),
+    /** «Скидка, %» as typed; blank means none. */
+    val discount: String = "",
 )
 
 fun OperationForm.withExtra(extra: ExtraForm): OperationForm = when (this) {

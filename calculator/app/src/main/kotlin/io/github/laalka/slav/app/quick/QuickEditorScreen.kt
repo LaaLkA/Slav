@@ -27,6 +27,7 @@ import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.editor.CHOICE_WIDTH
 import io.github.laalka.slav.app.editor.CalculateBar
 import io.github.laalka.slav.app.editor.Choice
+import io.github.laalka.slav.app.editor.DiscountCard
 import io.github.laalka.slav.app.editor.ExtraRow
 import io.github.laalka.slav.app.editor.Header
 import io.github.laalka.slav.app.editor.NumberInput
@@ -37,16 +38,21 @@ import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.SectionCard
 
 /**
- * The editor of a simplified calculation: the product, its drawings, the sheet and the cut. «Рассчитать»,
- * the way back and the list of missing prices are the full editor's own bar and header.
+ * The editor of a simplified calculation: the product, its drawings, the sheet, the cut and the discount.
+ * It has no run size. «Рассчитать», the way back and the list of missing prices are the full editor's
+ * own bar and header.
  */
 @Composable
 fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: () -> Unit) {
     val state by model.state.collectAsState()
     Column(Modifier.fillMaxSize()) {
         Header(
-            title = if (state.isNew) "Новый упрощённый расчёт" else "Редактирование упрощённого расчёта",
-            subtitle = state.priceSource,
+            title = when {
+                state.isNew -> "Новый упрощённый расчёт"
+                state.inPlace -> "Изменение упрощённого расчёта"
+                else -> "Редактирование упрощённого расчёта"
+            },
+            subtitle = if (state.inPlace) "${state.priceSource}. Расчёт не изменится, пока вы не нажмёте «Рассчитать»" else state.priceSource,
             onBack = onBack,
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -59,7 +65,7 @@ fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: (
                 SectionCard("Изделие") {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
                         TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
-                        NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
+                        TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
                     }
                 }
                 AttachmentsBlock(model.attachments, filePicker)
@@ -96,10 +102,11 @@ fun QuickEditorScreen(model: QuickEditorModel, filePicker: FilePicker, onBack: (
                         { model.onExtraCommentChange(QuickLine.CUT, it) },
                     )
                 }
+                DiscountCard(state.discount, model::onDiscountChange)
             }
             VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
         HorizontalDivider()
-        CalculateBar(state.canCalculate, state.missingCount, state.calcErrors, state.calcErrorsHint, model::calculate)
+        CalculateBar(state.canCalculate, state.missingCount, state.summary, state.calcErrors, state.calcErrorsHint, model::calculate)
     }
 }

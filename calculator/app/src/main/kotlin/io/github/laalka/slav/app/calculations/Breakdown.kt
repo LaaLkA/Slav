@@ -11,6 +11,7 @@ import io.github.laalka.slav.core.OperationKind
 import io.github.laalka.slav.core.OperationLine
 import io.github.laalka.slav.core.ProductOperation
 import io.github.laalka.slav.core.SheetShape
+import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationStatus
 import io.github.laalka.slav.data.StoredCalculation
 import java.math.BigDecimal
@@ -31,10 +32,17 @@ data class BreakdownPart(
 
 /**
  * A priced calculation as the card and the exports show it (spec 8.2, 8.5). Every amount is a
- * line of the stored result or a sum of them, so the breakdown adds up to the unit price exactly.
+ * line of the stored result or a sum of them, so the breakdown adds up to the unit price exactly:
+ * [subtotal] − [discount] = [unitPrice]. [discountPercent] is null without a discount.
+ *
+ * A simplified calculation ([kind]) has no run size: [quantity] is 1 and [hasRunSize] is false, so
+ * nothing that shows a run size shows it.
  */
 data class Breakdown(
     val name: String,
+    /** The customer the calculation is for; empty when not given. */
+    val counterparty: String,
+    val kind: CalculationKind,
     val status: CalculationStatus,
     val quantity: Int,
     /** The day the price snapshot was taken, the date the unit price is valid for. */
@@ -45,9 +53,19 @@ data class Breakdown(
      * which has no parts, its material and its cut.
      */
     val productLines: List<BreakdownLine>,
+    /** Σ of the lines: the price of the product before the discount. */
+    val subtotal: Money,
+    val discountPercent: BigDecimal?,
+    val discount: Money,
+    /** The price of one piece, [discount] already taken off. */
     val unitPrice: Money,
     val unitMassKg: BigDecimal,
 ) {
+    val hasRunSize: Boolean get() = kind == CalculationKind.FULL
+
+    /** Whether a discount is set; the lines of it are shown only then. */
+    val hasDiscount: Boolean get() = discountPercent != null && discountPercent.signum() > 0
+
     val total: Money get() = unitPrice * quantity
 
     val runMassKg: BigDecimal get() = unitMassKg * quantity.toBigDecimal()
@@ -65,6 +83,8 @@ private fun StoredCalculation.Quick.quickBreakdown(zone: ZoneId): Breakdown? {
     val snapshotAt = checkNotNull(snapshotAt) { "Priced calculation $id has no snapshot date" }
     return Breakdown(
         name = name,
+        counterparty = counterparty,
+        kind = kind,
         status = status,
         quantity = quantity,
         snapshotDate = snapshotAt.atZone(zone).toLocalDate(),
@@ -73,6 +93,9 @@ private fun StoredCalculation.Quick.quickBreakdown(zone: ZoneId): Breakdown? {
             BreakdownLine(QUICK_MATERIAL_TITLE, result.material.manualExtra, result.material.cost),
             BreakdownLine(QUICK_CUT_TITLE, result.cut.manualExtra, result.cut.cost),
         ),
+        subtotal = result.subtotal,
+        discountPercent = result.discountPercent,
+        discount = result.discount,
         unitPrice = result.unitPrice,
         unitMassKg = result.massKg,
     )
@@ -86,6 +109,8 @@ private fun StoredCalculation.Full.fullBreakdown(zone: ZoneId): Breakdown? {
     val snapshotAt = checkNotNull(snapshotAt) { "Priced calculation $id has no snapshot date" }
     return Breakdown(
         name = name,
+        counterparty = counterparty,
+        kind = kind,
         status = status,
         quantity = quantity,
         snapshotDate = snapshotAt.atZone(zone).toLocalDate(),
@@ -104,6 +129,9 @@ private fun StoredCalculation.Full.fullBreakdown(zone: ZoneId): Breakdown? {
         productLines = result.productLines.map { line ->
             BreakdownLine(line.productTitle(input.productOperations), line.manualExtra, line.cost)
         },
+        subtotal = result.subtotal,
+        discountPercent = result.discountPercent,
+        discount = result.discount,
         unitPrice = result.unitPrice,
         unitMassKg = result.unitMassKg,
     )

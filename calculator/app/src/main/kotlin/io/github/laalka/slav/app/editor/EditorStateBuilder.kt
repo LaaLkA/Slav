@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.editor
 
+import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.settings.NumberInput
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.settings.allThicknesses
@@ -52,21 +53,27 @@ internal fun editorState(
     read: FormRead,
     book: PriceBook,
     isNew: Boolean,
+    inPlace: Boolean,
     priceSource: String,
+    summary: PriceSummary?,
     calcErrors: List<ReadableError>,
     calcErrorsHint: String?,
 ): EditorState {
     val builder = StateBuilder(book, read.errors)
     return EditorState(
         isNew = isNew,
+        inPlace = inPlace,
         priceSource = priceSource,
         currency = book.general.currencySymbol,
         name = builder.field(EditorTags.NAME, form.name),
+        counterparty = builder.field(EditorTags.COUNTERPARTY, form.counterparty),
         quantity = builder.field(EditorTags.QUANTITY, form.quantity),
+        discount = builder.field(EditorTags.DISCOUNT, form.discount),
         parts = form.parts.mapIndexed(builder::part),
         partsError = read.errors[EditorTags.PARTS],
         productOperations = listOf(OperationKind.WELDING, OperationKind.PAINTING).map { builder.productOperation(form, it) },
         missingCount = read.errors.size,
+        summary = summary,
         calcErrors = calcErrors,
         calcErrorsHint = calcErrorsHint.takeIf { calcErrors.isNotEmpty() },
     )

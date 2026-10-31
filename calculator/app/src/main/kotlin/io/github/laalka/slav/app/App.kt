@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import io.github.laalka.slav.app.calculations.CalculationsScreen
 import io.github.laalka.slav.app.calculations.CardScreen
+import io.github.laalka.slav.app.editor.DiscardEditsDialog
 import io.github.laalka.slav.app.editor.EditorScreen
 import io.github.laalka.slav.app.library.LibraryScreen
 import io.github.laalka.slav.app.quick.QuickEditorScreen
@@ -33,6 +34,7 @@ const val NAV_SETTINGS_TAG = "nav/settings"
 @Composable
 fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavigator(deps)) {
     val page by navigator.page.collectAsState()
+    val askingToDiscard by navigator.discardQuestion.collectAsState()
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Row(modifier = Modifier.fillMaxSize()) {
@@ -70,18 +72,16 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
                 )
                 // Keyed by the model: another calculation's editor starts with fresh fields.
                 is Page.Editor -> key(current.model) {
-                    EditorScreen(current.model, filePicker, onBack = { navigator.navigate(Screen.Calculations) })
+                    EditorScreen(current.model, filePicker, onBack = navigator::closeEditor)
                 }
                 is Page.QuickEditor -> key(current.model) {
-                    QuickEditorScreen(current.model, filePicker, onBack = { navigator.navigate(Screen.Calculations) })
+                    QuickEditorScreen(current.model, filePicker, onBack = navigator::closeEditor)
                 }
                 is Page.Card -> key(current.model) {
                     CardScreen(
                         current.model,
                         filePicker,
                         onBack = { navigator.navigate(Screen.Calculations) },
-                        // A calculated record is not edited itself: its revision draft is.
-                        onEdit = { navigator.navigate(Screen.Editor(current.model.edit())) },
                         onOpenLink = navigator::open,
                     )
                 }
@@ -90,4 +90,5 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
             }
         }
     }
+    if (askingToDiscard) DiscardEditsDialog(onDiscard = navigator::confirmDiscard, onKeepEditing = navigator::keepEditing)
 }

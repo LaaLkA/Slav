@@ -2,6 +2,8 @@ package io.github.laalka.slav.app.editor
 
 import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
+import io.github.laalka.slav.app.calculations.PriceSummary
+import io.github.laalka.slav.app.calculations.priceSummary
 import io.github.laalka.slav.app.library.EditorLibraryModel
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.core.Applicability
@@ -15,6 +17,7 @@ import io.github.laalka.slav.core.applicability
 import io.github.laalka.slav.data.AttachmentRepository
 import io.github.laalka.slav.data.CalculationRepository
 import io.github.laalka.slav.data.CalculationStatus
+import io.github.laalka.slav.data.DuplicateNameException
 import io.github.laalka.slav.data.PartTemplateRepository
 import io.github.laalka.slav.data.SettingsRepository
 import io.github.laalka.slav.data.StoredCalculation
@@ -34,12 +37,20 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The calculation editor (spec 7.1–7.3, 8.3). It edits a draft: a new one, one left unfinished, a
- * copy, or the revision draft that «Изменить» makes of a calculated record, which is never edited
- * itself. Every change is saved as a draft [autosaveDelay] after the last one, and at once when the
- * editor is left. «Рассчитать» prices the input on the current settings for a new calculation or a
- * copy, and on the snapshot of the revision draft's source; [onCalculated] receives the id of the
- * saved calculation. A part can be saved to the library of ready parts and a ready part added to the
- * product ([library]).
+ * copy, or a revision draft left by an earlier version. Every change is saved as a draft
+ * [autosaveDelay] after the last one, and at once when the editor is left. «Рассчитать» prices the
+ * input on the current settings for a new calculation or a copy, and on the snapshot of a revision
+ * draft's source; [onCalculated] receives the id of the saved calculation. A part can be saved to
+ * the library of ready parts and a ready part added to the product ([library]).
+ *
+ * With [inPlace] the editor is open on a calculated record, after the administrator password was
+ * asked: the form is that record's input, nothing is written while it is edited (no autosave), and
+ * «Рассчитать» prices it on the current settings and writes it over the same record
+ * ([CalculationRepository.overwriteCalculated]). Leaving without it loses the changes; the drawings
+ * are the exception, they are attached to the record at once.
+ *
+ * Names are unique: a name another calculation has is flagged under the field as it is typed and
+ * keeps «Рассчитать» disabled, and a draft under such a name is not saved.
  */
 class EditorModel(
     private val calculations: CalculationRepository,
@@ -52,6 +63,7 @@ class EditorModel(
     private val onCalculated: (UUID) -> Unit,
     private val autosaveDelay: Duration = AUTOSAVE_DELAY,
     private val zone: ZoneId = ZoneId.systemDefault(),
+    private val inPlace: Boolean = false,
 ) : CalculationEditor {
     private var nextId = 0L
 
@@ -64,14 +76,27 @@ class EditorModel(
     private val isNew = original == null
 
     init {
-        original?.let { require(it.status == CalculationStatus.DRAFT) { "Only a draft is edited, ${it.id} is «${it.status.title}»" } }
+        require(!inPlace || original != null) { "Only a saved calculation is edited in place" }
+        original?.let {
+            if (inPlace) {
+                require(it.status != CalculationStatus.DRAFT) { "A draft is edited as it is, ${it.id} has no calculation to edit in place" }
+            } else {
+                require(it.status == CalculationStatus.DRAFT) { "Only a draft is edited, ${it.id} is «${it.status.title}»" }
+            }
+        }
     }
 
-    /** Set for a revision draft: it is calculated on the prices of its source (spec 8.3). */
-    private val snapshot: PriceBook? = original?.snapshot
+    /** Set for a revision draft: it is calculated on the prices of its source (spec 8.3). An edit in place uses the current ones. */
+    private val snapshot: PriceBook? = original?.snapshot.takeIf { !inPlace }
     private var book: PriceBook = snapshot ?: settings.load()
 
     private var form: CalculationForm = original?.input?.toForm(::newId) ?: CalculationForm(parts = listOf(newPart(1)))
+
+    /** The form an edit in place started from, or was last calculated as: what the changes are counted against. */
+    private var baseForm: CalculationForm = form
+
+    /** The name a save refused as taken although the check had not seen it taken, until the next change. */
+    private var refusedName: String? = null
 
     /** What the database holds for this calculation; null while nothing is stored. */
     private var stored: CalculationInput? = original?.input
@@ -99,7 +124,12 @@ class EditorModel(
 
     fun onNameChange(text: String) = edit { it.copy(name = text) }
 
+    fun onCounterpartyChange(text: String) = edit { it.copy(counterparty = text) }
+
     fun onQuantityChange(text: String) = edit { it.copy(quantity = text) }
+
+    /** «Скидка, %»; blank means none. */
+    fun onDiscountChange(text: String) = edit { it.copy(discount = text) }
 
     fun addPart() = edit { it.copy(parts = it.parts + newPart(it.parts.size + 1)) }
 
@@ -206,10 +236,12 @@ class EditorModel(
 
     /**
      * Spec 7.1, 7.3, 8.3. Ok: the calculation is saved as «Рассчитан» with the prices it used, and
-     * [onCalculated] is called. Failed: every error is listed and the input stays a draft.
+     * [onCalculated] is called; an edit in place writes it over the record it was opened on. Failed:
+     * every error is listed and the input stays as it is. A name another calculation took in the
+     * meantime is flagged under the name field, and nothing is saved.
      */
     fun calculate() {
-        val read = form.read()
+        val read = read()
         if (read.errors.isNotEmpty()) return
         // The settings are read at the press: a price filled in a moment ago counts.
         val prices = snapshot ?: settings.load()
@@ -222,11 +254,22 @@ class EditorModel(
             is CalcOutcome.Ok -> {
                 pendingSave?.cancel()
                 pendingSave = null
-                // A revision draft keeps the date of the snapshot it was made with: the prices are the same.
-                val saved = calculations.saveCalculated(read.input, prices, outcome.result, id, snapshotAt = original?.snapshotAt.takeIf { snapshot != null })
+                val saved = try {
+                    if (inPlace) {
+                        checkNotNull(id).also { calculations.overwriteCalculated(it, read.input, prices, outcome.result) }
+                    } else {
+                        // A revision draft keeps the date of the snapshot it was made with: the prices are the same.
+                        calculations.saveCalculated(read.input, prices, outcome.result, id, snapshotAt = original?.snapshotAt.takeIf { snapshot != null })
+                    }
+                } catch (e: DuplicateNameException) {
+                    refusedName = e.name
+                    refresh()
+                    return
+                }
                 id = saved
                 original = calculations.get(saved) as StoredCalculation.Full
                 stored = read.input
+                baseForm = form
                 unsaved = false
                 calcErrors = emptyList()
                 refresh()
@@ -235,7 +278,7 @@ class EditorModel(
         }
     }
 
-    /** Writes the pending draft now. */
+    /** Writes the pending draft now. An edit in place never has one: it is not autosaved. */
     override fun flush() {
         pendingSave?.cancel()
         pendingSave = null
@@ -244,12 +287,17 @@ class EditorModel(
 
     /**
      * Saves what is pending before the editor is left. A revision draft nothing was changed in
-     * is an automatic copy of its source and is deleted silently, without a password.
+     * is an automatic copy of its source and is deleted silently, without a password. An edit in
+     * place has nothing to save and nothing to delete (only a draft is dropped): the record stays as it was.
      */
     override fun leave() {
         flush()
         if (original?.sourceId != null) id?.let { calculations.deleteUntouchedRevisionDraft(it) }
     }
+
+    override val inPlaceId: UUID? get() = id.takeIf { inPlace }
+
+    override val discardsOnLeave: Boolean get() = inPlace && form != baseForm
 
     /** Back from the settings: a calculation on current prices sees what was changed there. */
     override fun resume() {
@@ -264,9 +312,12 @@ class EditorModel(
         val next = transform(form).withAvailableOperations()
         if (next == form) return
         form = next
-        unsaved = true
+        refusedName = null
         calcErrors = emptyList()
         refresh()
+        // Nothing is written while a record is edited in place: it changes only by «Рассчитать».
+        if (inPlace) return
+        unsaved = true
         pendingSave?.cancel()
         pendingSave = scope.launch {
             delay(autosaveDelay)
@@ -275,7 +326,10 @@ class EditorModel(
         }
     }
 
-    /** The id drawings are attached under: a calculation never saved yet is saved as a draft first. */
+    /**
+     * The id drawings are attached under: a calculation never saved yet is saved as a draft first,
+     * which throws [DuplicateNameException] while its name is taken.
+     */
     private fun storedId(): UUID {
         flush()
         id?.let { return it }
@@ -286,13 +340,37 @@ class EditorModel(
         }
     }
 
+    /** A draft under a name another calculation has is not saved: the name field says so, and the next change tries again. */
     private fun saveDraft() {
         if (!unsaved) return
-        unsaved = false
         val draft = form.read().input
-        if (draft == stored) return
-        id = calculations.saveDraft(draft, id)
-        stored = draft
+        if (draft == stored) {
+            unsaved = false
+            return
+        }
+        try {
+            id = calculations.saveDraft(draft, id)
+            stored = draft
+            unsaved = false
+        } catch (e: DuplicateNameException) {
+            refusedName = e.name
+            refresh()
+        }
+    }
+
+    /** The form as read now, with a name taken by another calculation among the fields that keep «Рассчитать» disabled. */
+    private fun read(): FormRead {
+        val read = form.read()
+        val errors = read.errors.withNameTaken(EditorTags.NAME, read.input.name) { it == refusedName || calculations.isNameTaken(it, id) }
+        return if (errors === read.errors) read else FormRead(read.input, errors)
+    }
+
+    /** The price of the input as it stands; null while a field is missing or a price is not filled in. */
+    private fun summary(read: FormRead): PriceSummary? {
+        if (read.errors.isNotEmpty()) return null
+        val prices = snapshot ?: book
+        val result = (Calculator(prices).calculate(read.input) as? CalcOutcome.Ok)?.result ?: return null
+        return priceSummary(result.subtotal, result.discountPercent, result.discount, result.unitPrice, read.input.quantity, prices.general.currencySymbol)
     }
 
     private fun refresh() {
@@ -306,13 +384,15 @@ class EditorModel(
         } else {
             "Цены — текущие настройки"
         }
-        val hint = if (snapshotAt != null) {
-            "Расчёт ведётся по снимку цен от ${DATE.format(snapshotAt.atZone(zone))}: цены из настроек в него не попадают. " +
-                "Чтобы считать по текущим ценам, сделайте копию расчёта. Изменения сохранены как черновик."
-        } else {
-            "Заполните эти цены в «Настройках» и нажмите «Рассчитать» ещё раз. Расчёт сохранён как черновик."
+        val hint = when {
+            snapshotAt != null ->
+                "Расчёт ведётся по снимку цен от ${DATE.format(snapshotAt.atZone(zone))}: цены из настроек в него не попадают. " +
+                    "Чтобы считать по текущим ценам, сделайте копию расчёта. Изменения сохранены как черновик."
+            inPlace -> "Заполните эти цены в «Настройках» и нажмите «Рассчитать» ещё раз. Расчёт не изменён."
+            else -> "Заполните эти цены в «Настройках» и нажмите «Рассчитать» ещё раз. Расчёт сохранён как черновик."
         }
-        return editorState(form, form.read(), book, isNew, priceSource, calcErrors, hint)
+        val read = read()
+        return editorState(form, read, book, isNew, inPlace, priceSource, summary(read), calcErrors, hint)
     }
 
     /** The part [part] as the form reads now, for the library; null when there is no such part. */

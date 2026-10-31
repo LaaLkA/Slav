@@ -5,6 +5,7 @@ import io.github.laalka.slav.app.ui.formatFileSize
 import io.github.laalka.slav.data.AttachResult
 import io.github.laalka.slav.data.Attachment
 import io.github.laalka.slav.data.AttachmentRepository
+import io.github.laalka.slav.data.DuplicateNameException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,16 +83,21 @@ class AttachmentsModel(
     /**
      * Copies [source] into the calculation's drawings; a file that is not accepted is explained in
      * the message. The refusal is asked before the calculation is stored, so a wrong file does not
-     * leave a new calculation behind as an empty draft.
+     * leave a new calculation behind as an empty draft. A calculation not stored yet under a name
+     * another one has cannot be stored, so the message asks for another name first.
      */
     fun attach(source: Path) {
         val refusal = attachments.refusalOf(source)
         message = if (refusal != null) {
             AttachmentsMessage(refusal, isError = true)
         } else {
-            when (val result = attachments.add(storedCalculationId(), source)) {
-                is AttachResult.Added -> null
-                is AttachResult.Refused -> AttachmentsMessage(result.message, isError = true)
+            try {
+                when (val result = attachments.add(storedCalculationId(), source)) {
+                    is AttachResult.Added -> null
+                    is AttachResult.Refused -> AttachmentsMessage(result.message, isError = true)
+                }
+            } catch (e: DuplicateNameException) {
+                AttachmentsMessage("Расчёт с названием «${e.name}» уже есть: измените название, и чертёж можно будет прикрепить.", isError = true)
             }
         }
         refresh()

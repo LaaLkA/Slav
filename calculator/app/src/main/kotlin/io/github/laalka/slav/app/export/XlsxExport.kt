@@ -2,6 +2,7 @@ package io.github.laalka.slav.app.export
 
 import io.github.laalka.slav.app.calculations.Breakdown
 import io.github.laalka.slav.app.calculations.BreakdownLine
+import io.github.laalka.slav.app.calculations.discountLabel
 import io.github.laalka.slav.core.Money
 import org.apache.poi.ss.usermodel.BorderStyle
 import org.apache.poi.ss.usermodel.CellStyle
@@ -25,14 +26,19 @@ private val COLUMN_WIDTHS = listOf(28, 52, 14, 18, 36, 18)
 
 /** The labels of the summary at the top of the sheet; the value is in the next column. */
 object XlsxLabels {
-    const val UNIT_PRICE = "Цена изделия"
-    const val TOTAL = "Итог"
+    const val COUNTERPARTY = "Контрагент"
+    const val SUBTOTAL = "Сумма без скидки"
+    const val UNIT_PRICE = "Цена за единицу"
+    const val TOTAL = "Итого за тираж"
 }
 
 /**
  * The full breakdown of a calculation for the manager (spec 8.5): a summary, then every line of
  * every part and of the product. Amounts, quantities and masses are numeric cells, so the sheet
- * can be summed and checked; the currency label of the settings is in the headers.
+ * can be summed and checked; the currency label of the settings is in the headers. The counterparty
+ * is in the summary when there is one, and so are the sum before the discount and the discount (a
+ * positive amount, named with its percent) when a discount is set. A simplified calculation has no
+ * run size, so it shows no run size, run total or run mass.
  */
 fun writeBreakdownXlsx(breakdown: Breakdown, currency: String, target: Path) {
     XSSFWorkbook().use { workbook ->
@@ -42,6 +48,12 @@ fun writeBreakdownXlsx(breakdown: Breakdown, currency: String, target: Path) {
         val rows = Rows(sheet)
 
         rows.next().text(PART, breakdown.name.ifBlank { "Без названия" }, styles.title)
+        if (breakdown.counterparty.isNotBlank()) {
+            rows.next().apply {
+                text(PART, XlsxLabels.COUNTERPARTY)
+                text(LINE, breakdown.counterparty)
+            }
+        }
         rows.next().apply {
             text(PART, "Статус")
             text(LINE, breakdown.status.title)
@@ -53,25 +65,41 @@ fun writeBreakdownXlsx(breakdown: Breakdown, currency: String, target: Path) {
                 cellStyle = styles.date
             }
         }
-        rows.next().apply {
-            text(PART, "Тираж, шт")
-            number(LINE, breakdown.quantity.toBigDecimal(), styles.count)
+        if (breakdown.hasRunSize) {
+            rows.next().apply {
+                text(PART, "Тираж, шт")
+                number(LINE, breakdown.quantity.toBigDecimal(), styles.count)
+            }
+        }
+        breakdown.discountPercent?.takeIf { breakdown.hasDiscount }?.let { percent ->
+            rows.next().apply {
+                text(PART, "${XlsxLabels.SUBTOTAL}, $currency")
+                money(LINE, breakdown.subtotal, styles.money)
+            }
+            rows.next().apply {
+                text(PART, "${discountLabel(percent)}, $currency")
+                money(LINE, breakdown.discount, styles.money)
+            }
         }
         rows.next().apply {
             text(PART, "${XlsxLabels.UNIT_PRICE}, $currency")
             money(LINE, breakdown.unitPrice, styles.money)
         }
-        rows.next().apply {
-            text(PART, "${XlsxLabels.TOTAL}, $currency", styles.bold)
-            money(LINE, breakdown.total, styles.boldMoney)
+        if (breakdown.hasRunSize) {
+            rows.next().apply {
+                text(PART, "${XlsxLabels.TOTAL}, $currency", styles.bold)
+                money(LINE, breakdown.total, styles.boldMoney)
+            }
         }
         rows.next().apply {
             text(PART, "Масса изделия, кг")
             number(LINE, breakdown.unitMassKg, styles.mass)
         }
-        rows.next().apply {
-            text(PART, "Масса тиража, кг")
-            number(LINE, breakdown.runMassKg, styles.mass)
+        if (breakdown.hasRunSize) {
+            rows.next().apply {
+                text(PART, "Масса тиража, кг")
+                number(LINE, breakdown.runMassKg, styles.mass)
+            }
         }
 
         rows.skip()
@@ -89,6 +117,19 @@ fun writeBreakdownXlsx(breakdown: Breakdown, currency: String, target: Path) {
             }
         }
         breakdown.productLines.forEach { rows.line("Изделие", it, styles) }
+        // The lines above add up to the sum before the discount; the last row is the price after it.
+        breakdown.discountPercent?.takeIf { breakdown.hasDiscount }?.let { percent ->
+            rows.next().apply {
+                text(PART, "Изделие", styles.bold)
+                text(LINE, XlsxLabels.SUBTOTAL, styles.bold)
+                money(AMOUNT, breakdown.subtotal, styles.boldMoney)
+            }
+            rows.next().apply {
+                text(PART, "Изделие", styles.bold)
+                text(LINE, discountLabel(percent), styles.bold)
+                money(AMOUNT, breakdown.discount, styles.boldMoney)
+            }
+        }
         rows.next().apply {
             text(PART, "Изделие", styles.total)
             text(LINE, XlsxLabels.UNIT_PRICE, styles.total)

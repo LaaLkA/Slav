@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 
 /** The administrator password of the tests; the one of the program is not in the repository. */
 const val ADMIN_PASSWORD = "test-admin-pass"
@@ -59,3 +62,24 @@ val StoredCalculation.input: CalculationInput get() = (this as StoredCalculation
 val StoredCalculation.result: CalcResult? get() = (this as StoredCalculation.Full).result
 
 fun StoredCalculation?.asQuick(): StoredCalculation.Quick = this as StoredCalculation.Quick
+
+/**
+ * A clock that lets a test act at the moment a repository stamps a write, which is after an editor's
+ * own checks have passed and before the write itself: the way another writer gets in between.
+ */
+class InterferingClock : Clock() {
+    /** Run once, at the next reading of the clock. */
+    var before: (() -> Unit)? = null
+
+    override fun getZone(): ZoneId = ZoneId.systemDefault()
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    override fun instant(): Instant {
+        before?.let { action ->
+            before = null
+            action()
+        }
+        return Instant.now()
+    }
+}

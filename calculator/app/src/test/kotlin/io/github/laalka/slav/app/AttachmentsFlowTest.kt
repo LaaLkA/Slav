@@ -126,10 +126,9 @@ class AttachmentsFlowTest {
     @Test
     fun `an untouched revision draft goes with its drawings, one with a drawing added is kept`() = runTest {
         val (navigator, id) = calculatedWithDrawing()
-        navigator.navigate(Screen.Card(id))
-        val card = assertIs<Page.Card>(navigator.page.value).model
 
-        val untouched = card.edit()
+        // A revision draft is what an earlier version made of «Изменить»; it may still be in a database.
+        val untouched = deps.calculations.createRevisionDraft(id)
         navigator.navigate(Screen.Editor(untouched))
         assertEquals(listOf("plan.pdf"), navigator.editor.attachments.state.value.rows.map { it.fileName })
         navigator.navigate(Screen.Calculations)
@@ -137,7 +136,7 @@ class AttachmentsFlowTest {
         assertNull(deps.calculations.get(untouched))
         assertFalse(folder(untouched).exists(), "the folder of the deleted draft is gone too")
 
-        val changed = card.edit()
+        val changed = deps.calculations.createRevisionDraft(id)
         navigator.navigate(Screen.Editor(changed))
         navigator.editor.attachments.attach(drawing("detail.jpg"))
         navigator.navigate(Screen.Calculations)
@@ -145,6 +144,37 @@ class AttachmentsFlowTest {
         assertEquals(CalculationStatus.DRAFT, assertNotNull(deps.calculations.get(changed)).status)
         assertEquals(listOf("plan.pdf", "detail.jpg"), names(changed))
         assertEquals(listOf("plan.pdf"), names(id))
+    }
+
+    @Test
+    fun `a drawing attached while a record is edited in place goes to that record at once, and nothing else is written`() = runTest {
+        val (navigator, id) = calculatedWithDrawing()
+        val before = assertNotNull(deps.calculations.get(id))
+
+        navigator.navigate(Screen.Editor(id, inPlace = true))
+        navigator.editor.onNameChange("Кронштейн с ребром")
+        navigator.editor.attachments.attach(drawing("detail.jpg"))
+
+        assertEquals(listOf("plan.pdf", "detail.jpg"), names(id))
+        assertEquals(listOf("plan.pdf", "detail.jpg"), navigator.editor.attachments.state.value.rows.map { it.fileName })
+        assertEquals(listOf(id), deps.calculations.list().map { it.id }, "no draft was made for the drawing")
+        assertEquals(before, deps.calculations.get(id), "the record itself is as it was until «Рассчитать»")
+    }
+
+    @Test
+    fun `a drawing cannot be attached in a new editor under a name another calculation has, and nothing is saved`() = runTest {
+        deps.saveCalculated(goldenInput("Кронштейн"))
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null))
+        navigator.editor.onNameChange("кронштейн ")
+
+        navigator.editor.attachments.attach(drawing("plan.pdf"))
+
+        val message = assertNotNull(navigator.editor.attachments.state.value.message)
+        assertTrue(message.isError)
+        assertTrue("уже есть" in message.text, message.text)
+        assertEquals(1, deps.calculations.list().size, "no second calculation, not even a draft")
+        assertEquals(emptyList(), navigator.editor.attachments.state.value.rows)
     }
 
     @Test

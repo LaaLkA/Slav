@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app
 
+import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.editor.EditorModel
 import io.github.laalka.slav.app.editor.fillGoldenCase
 import io.github.laalka.slav.app.quick.QuickEditorModel
@@ -50,13 +51,187 @@ class NavigatorTest {
         return navigator to card.model.id
     }
 
+    /** «Изменить» on the card with the administrator password: the navigator is left on the editor opened in place. */
+    private fun Navigator.editInPlace(): EditorModel {
+        val card = assertIs<Page.Card>(page.value).model
+        card.requestEdit()
+        card.onEditPasswordChange(ADMIN_PASSWORD)
+        card.confirmEdit()
+        return editor
+    }
+
     @Test
-    fun `Изменить on a calculated card opens a revision draft in the editor and leaves the original alone`() = runTest {
+    fun `Изменить with the right password opens the editor on the same calculation, and Рассчитать returns to its card`() = runTest {
+        val (navigator, id) = calculated()
+        val before = assertNotNull(deps.calculations.get(id))
+
+        val editor = navigator.editInPlace()
+
+        assertEquals(id, editor.inPlaceId)
+        assertEquals("Кронштейн", editor.state.value.name.text)
+        editor.onQuantityChange("4")
+        assertEquals(before, deps.calculations.get(id), "nothing is written while it is edited")
+        editor.calculate()
+
+        val card = assertIs<Page.Card>(navigator.page.value).model
+        assertEquals(id, card.id, "the card of the same calculation")
+        assertEquals("45 360,00 ₽", card.state.value.total)
+        assertEquals(listOf(id), deps.calculations.list().map { it.id }, "no new row")
+        assertEquals(4, assertNotNull(deps.calculations.get(id)).quantity)
+        assertEquals(before.createdAt, assertNotNull(deps.calculations.get(id)).createdAt)
+    }
+
+    @Test
+    fun `a wrong password opens no editor and leaves the card where it was`() = runTest {
+        val (navigator, id) = calculated()
+        val card = assertIs<Page.Card>(navigator.page.value).model
+
+        card.requestEdit()
+        card.onEditPasswordChange("not-the-password")
+        card.confirmEdit()
+
+        assertSame(card, assertIs<Page.Card>(navigator.page.value).model)
+        assertEquals("Неверный пароль", card.state.value.editQuestion?.error)
+        assertEquals(listOf(id), deps.calculations.list().map { it.id })
+    }
+
+    @Test
+    fun `leaving an edit in place with changes asks first, and staying keeps the editor and what was typed`() = runTest {
+        val (navigator, id) = calculated()
+        val before = assertNotNull(deps.calculations.get(id))
+        val editor = navigator.editInPlace()
+        editor.onQuantityChange("4")
+
+        navigator.navigate(Screen.Calculations)
+
+        assertEquals(true, navigator.discardQuestion.value)
+        assertSame(editor, navigator.editor, "the editor is still open")
+        navigator.keepEditing()
+        assertEquals(false, navigator.discardQuestion.value)
+        assertSame(editor, navigator.editor)
+        assertEquals("4", editor.state.value.quantity.text)
+
+        navigator.navigate(Screen.Calculations)
+        assertEquals(true, navigator.discardQuestion.value)
+        navigator.confirmDiscard()
+
+        assertEquals(false, navigator.discardQuestion.value)
+        assertEquals(Page.Calculations, navigator.page.value)
+        assertEquals(before, deps.calculations.get(id), "the changes were dropped: the row is as it was")
+        assertEquals(listOf(id), deps.calculations.list().map { it.id })
+    }
+
+    @Test
+    fun `an edit in place nothing was changed in is left without a question, and the back button goes to its card`() = runTest {
+        val (navigator, id) = calculated()
+        navigator.editInPlace()
+
+        navigator.closeEditor()
+
+        assertEquals(false, navigator.discardQuestion.value)
+        assertEquals(id, assertIs<Page.Card>(navigator.page.value).model.id)
+
+        val editor = navigator.editInPlace()
+        editor.onQuantityChange("4")
+        navigator.closeEditor()
+        assertEquals(true, navigator.discardQuestion.value)
+        navigator.confirmDiscard()
+        assertEquals(id, assertIs<Page.Card>(navigator.page.value).model.id, "discarding goes where the back button goes")
+        assertEquals(1, assertNotNull(deps.calculations.get(id)).quantity)
+    }
+
+    @Test
+    fun `the back button of a draft editor goes to the list as before`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        navigator.navigate(Screen.Editor(null))
+        navigator.editor.onNameChange("Рама")
+
+        navigator.closeEditor()
+
+        assertEquals(false, navigator.discardQuestion.value, "a draft is saved as it is, there is nothing to discard")
+        assertEquals(Page.Calculations, navigator.page.value)
+        assertEquals("Рама", deps.calculations.list().single().name)
+    }
+
+    @Test
+    fun `closing the window with an edit in place asks first, and only the answer lets it close`() = runTest {
+        val (navigator, id) = calculated()
+        val before = assertNotNull(deps.calculations.get(id))
+        navigator.editInPlace().onQuantityChange("4")
+        var exited = false
+
+        navigator.requestExit { exited = true }
+
+        assertEquals(false, exited)
+        assertEquals(true, navigator.discardQuestion.value)
+        navigator.keepEditing()
+        assertEquals(false, exited)
+
+        navigator.requestExit { exited = true }
+        navigator.confirmDiscard()
+
+        assertEquals(true, exited)
+        assertEquals(before, deps.calculations.get(id))
+    }
+
+    @Test
+    fun `the settings and Детали keep an edit in place open with its changes, without a question`() = runTest {
+        val (navigator, id) = calculated()
+        val before = assertNotNull(deps.calculations.get(id))
+        val editor = navigator.editInPlace()
+        editor.onQuantityChange("4")
+
+        navigator.navigate(Screen.Settings)
+        navigator.navigate(Screen.Library)
+        assertEquals(false, navigator.discardQuestion.value)
+        navigator.selectCalculations()
+
+        assertSame(editor, navigator.editor)
+        assertEquals("4", editor.state.value.quantity.text)
+        assertEquals(before, deps.calculations.get(id), "still nothing written")
+    }
+
+    @Test
+    fun `Сделать копию и изменить opens a draft copy named with a copy number, which is saved as it is edited`() = runTest {
         val (navigator, id) = calculated()
         val before = assertNotNull(deps.calculations.get(id))
         val card = assertIs<Page.Card>(navigator.page.value).model
 
-        navigator.navigate(Screen.Editor(card.edit()))
+        card.copyAndEdit()
+
+        val editor = navigator.editor
+        assertNull(editor.inPlaceId)
+        assertEquals("Кронштейн (2)", editor.state.value.name.text)
+        editor.onQuantityChange("4")
+        navigator.navigate(Screen.Calculations)
+
+        assertEquals(false, navigator.discardQuestion.value, "a copy is a draft: leaving saves it")
+        val copy = deps.calculations.list().single { it.id != id }
+        assertEquals(CalculationStatus.DRAFT, copy.status)
+        assertEquals(4, assertNotNull(deps.calculations.get(copy.id)).quantity)
+        assertEquals(before, deps.calculations.get(id))
+    }
+
+    @Test
+    fun `Изменить on a draft card opens its editor with no password`() = runTest {
+        val navigator = Navigator(deps, backgroundScope)
+        val draft = deps.calculations.saveDraft(goldenInput("Рама"))
+        navigator.navigate(Screen.Card(draft))
+        val card = assertIs<Page.Card>(navigator.page.value).model
+
+        card.requestEdit()
+
+        assertNull(navigator.editor.inPlaceId)
+        assertEquals("Рама", navigator.editor.state.value.name.text)
+        assertEquals(draft, deps.calculations.list().single().id)
+    }
+
+    @Test
+    fun `a revision draft left by an earlier version opens in the editor and is calculated on its own row on the old prices`() = runTest {
+        val (navigator, id) = calculated()
+        val before = assertNotNull(deps.calculations.get(id))
+
+        navigator.navigate(Screen.Editor(deps.calculations.createRevisionDraft(id)))
         val editor = navigator.editor
         editor.onNameChange("Кронштейн с ребром")
         editor.calculate()
@@ -77,9 +252,8 @@ class NavigatorTest {
     @Test
     fun `leaving an untouched revision draft deletes it silently, a changed one stays a draft`() = runTest {
         val (navigator, id) = calculated()
-        val card = assertIs<Page.Card>(navigator.page.value).model
 
-        val untouched = card.edit()
+        val untouched = deps.calculations.createRevisionDraft(id)
         navigator.navigate(Screen.Editor(untouched))
         navigator.navigate(Screen.Calculations)
 
@@ -87,7 +261,7 @@ class NavigatorTest {
         assertNull(deps.calculations.get(untouched), "an automatic copy nobody changed is not kept")
         assertEquals(listOf(id), deps.calculations.list().map { it.id })
 
-        val edited = card.edit()
+        val edited = deps.calculations.createRevisionDraft(id)
         navigator.navigate(Screen.Editor(edited))
         navigator.editor.onQuantityChange("4")
         navigator.navigate(Screen.Calculations)
@@ -102,8 +276,7 @@ class NavigatorTest {
     @Test
     fun `closing the window drops an untouched revision draft`() = runTest {
         val (navigator, id) = calculated()
-        val card = assertIs<Page.Card>(navigator.page.value).model
-        val untouched = card.edit()
+        val untouched = deps.calculations.createRevisionDraft(id)
         navigator.navigate(Screen.Editor(untouched))
         var exited = false
 
@@ -231,27 +404,26 @@ class NavigatorTest {
     }
 
     @Test
-    fun `a simplified calculation goes from its editor to its card, and Изменить opens its revision draft in the quick editor`() = runTest {
+    fun `a simplified calculation goes from its editor to its card, and its edit in place opens in the quick editor`() = runTest {
         val navigator = Navigator(deps, backgroundScope)
         navigator.navigate(Screen.Editor(null, CalculationKind.QUICK))
         navigator.quickEditor.fillQuickGoldenCase()
         navigator.quickEditor.calculate()
         val card = assertIs<Page.Card>(navigator.page.value).model
-        // A simplified calculation has no run size: the run of 10 typed is not kept, the total is the unit price.
-        assertEquals("5 400,00 ₽", card.state.value.total)
-        val before = assertNotNull(deps.calculations.get(card.id))
+        // A simplified calculation has no run size: the card shows none, and the list's total is its unit price.
+        assertNull(card.state.value.quantity)
+        assertNull(card.state.value.total)
+        assertEquals("5 400,00 ₽", card.state.value.unitPrice)
 
         // The kind of the saved calculation, not the one the screen names, picks the editor.
-        navigator.navigate(Screen.Editor(card.edit(), CalculationKind.FULL))
+        navigator.navigate(Screen.Editor(card.id, CalculationKind.FULL, inPlace = true))
+        assertEquals(card.id, navigator.quickEditor.inPlaceId)
         navigator.quickEditor.onNameChange("Лист с припуском")
         navigator.quickEditor.calculate()
 
-        val revision = assertIs<Page.Card>(navigator.page.value).model.id
-        assertNotEquals(card.id, revision)
-        assertEquals(before, deps.calculations.get(card.id))
-        assertEquals("Лист с припуском", assertNotNull(deps.calculations.get(revision)).name)
-        assertEquals(card.id, assertNotNull(deps.calculations.get(revision)).sourceId)
-        assertEquals(2, deps.calculations.list().size)
+        assertEquals(card.id, assertIs<Page.Card>(navigator.page.value).model.id, "the card of the same calculation")
+        assertEquals("Лист с припуском", assertNotNull(deps.calculations.get(card.id)).name)
+        assertEquals(1, deps.calculations.list().size)
     }
 
     @Test

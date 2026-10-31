@@ -61,7 +61,7 @@ class ExportTest {
     private fun pdfText(file: Path): String = Loader.loadPDF(file.toFile()).use { PDFTextStripper().getText(it) }
 
     @Test
-    fun `the client PDF holds the Cyrillic name, the date, the run size, the unit price and the total`() {
+    fun `the client PDF holds the Cyrillic name, the date, the run size, the unit price and the run total`() {
         val target = temp.root.toPath().resolve("client.pdf")
 
         ExportFormat.PDF.write(golden(), "₽", target)
@@ -70,10 +70,12 @@ class ExportTest {
         assertTrue("Кронштейн" in text, text)
         assertTrue("Дата: ${formatDate(LocalDate.now())}" in text, text)
         assertTrue("Тираж 10 шт" in text, text)
-        assertTrue("Цена изделия 11 340,00 ₽" in text, text)
-        assertTrue("Итог 113 400,00 ₽" in text, text)
-        // For the client: no breakdown lines.
+        assertTrue("Цена за единицу 11 340,00 ₽" in text, text)
+        assertTrue("Итого за тираж 113 400,00 ₽" in text, text)
+        // For the client: no breakdown lines, and nothing about a discount or a customer that is not there.
         assertFalse("Гибка" in text, text)
+        assertFalse("Скидка" in text || "Сумма без скидки" in text, text)
+        assertFalse("Контрагент" in text, text)
     }
 
     @Test
@@ -97,10 +99,10 @@ class ExportTest {
 
         XSSFWorkbook(target.toFile()).use { workbook ->
             val sheet = workbook.getSheetAt(0)
-            val unitPrice = sheet.rowLabelled("Цена изделия, ₽").getCell(1)
+            val unitPrice = sheet.rowLabelled("Цена за единицу, ₽").getCell(1)
             assertEquals(CellType.NUMERIC, unitPrice.cellType)
             assertEquals(11340.00, unitPrice.numericCellValue)
-            assertEquals(113400.00, sheet.rowLabelled("Итог, ₽").getCell(1).numericCellValue)
+            assertEquals(113400.00, sheet.rowLabelled("Итого за тираж, ₽").getCell(1).numericCellValue)
             assertEquals(10.0, sheet.rowLabelled("Тираж, шт").getCell(1).numericCellValue)
             assertEquals(LocalDate.now(), sheet.rowLabelled("Дата снимка цен").getCell(1).localDateTimeCellValue.toLocalDate())
 
@@ -108,7 +110,7 @@ class ExportTest {
             val lines = sheet.filter { it.cell(1) in listOf("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "Лазер: рез листа", "Гибка", "Сварка сборки (полуавтомат)") }
             assertEquals(listOf(3200.0, 8000.0, 100.0, 40.0), lines.map { it.getCell(AMOUNT).numericCellValue })
             val last = sheet.getRow(sheet.lastRowNum)
-            assertEquals("Цена изделия", last.cell(1))
+            assertEquals("Цена за единицу", last.cell(1))
             assertEquals(CellType.NUMERIC, last.getCell(AMOUNT).cellType)
             assertEquals(11340.00, last.getCell(AMOUNT).numericCellValue)
             assertEquals(16.0, last.getCell(MASS).numericCellValue, 1e-9)
@@ -181,7 +183,7 @@ class ExportTest {
 
         val pdf = temp.root.toPath().resolve("weight.pdf")
         ExportFormat.PDF.write(breakdown, "₽", pdf)
-        assertTrue("Цена изделия 5 600,00 ₽" in pdfText(pdf), pdfText(pdf))
+        assertTrue("Цена за единицу 5 600,00 ₽" in pdfText(pdf), pdfText(pdf))
     }
 
     @Test
@@ -199,7 +201,53 @@ class ExportTest {
             assertEquals(500.0, material.getCell(EXTRA).numericCellValue)
             assertEquals("срочно", material.cell(COMMENT))
             assertEquals(3700.0, material.getCell(AMOUNT).numericCellValue)
-            assertEquals(11840.0, sheet.rowLabelled("Цена изделия, руб.").getCell(1).numericCellValue)
+            assertEquals(11840.0, sheet.rowLabelled("Цена за единицу, руб.").getCell(1).numericCellValue)
+        }
+    }
+
+    @Test
+    fun `a 10 percent discount is in both formats as 11 340,00 less 1 134,00 is 10 206,00, with the counterparty`() {
+        val input = goldenInput(quantity = 10).copy(counterparty = "ООО Ромашка", discountPercent = BigDecimal("10"))
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(deps.saveCalculated(input))).breakdown(ZoneId.systemDefault()))
+
+        val pdf = temp.root.toPath().resolve("discount.pdf")
+        ExportFormat.PDF.write(breakdown, "₽", pdf)
+        val text = pdfText(pdf)
+        assertTrue("Контрагент: ООО Ромашка" in text, text)
+        assertTrue("Тираж 10 шт" in text, text)
+        assertTrue("Сумма без скидки 11 340,00 ₽" in text, text)
+        assertTrue("Скидка (10 %) −1 134,00 ₽" in text, text)
+        assertTrue("Цена за единицу 10 206,00 ₽" in text, text)
+        assertTrue("Итого за тираж 102 060,00 ₽" in text, text)
+
+        val xlsx = temp.root.toPath().resolve("discount.xlsx")
+        ExportFormat.XLSX.write(breakdown, "₽", xlsx)
+        XSSFWorkbook(xlsx.toFile()).use { workbook ->
+            val sheet = workbook.getSheetAt(0)
+            assertEquals("ООО Ромашка", sheet.rowLabelled("Контрагент").cell(1))
+            assertEquals(11340.0, sheet.rowLabelled("Сумма без скидки, ₽").getCell(1).numericCellValue)
+            assertEquals(1134.0, sheet.rowLabelled("Скидка (10 %), ₽").getCell(1).numericCellValue)
+            assertEquals(10206.0, sheet.rowLabelled("Цена за единицу, ₽").getCell(1).numericCellValue)
+            assertEquals(102060.0, sheet.rowLabelled("Итого за тираж, ₽").getCell(1).numericCellValue)
+
+            // The lines still add up to the sum before the discount; the three last rows take the discount off it.
+            val lines = sheet.filter { it.cell(1) in listOf("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", "Лазер: рез листа", "Гибка", "Сварка сборки (полуавтомат)") }
+            assertEquals(11340.0, lines.sumOf { it.getCell(AMOUNT).numericCellValue })
+            val last = (sheet.lastRowNum - 2..sheet.lastRowNum).map { sheet.getRow(it) }
+            assertEquals(listOf("Сумма без скидки", "Скидка (10 %)", "Цена за единицу"), last.map { it.cell(1) })
+            assertEquals(listOf(11340.0, 1134.0, 10206.0), last.map { it.getCell(AMOUNT).numericCellValue })
+        }
+    }
+
+    @Test
+    fun `a calculation with no discount and no counterparty has neither in the xlsx`() {
+        val target = temp.root.toPath().resolve("plain.xlsx")
+
+        ExportFormat.XLSX.write(golden(), "₽", target)
+
+        XSSFWorkbook(target.toFile()).use { workbook ->
+            val labels = workbook.getSheetAt(0).map { it.cell(0) + "|" + it.cell(1) }
+            assertFalse(labels.any { "Контрагент" in it || "скидк" in it.lowercase() }, labels.toString())
         }
     }
 

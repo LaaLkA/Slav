@@ -2,8 +2,6 @@ package io.github.laalka.slav.app.quick
 
 import io.github.laalka.slav.app.DrawingPicker
 import io.github.laalka.slav.app.Deps
-import io.github.laalka.slav.app.testScope
-import io.github.laalka.slav.app.calculations.CardModel
 import io.github.laalka.slav.app.calculations.quickGoldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.calculations.goldenInput
@@ -71,11 +69,12 @@ class QuickEditorModelTest {
         assertTrue(state.isNew)
         assertEquals("Цены — текущие настройки", state.priceSource)
         assertEquals("₽", state.currency)
-        assertEquals("1", state.quantity.text)
+        assertEquals("", state.counterparty.text)
+        assertEquals("", state.discount.text)
         assertEquals(listOf("Ст3"), state.grade.options)
         assertEquals(listOf("1", "2", "3", "4", "5", "6", "8", "10", "12", "14", "16", "18", "20"), state.thickness.options)
         assertNull(state.mass)
-        // The name, the grade, the thickness, the area and the time stop «Рассчитать»; the run size is already 1.
+        // The name, the grade, the thickness, the area and the time stop «Рассчитать»; the counterparty and the discount are optional.
         assertEquals(5, state.missingCount)
         assertFalse(state.canCalculate)
         assertEquals(REQUIRED, state.name.error)
@@ -111,7 +110,7 @@ class QuickEditorModelTest {
     }
 
     @Test
-    fun `the golden quick case is calculated and saved as 5 400,00, and the run of 10 typed is not kept`() = runTest {
+    fun `the golden quick case is calculated and saved as 5 400,00 with a run size of 1`() = runTest {
         val editor = editor()
         editor.fillQuickGoldenCase()
         assertEquals("24 кг", editor.view.mass)
@@ -183,7 +182,6 @@ class QuickEditorModelTest {
     fun `leaving writes the pending draft at once, and an editor opened on it shows what was typed`() = runTest {
         val editor = editor()
         editor.onNameChange("Лист")
-        editor.onQuantityChange("4")
         editor.onThicknessChange(BigDecimal("3"))
         editor.onSheetAreaChange("2,5")
         editor.onExtraAmountChange(QuickLine.CUT, "80")
@@ -195,8 +193,6 @@ class QuickEditorModelTest {
         val again = editor(id).view
         assertFalse(again.isNew)
         assertEquals("Лист", again.name.text)
-        // A simplified calculation has no run size: the 4 typed is not kept.
-        assertEquals("1", again.quantity.text)
         assertNull(again.grade.selected)
         assertEquals("3", again.thickness.selected)
         assertEquals("2,5", again.sheetArea.text)
@@ -287,15 +283,15 @@ class QuickEditorModelTest {
         val snapshot = stored(source).snapshot
         // Prices change after the calculation: the revision keeps the old ones.
         deps.updateSettings { it.copy(laserCutPerMinute = BigDecimal("80")) }
-        val card = CardModel(deps.calculations, deps.settings, deps.adminPassword, deps.attachments, deps.fileOpener, testScope(), source, onRevision = {}, onDeleted = {})
-        val draft = card.edit()
+        // The revision draft is what an earlier version made of «Изменить»; it may still be in a database.
+        val draft = deps.calculations.createRevisionDraft(source)
 
         val untouched = editor(draft)
         assertTrue(untouched.view.priceSource.startsWith("Цены — снимок от "))
         untouched.leave()
         assertNull(deps.calculations.get(draft), "an untouched revision draft is dropped silently")
 
-        val revision = card.edit()
+        val revision = deps.calculations.createRevisionDraft(source)
         val editor = editor(revision)
         editor.onExtraAmountChange(QuickLine.CUT, "100")
         editor.calculate()
@@ -341,9 +337,8 @@ class QuickEditorModelTest {
 }
 
 /** The golden quick case: Ст3, 2 mm, 1.5 m², 12 min — 24 kg and 5 400,00 on the default prices. */
-fun QuickEditorModel.fillQuickGoldenCase(name: String = "Лист на раскрой", quantity: String = "10") {
+fun QuickEditorModel.fillQuickGoldenCase(name: String = "Лист на раскрой") {
     onNameChange(name)
-    onQuantityChange(quantity)
     onGradeChange("Ст3")
     onThicknessChange(BigDecimal("2"))
     onSheetAreaChange("1,5")

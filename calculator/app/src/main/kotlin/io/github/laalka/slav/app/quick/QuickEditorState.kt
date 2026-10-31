@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.quick
 
+import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.editor.ChoiceView
 import io.github.laalka.slav.app.editor.ExtraView
 import io.github.laalka.slav.app.editor.FieldView
@@ -13,11 +14,13 @@ import java.math.BigDecimal
 data class QuickEditorState(
     /** Opened by «Новый расчёт» rather than on a saved calculation. */
     val isNew: Boolean,
+    /** A saved calculation edited in place: nothing is written until «Рассчитать». */
+    val inPlace: Boolean,
     /** Which prices «Рассчитать» uses: the current settings or the calculation's snapshot (spec 8.3). */
     val priceSource: String,
     val currency: String,
     val name: FieldView,
-    val quantity: FieldView,
+    val counterparty: FieldView,
     val grade: ChoiceView,
     val thickness: ChoiceView,
     /** The thicknesses behind [thickness]'s options, in the same order. */
@@ -28,8 +31,12 @@ data class QuickEditorState(
     val mass: String?,
     val materialExtra: ExtraView,
     val cutExtra: ExtraView,
+    /** «Скидка, %»: optional, above 0 and below 100. */
+    val discount: FieldView,
     /** How many fields keep «Рассчитать» disabled; each of them is highlighted. */
     val missingCount: Int,
+    /** The price of the input as it stands; null while a field is missing or a price is not filled in. */
+    val summary: PriceSummary?,
     /** Why the last «Рассчитать» stopped (spec 7.3); empty when it did not. */
     val calcErrors: List<ReadableError>,
     val calcErrorsHint: String?,
@@ -43,7 +50,9 @@ internal fun quickEditorState(
     read: QuickRead,
     book: PriceBook,
     isNew: Boolean,
+    inPlace: Boolean,
     priceSource: String,
+    summary: PriceSummary?,
     calcErrors: List<ReadableError>,
     calcErrorsHint: String?,
 ): QuickEditorState {
@@ -57,10 +66,11 @@ internal fun quickEditorState(
     }
     return QuickEditorState(
         isNew = isNew,
+        inPlace = inPlace,
         priceSource = priceSource,
         currency = book.general.currencySymbol,
         name = field(QuickTags.NAME, form.name),
-        quantity = field(QuickTags.QUANTITY, form.quantity),
+        counterparty = field(QuickTags.COUNTERPARTY, form.counterparty),
         grade = ChoiceView(
             QuickTags.GRADE, "Марка", form.grade, book.grades.map { it.name },
             errors[QuickTags.GRADE]?.let { if (book.grades.isEmpty()) NO_GRADES else it },
@@ -75,7 +85,9 @@ internal fun quickEditorState(
         mass = mass(read, book),
         materialExtra = extra(QuickLine.MATERIAL),
         cutExtra = extra(QuickLine.CUT),
+        discount = field(QuickTags.DISCOUNT, form.discount),
         missingCount = errors.size,
+        summary = summary,
         calcErrors = calcErrors,
         calcErrorsHint = calcErrorsHint.takeIf { calcErrors.isNotEmpty() },
     )

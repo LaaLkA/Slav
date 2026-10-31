@@ -39,6 +39,16 @@ fun readPositive(text: String): NumberInput = when (val input = readPrice(text))
     else -> input
 }
 
+const val NOT_A_DISCOUNT = "Больше 0 и меньше 100"
+
+private val HUNDRED = BigDecimal(100)
+
+/** A discount in percent: empty means none, anything typed is a number above 0 and below 100. */
+fun readDiscount(text: String): NumberInput = when (val input = readPrice(text)) {
+    is NumberInput.Valid -> if (input.value.signum() > 0 && input.value < HUNDRED) input else NumberInput.Invalid(NOT_A_DISCOUNT)
+    else -> input
+}
+
 /** The error of a required positive number, null when [input] is valid. */
 fun requiredPositiveError(input: NumberInput): String? = when (input) {
     NumberInput.Empty -> REQUIRED

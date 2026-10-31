@@ -2,6 +2,8 @@ package io.github.laalka.slav.app
 
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -17,6 +19,8 @@ import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.editor.EditorTags
 import io.github.laalka.slav.app.editor.INNER_NOT_SMALLER
+import io.github.laalka.slav.app.editor.NAME_TAKEN
+import io.github.laalka.slav.app.settings.NOT_A_DISCOUNT
 import io.github.laalka.slav.app.settings.REQUIRED
 import io.github.laalka.slav.app.theme.SlavTheme
 import io.github.laalka.slav.core.Material
@@ -211,7 +215,7 @@ class EditorUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
 
             node(CalculationTags.row(0)).performClick()
-            node(CalculationTags.CARD_EDIT).performClick()
+            node(CalculationTags.CARD_COPY_EDIT).performClick()
             compose.waitForIdle()
 
             node("part/0/mass-override").performScrollTo().assertTextContains("10", substring = true)
@@ -249,6 +253,54 @@ class EditorUiTest {
             val sheet = assertIs<Material.Sheet>(draft.input.parts.single().material)
             assertEquals("Ст3", sheet.grade)
             assertEquals(0, BigDecimal("600").compareTo(assertIs<SheetShape.Rectangle>(sheet.shape).lengthMm))
+        }
+    }
+
+    @Test
+    fun `the counterparty and the discount typed in the editor reach the bottom bar and the card, and a taken name blocks Рассчитать`() {
+        Deps(AppPaths(temp.root.toPath()), appVersion = "test", adminSeed = testAdminSeed()).use { deps ->
+            deps.saveCalculated(goldenInput("Кронштейн"))
+            compose.setContent { SlavTheme(darkTheme = false) { App(deps, NoFilePicker) } }
+            node(CalculationTags.row(0)).performClick()
+            // The copy has the golden input in the form, so only the owner's new fields are typed here.
+            node(CalculationTags.CARD_COPY_EDIT).performClick()
+            compose.waitForIdle()
+            type(EditorTags.COUNTERPARTY, "ООО Ромашка")
+            type(EditorTags.QUANTITY, "10")
+
+            // A refused discount is flagged under its field and keeps «Рассчитать» disabled.
+            type(EditorTags.DISCOUNT, "100")
+            compose.onNodeWithText(NOT_A_DISCOUNT, useUnmergedTree = true).assertExists()
+            node(EditorTags.CALCULATE).assertIsNotEnabled()
+            compose.onAllNodesWithTag(EditorTags.SUMMARY_UNIT_PRICE).assertCountEquals(0)
+
+            type(EditorTags.DISCOUNT, "10")
+            compose.waitForIdle()
+            node(EditorTags.SUMMARY_SUBTOTAL).assertTextEquals("11 340,00 ₽")
+            node(EditorTags.SUMMARY_DISCOUNT).assertTextEquals("−1 134,00 ₽")
+            node(EditorTags.SUMMARY_UNIT_PRICE).assertTextEquals("10 206,00 ₽")
+            node(EditorTags.SUMMARY_TOTAL).assertTextEquals("102 060,00 ₽")
+
+            // The name of another calculation, in another letter case, is flagged as it is typed.
+            type(EditorTags.NAME, "кронштейн")
+            compose.waitForIdle()
+            compose.onNodeWithText(NAME_TAKEN, useUnmergedTree = true).assertExists()
+            node(EditorTags.CALCULATE).assertIsNotEnabled()
+
+            type(EditorTags.NAME, "Кронштейн со скидкой")
+            compose.waitForIdle()
+            compose.onAllNodesWithText(NAME_TAKEN, useUnmergedTree = true).assertCountEquals(0)
+            node(EditorTags.CALCULATE).assertIsEnabled().performClick()
+            compose.waitForIdle()
+
+            node(CalculationTags.CARD_COUNTERPARTY).assertTextEquals("Контрагент: ООО Ромашка")
+            node(CalculationTags.CARD_SUBTOTAL).assertTextEquals("11 340,00 ₽")
+            node(CalculationTags.CARD_DISCOUNT).assertTextEquals("−1 134,00 ₽")
+            compose.onNodeWithText("Скидка (10 %)", useUnmergedTree = true).assertExists()
+            node(CalculationTags.CARD_UNIT_PRICE).assertTextEquals("10 206,00 ₽")
+            node(CalculationTags.CARD_TOTAL).assertTextEquals("102 060,00 ₽")
+            val saved = deps.calculations.list().single { it.name == "Кронштейн со скидкой" }
+            assertEquals(CalculationStatus.CALCULATED, saved.status)
         }
     }
 }

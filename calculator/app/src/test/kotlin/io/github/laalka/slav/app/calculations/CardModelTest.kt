@@ -45,6 +45,9 @@ class CardModelTest {
     private val revisions = mutableListOf<UUID>()
     private var deleted = 0
 
+    /** The editors the card asked for: the id and whether it is edited in place. */
+    private val opened = mutableListOf<Pair<UUID, Boolean>>()
+
     private fun card(id: UUID) = CardModel(
         deps.calculations,
         deps.settings,
@@ -55,6 +58,7 @@ class CardModelTest {
         id,
         onRevision = { revisions += it },
         onDeleted = { deleted++ },
+        onOpenEditor = { edited, inPlace -> opened += edited to inPlace },
     )
 
     private fun stored(id: UUID): StoredCalculation.Full = assertIs<StoredCalculation.Full>(deps.calculations.get(id))
@@ -251,6 +255,7 @@ class CardModelTest {
         assertEquals(0, BigDecimal("300").compareTo(assertNotNull(revision.st3TwoMillimetrePrice())), "the snapshot holds the current prices")
         assertEquals(CalculationStatus.CALCULATED, revision.status)
         assertEquals(id, revision.sourceId)
+        assertEquals("Кронштейн №2", revision.name, "the repository names a recalculation after its source")
         assertNull(card.state.value.recalc)
         assertEquals("12 940,00 ₽", card(revision.id).state.value.unitPrice)
         // ... and the original is the row it was: its unit price, snapshot, status and every column.
@@ -309,29 +314,122 @@ class CardModelTest {
     }
 
     @Test
-    fun `edit hands over a revision draft with the prices of the calculation, and the original stays`() {
+    fun `Изменить on a calculated record asks the administrator password and opens nothing until it is right`() {
+        val id = deps.saveCalculated(goldenInput(quantity = 4))
+        val before = stored(id)
+        val card = card(id)
+
+        card.requestEdit()
+        assertEquals("Кронштейн", card.state.value.editQuestion?.name)
+        assertNull(card.state.value.editQuestion?.error)
+        assertEquals(emptyList(), opened, "the question comes first")
+
+        card.onEditPasswordChange("not-the-password")
+        card.confirmEdit()
+        assertEquals("Неверный пароль", card.state.value.editQuestion?.error)
+        // Typing again clears the error; an empty password is wrong as well.
+        card.onEditPasswordChange("")
+        assertNull(card.state.value.editQuestion?.error)
+        card.confirmEdit()
+        assertEquals("Неверный пароль", card.state.value.editQuestion?.error)
+        assertEquals(emptyList(), opened)
+
+        card.cancelEdit()
+        assertNull(card.state.value.editQuestion)
+        assertEquals(emptyList(), opened)
+
+        card.requestEdit()
+        card.onEditPasswordChange(ADMIN_PASSWORD)
+        card.confirmEdit()
+
+        assertEquals(listOf(id to true), opened, "the editor opens on this very record, in place")
+        assertNull(card.state.value.editQuestion)
+        assertEquals(before, stored(id))
+        assertEquals(1, deps.calculations.list().size, "no revision draft and no copy")
+    }
+
+    @Test
+    fun `Сделать копию и изменить makes a draft named with a copy number on current prices and leaves the original alone`() {
         val id = deps.saveCalculated(goldenInput(quantity = 4))
         val before = stored(id)
         deps.setSt3TwoMillimetrePrice("300")
 
-        val draft = stored(card(id).edit())
+        card(id).copyAndEdit()
 
-        assertEquals(CalculationStatus.DRAFT, draft.status)
-        assertEquals(id, draft.sourceId)
-        assertEquals(goldenInput(name = "Кронштейн №2", quantity = 4), draft.input)
-        assertEquals(before.snapshot, draft.snapshot)
-        assertEquals(before.snapshotAt, draft.snapshotAt)
+        val (copyId, inPlace) = opened.single()
+        assertEquals(false, inPlace, "a copy is a normal draft with autosave")
+        val copy = stored(copyId)
+        assertEquals(CalculationStatus.DRAFT, copy.status)
+        assertEquals(goldenInput(name = "Кронштейн (2)", quantity = 4), copy.input)
+        assertNull(copy.snapshot, "a copy is priced on the current settings")
+        assertNull(copy.sourceId)
         assertEquals(before, stored(id))
+
+        card(id).copyAndEdit()
+        assertEquals("Кронштейн (3)", stored(opened.last().first).name)
     }
 
     @Test
-    fun `a draft card is edited as it is`() {
+    fun `a draft card is edited as it is, with no password and no copy`() {
         val id = deps.calculations.saveDraft(goldenInput())
 
-        assertEquals(id, card(id).edit())
+        card(id).requestEdit()
+
+        assertEquals(listOf(id to false), opened)
+        assertNull(card(id).state.value.editQuestion)
+        card(id).copyAndEdit()
+        assertEquals(1, opened.size)
         assertEquals(1, deps.calculations.list().size)
         card(id).requestQuantityChange()
         assertNull(card(id).state.value.quantityDialog, "a draft changes its run size in the editor")
+    }
+
+    @Test
+    fun `the card shows the counterparty and the discount lines of a discounted calculation`() {
+        val input = goldenInput(quantity = 10).copy(counterparty = "ООО Ромашка", discountPercent = BigDecimal("10"))
+
+        val state = card(deps.saveCalculated(input)).state.value
+
+        assertEquals("ООО Ромашка", state.counterparty)
+        assertEquals(DiscountLines("11 340,00 ₽", "Скидка (10 %)", "−1 134,00 ₽"), state.discount)
+        assertEquals("10 206,00 ₽", state.unitPrice)
+        assertEquals("102 060,00 ₽", state.total)
+        assertEquals("10", state.quantity)
+    }
+
+    @Test
+    fun `a calculation with no discount and no counterparty shows neither`() {
+        val state = card(deps.saveCalculated()).state.value
+
+        assertEquals("", state.counterparty)
+        assertNull(state.discount)
+        assertEquals("11 340,00 ₽", state.unitPrice)
+    }
+
+    @Test
+    fun `a recalculation and a new run size keep the counterparty and the discount`() {
+        val input = goldenInput(quantity = 1).copy(counterparty = "ООО Ромашка", discountPercent = BigDecimal("10"))
+        val id = deps.saveCalculated(input)
+        deps.setSt3TwoMillimetrePrice("300")
+        val card = card(id)
+
+        card.prepareRecalc()
+        // 12 940 before the discount, 10 % off.
+        assertEquals("10 206,00 ₽", card.state.value.recalc?.oldUnitPrice)
+        assertEquals("11 646,00 ₽", card.state.value.recalc?.newUnitPrice)
+        card.confirmRecalc()
+        card.requestQuantityChange()
+        card.onQuantityChange("5")
+        card.confirmQuantityChange()
+
+        val recalculated = stored(revisions[0])
+        assertEquals("ООО Ромашка", recalculated.input.counterparty)
+        assertEquals(0, BigDecimal("10").compareTo(recalculated.input.discountPercent))
+        assertEquals(0, BigDecimal("1294.00").compareTo(recalculated.result?.discount?.amount))
+        val resized = stored(revisions[1])
+        assertEquals("ООО Ромашка", resized.input.counterparty)
+        assertEquals(5, resized.quantity)
+        assertEquals("Кронштейн №3", resized.name, "№2 is taken by the recalculation")
     }
 
     @Test
@@ -345,7 +443,8 @@ class CardModelTest {
         original.onQuantityChange("5")
         original.confirmQuantityChange()
         val quantityRevision = revisions.single()
-        val draft = card(id).edit()
+        // A revision draft is what an earlier version made of «Изменить»; it may still be in a database.
+        val draft = deps.calculations.createRevisionDraft(id)
 
         val source = assertNotNull(card(quantityRevision).state.value.source)
         assertEquals(id, source.id)

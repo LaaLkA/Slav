@@ -22,10 +22,15 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
-/** A row of the list; a draft has no price, so [unitPrice] and [total] are null for it. */
+/**
+ * A row of the list; a draft has no price, so [unitPrice] and [total] are null for it. A simplified
+ * calculation has no run size: its [quantity] is a dash and its [total] is its [unitPrice].
+ */
 data class ListRow(
     val id: UUID,
     val name: String,
+    /** Empty when not given. */
+    val counterparty: String,
     val kind: CalculationKind,
     val updatedAt: String,
     val status: CalculationStatus,
@@ -35,6 +40,9 @@ data class ListRow(
 ) {
     val isDraft: Boolean get() = status == CalculationStatus.DRAFT
 }
+
+/** The quantity column of a simplified calculation, which has no run size. */
+const val NO_RUN_SIZE = "—"
 
 data class ListMessage(val text: String, val isError: Boolean)
 
@@ -74,7 +82,7 @@ class CalculationListModel(
     private var toText = ""
     private var sort = CalculationSort.DEFAULT
     private var filterEpoch = 0
-    private val deletion = DeleteFlow(adminPassword, calculations::delete)
+    private val deletion = PasswordFlow(adminPassword, calculations::delete)
     private var message: ListMessage? = null
 
     private val _state = MutableStateFlow(build())
@@ -209,11 +217,12 @@ class CalculationListModel(
     private fun CalculationSummary.toRow(currency: String) = ListRow(
         id = id,
         name = name.ifBlank { "Без названия" },
+        counterparty = counterparty,
         kind = kind,
         updatedAt = formatDateTime(updatedAt, zone),
         status = status,
         unitPrice = unitPrice?.let { formatMoney(it, currency) },
-        quantity = quantity.toString(),
+        quantity = if (kind == CalculationKind.QUICK) NO_RUN_SIZE else quantity.toString(),
         total = total?.let { formatMoney(it, currency) },
     )
 
