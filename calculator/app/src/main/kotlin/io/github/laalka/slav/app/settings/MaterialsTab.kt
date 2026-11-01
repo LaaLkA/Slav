@@ -33,6 +33,7 @@ import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.OptionPicker
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
+import io.github.laalka.slav.app.ui.besideField
 
 private val NAME_WIDTH = 320.dp
 private val GROUP_WIDTH = 240.dp
@@ -169,7 +170,7 @@ private fun RowActions(onRename: () -> Unit, onDelete: () -> Unit, name: String)
 
 @Composable
 fun AddButton(onClick: () -> Unit) {
-    FilledTonalButton(onClick = onClick, modifier = Modifier.padding(top = Spacing.small)) {
+    FilledTonalButton(onClick = onClick, modifier = Modifier.besideField()) {
         Icon(Icons.Filled.Add, contentDescription = null)
         Spacer(Modifier.width(Spacing.small))
         Text("Добавить")

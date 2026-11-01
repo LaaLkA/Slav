@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.selection.toggleable
@@ -36,10 +37,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,12 +58,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -125,7 +130,8 @@ fun InputField(
     password: Boolean = false,
 ) {
     var text by remember { mutableStateOf(value) }
-    val style = LocalTextStyle.current
+    // Not the ambient style: a dialog sets its body text 14 sp, which would make the same field smaller there than on a screen.
+    val style = FIELD_TEXT
     OutlinedField(
         value = text,
         onValueChange = {
@@ -146,11 +152,26 @@ fun InputField(
     )
 }
 
+/** The text of every field: 16 sp, on a screen and in a dialog alike. */
+private val FIELD_TEXT: TextStyle
+    @Composable get() = MaterialTheme.typography.bodyLarge
+
 /** The outline of a field in error is this thick whether or not the field is focused. */
 private val ERROR_OUTLINE = 2.dp
 
 // The room an outlined field leaves above itself for its floating label (Material's OutlinedTextField does the same).
 private val LABEL_ROOM = 8.dp
+
+// The height of a button, an icon button or a check box with its touch area: Material gives them all 48 dp.
+private val TOUCH_TARGET = 48.dp
+
+/**
+ * Puts a 48 dp control (a button, an icon button, a check box) that stands in a top-aligned row beside an outlined
+ * field level with it: the field is [OutlinedTextFieldDefaults.MinHeight] tall below its [LABEL_ROOM], so the middle
+ * of the control meets the middle of the field. A control as tall as the field, such as [OptionPicker], takes
+ * [LABEL_ROOM] alone.
+ */
+fun Modifier.besideField(): Modifier = padding(top = LABEL_ROOM + (OutlinedTextFieldDefaults.MinHeight - TOUCH_TARGET) / 2)
 
 /**
  * An outlined single-line field with [error] under it. It is Material's `OutlinedTextField` assembled from
@@ -347,7 +368,7 @@ fun ChoiceField(
             value = selected.orEmpty(),
             onValueChange = {},
             modifier = Modifier.fillMaxWidth(),
-            textStyle = LocalTextStyle.current,
+            textStyle = FIELD_TEXT,
             label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             error = error,
             enabled = enabled,
@@ -370,6 +391,54 @@ fun ChoiceField(
                     },
                     modifier = if (testTag == null) Modifier else Modifier.testTag("$testTag/$option"),
                 )
+            }
+        }
+    }
+}
+
+// The room between the edge of a segment and its label, the same on both sides of every segment of every row.
+private val SEGMENT_PADDING = Spacing.medium
+
+/**
+ * One of [options] chosen in a row of segments; [selectedIndex] is the chosen one. This is the only segmented
+ * control of the program, so every row looks and sizes alike: Material's `SingleChoiceSegmentedButtonRow`
+ * with a segment per option and the chosen one shown by its colour only. The check mark Material puts into the
+ * chosen segment is left out: it widens that segment alone, so a label that fitted would wrap or be cut as soon
+ * as it is chosen. A label is one line and never cut: Material sizes the row by the longest word of each label,
+ * not by the whole label, so here every segment is as wide as its own label measures plus [SEGMENT_PADDING] on
+ * both sides, and all segments of a row are of one height. Segment [index] is tagged `testTagOf(index)` when
+ * that is not null.
+ */
+@Composable
+fun SegmentedChoice(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    testTagOf: (Int) -> String? = { null },
+) {
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val borderPx = with(density) { SegmentedButtonDefaults.BorderWidth.toPx() }
+    val paddingPx = with(density) { SEGMENT_PADDING.toPx() }
+    // The row lays segments out by weight; a weight in pixels gives each segment exactly its label and padding.
+    val segmentPx = remember(options, labelStyle, paddingPx, measurer) {
+        options.map { measurer.measure(it, labelStyle, maxLines = 1, softWrap = false).size.width + 2 * paddingPx }
+    }
+    // Neighbouring segments overlap by one border width.
+    val rowWidth = with(density) { (segmentPx.sum() - borderPx * (options.size - 1)).toDp() }
+    SingleChoiceSegmentedButtonRow(modifier.width(rowWidth)) {
+        options.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = index == selectedIndex,
+                onClick = { onSelect(index) },
+                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                modifier = Modifier.weight(segmentPx[index]).then(testTagOf(index)?.let { Modifier.testTag(it) } ?: Modifier),
+                contentPadding = PaddingValues(horizontal = SEGMENT_PADDING),
+                icon = {},
+            ) {
+                Text(option, style = labelStyle, maxLines = 1, softWrap = false)
             }
         }
     }

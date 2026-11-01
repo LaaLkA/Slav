@@ -263,10 +263,11 @@ private fun Summary(state: CardState, model: CardModel) {
 
 @Composable
 private fun SummaryRow(label: String, value: String, tag: String, emphasized: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+    // An emphasized value is bigger than its label: both stand on one baseline, not with their middles level.
+    Row {
+        Text(label, modifier = Modifier.weight(1f).alignByBaseline(), style = MaterialTheme.typography.bodyLarge)
         val style = if (emphasized) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge
-        Text(value, modifier = Modifier.testTag(tag), style = style.tabular(), textAlign = TextAlign.End, softWrap = false)
+        Text(value, modifier = Modifier.alignByBaseline().testTag(tag), style = style.tabular(), textAlign = TextAlign.End, softWrap = false)
     }
 }
 

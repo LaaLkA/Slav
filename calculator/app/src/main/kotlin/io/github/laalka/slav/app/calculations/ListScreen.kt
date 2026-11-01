@@ -64,6 +64,7 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.app.ui.besideField
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
@@ -72,15 +73,19 @@ import java.util.UUID
 private val SEARCH_WIDTH = 320.dp
 private val DATE_WIDTH = 168.dp
 
-/** A table column: its width (null takes the rest of the row) and whether it holds numbers. */
+/**
+ * A table column: its width (null takes the rest of the row) and whether it holds numbers. The fixed columns are
+ * as narrow as their longest content allows («16 290 486,00 ₽», «Цена за единицу»), so the name keeps the rest of
+ * the 1280 dp window: with the «упрощённый» mark and the check box of the selection it still shows a usual name whole.
+ */
 private enum class ListColumn(val title: String, val sort: CalculationSortColumn, val width: Dp?, val numeric: Boolean) {
     NAME("Название", CalculationSortColumn.NAME, null, numeric = false),
-    COUNTERPARTY("Контрагент", CalculationSortColumn.COUNTERPARTY, 176.dp, numeric = false),
-    UPDATED("Изменён", CalculationSortColumn.UPDATED_AT, 144.dp, numeric = false),
-    STATUS("Статус", CalculationSortColumn.STATUS, 120.dp, numeric = false),
-    UNIT_PRICE("Цена за единицу", CalculationSortColumn.UNIT_PRICE, 152.dp, numeric = true),
+    COUNTERPARTY("Контрагент", CalculationSortColumn.COUNTERPARTY, 144.dp, numeric = false),
+    UPDATED("Изменён", CalculationSortColumn.UPDATED_AT, 132.dp, numeric = false),
+    STATUS("Статус", CalculationSortColumn.STATUS, 112.dp, numeric = false),
+    UNIT_PRICE("Цена за единицу", CalculationSortColumn.UNIT_PRICE, 128.dp, numeric = true),
     QUANTITY("Тираж", CalculationSortColumn.QUANTITY, 64.dp, numeric = true),
-    TOTAL("Итог", CalculationSortColumn.TOTAL, 152.dp, numeric = true),
+    TOTAL("Итог", CalculationSortColumn.TOTAL, 128.dp, numeric = true),
 }
 
 private val ACTIONS_WIDTH = 48.dp
@@ -140,8 +145,10 @@ fun CalculationsScreen(
 private fun SelectionBar(state: ListState, model: CalculationListModel, filePicker: FilePicker) {
     val checked = state.selected.size
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+        // Laid out like a row of the table below (its inset, a check box column, a gap), so the check boxes stand in one line and the text over the names.
         Row(
             modifier = Modifier
+                .padding(start = Spacing.small)
                 .toggleable(
                     value = state.rows.isNotEmpty() && checked == state.rows.size,
                     role = Role.Checkbox,
@@ -150,16 +157,19 @@ private fun SelectionBar(state: ListState, model: CalculationListModel, filePick
                 )
                 .testTag(CalculationTags.SELECT_ALL),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
-            TriStateCheckbox(
-                state = when (checked) {
-                    0 -> ToggleableState.Off
-                    state.rows.size -> ToggleableState.On
-                    else -> ToggleableState.Indeterminate
-                },
-                onClick = null,
-            )
-            Text("Выбрать все", modifier = Modifier.padding(start = Spacing.small))
+            Box(Modifier.width(SELECT_WIDTH), contentAlignment = Alignment.Center) {
+                TriStateCheckbox(
+                    state = when (checked) {
+                        0 -> ToggleableState.Off
+                        state.rows.size -> ToggleableState.On
+                        else -> ToggleableState.Indeterminate
+                    },
+                    onClick = null,
+                )
+            }
+            Text("Выбрать все")
         }
         Text("Выбрано: $checked", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box(Modifier.weight(1f))
@@ -248,7 +258,7 @@ private fun Filters(state: ListState, model: CalculationListModel) {
         if (state.hasFilters) {
             TextButton(
                 onClick = model::clearFilters,
-                modifier = Modifier.padding(top = Spacing.small).testTag(CalculationTags.CLEAR_FILTERS),
+                modifier = Modifier.besideField().testTag(CalculationTags.CLEAR_FILTERS),
             ) { Text("Сбросить фильтры") }
         }
     }

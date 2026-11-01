@@ -1,12 +1,17 @@
 package io.github.laalka.slav.app.theme
 
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.ScrollbarStyle
+import androidx.compose.foundation.defaultScrollbarStyle
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -113,15 +118,27 @@ object Spacing {
 /** Digits of equal width, so the numbers of a column line up. */
 fun TextStyle.tabular(): TextStyle = copy(fontFeatureSettings = "tnum")
 
+// The idle thumb of a scrollbar is the text colour at this opacity, the thumb under the pointer at the second one.
+private const val SCROLLBAR_IDLE_ALPHA = 0.4f
+private const val SCROLLBAR_HOVER_ALPHA = 0.7f
+
+/**
+ * The scrollbars of both themes. The library's own are black at 12 % and 50 %, which is a thumb on the light
+ * surface and nothing at all on the dark one; these follow the text colour of the theme.
+ */
+internal fun scrollbarStyle(colors: ColorScheme): ScrollbarStyle = defaultScrollbarStyle().copy(
+    unhoverColor = colors.onSurface.copy(alpha = SCROLLBAR_IDLE_ALPHA),
+    hoverColor = colors.onSurface.copy(alpha = SCROLLBAR_HOVER_ALPHA),
+)
+
 /** Application theme; [darkTheme] follows the operating system unless the user chose a theme in the settings. */
 @Composable
 fun SlavTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        shapes = SlavShapes,
-        content = content,
-    )
+    val colors = if (darkTheme) DarkColors else LightColors
+    MaterialTheme(colorScheme = colors, shapes = SlavShapes) {
+        CompositionLocalProvider(LocalScrollbarStyle provides scrollbarStyle(colors), content = content)
+    }
 }

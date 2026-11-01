@@ -30,9 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,20 +56,14 @@ import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.SectionCard
+import io.github.laalka.slav.app.ui.SegmentedChoice
 import io.github.laalka.slav.app.ui.WarningPanel
 import io.github.laalka.slav.app.ui.WarningWeight
+import io.github.laalka.slav.app.ui.besideField
 
 internal val NUMBER_WIDTH = 168.dp
 internal val CHOICE_WIDTH = 208.dp
 internal val WIDE_NUMBER_WIDTH = 208.dp
-
-// Segments share the row's width equally; this fits «Труба профильная» on one line.
-private val KIND_ROW_WIDTH = 960.dp
-
-// Five segments share the row's width equally; «Прямоугольник / полоса», the longest label, needs about 200 dp
-// without the check mark of the chosen segment (with it about 226 dp, more than the card of the 1280 dp window
-// of the program leaves for five segments, 1120 dp).
-private val SHAPE_ROW_WIDTH = 1100.dp
 
 // The parameters of a checked operation sit under its title, past the checkbox.
 private val PARAMS_INDENT = 48.dp
@@ -200,42 +191,33 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
             TextInput(part.name, "Название детали", { model.onPartNameChange(part.id, it) }, Modifier.weight(1f))
             TextButton(
                 onClick = { model.copyPart(part.id) },
-                modifier = Modifier.padding(top = Spacing.small).testTag("${part.tag}/copy"),
+                modifier = Modifier.besideField().testTag("${part.tag}/copy"),
             ) { Text("Копировать") }
             TextButton(
                 onClick = { model.library.requestSave(part.id) },
-                modifier = Modifier.padding(top = Spacing.small).testTag(LibraryTags.toLibrary(part.tag)),
+                modifier = Modifier.besideField().testTag(LibraryTags.toLibrary(part.tag)),
             ) { Text("В библиотеку") }
             IconButton(
                 onClick = { model.deletePart(part.id) },
-                modifier = Modifier.padding(top = Spacing.small).testTag("${part.tag}/delete"),
+                modifier = Modifier.besideField().testTag("${part.tag}/delete"),
             ) { Icon(Icons.Filled.Delete, contentDescription = "Удалить деталь") }
         }
 
         Subheader("Материал")
-        SingleChoiceSegmentedButtonRow(Modifier.width(KIND_ROW_WIDTH)) {
-            SortamentKind.entries.forEachIndexed { index, kind ->
-                SegmentedButton(
-                    selected = kind == part.kind,
-                    onClick = { model.onKindChange(part.id, kind) },
-                    shape = SegmentedButtonDefaults.itemShape(index, SortamentKind.entries.size),
-                    modifier = Modifier.testTag("${part.tag}/kind/${kind.name}"),
-                ) { Text(kind.title, maxLines = 1, softWrap = false) }
-            }
-        }
+        SegmentedChoice(
+            options = SortamentKind.entries.map { it.title },
+            selectedIndex = SortamentKind.entries.indexOf(part.kind),
+            onSelect = { model.onKindChange(part.id, SortamentKind.entries[it]) },
+            testTagOf = { "${part.tag}/kind/${SortamentKind.entries[it].name}" },
+        )
         part.shape?.let { shape ->
             Caption("Форма")
-            SingleChoiceSegmentedButtonRow(Modifier.width(SHAPE_ROW_WIDTH)) {
-                ShapeKind.entries.forEachIndexed { index, kind ->
-                    SegmentedButton(
-                        selected = kind == shape,
-                        onClick = { model.onShapeChange(part.id, kind) },
-                        shape = SegmentedButtonDefaults.itemShape(index, ShapeKind.entries.size),
-                        modifier = Modifier.testTag(EditorTags.shape(part.tag, kind)),
-                        icon = {},
-                    ) { Text(kind.title, maxLines = 1, softWrap = false) }
-                }
-            }
+            SegmentedChoice(
+                options = ShapeKind.entries.map { it.title },
+                selectedIndex = ShapeKind.entries.indexOf(shape),
+                onSelect = { model.onShapeChange(part.id, ShapeKind.entries[it]) },
+                testTagOf = { EditorTags.shape(part.tag, ShapeKind.entries[it]) },
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
             Choice(part.grade, Modifier.width(CHOICE_WIDTH)) { model.onGradeChange(part.id, part.grade.options[it]) }
@@ -309,16 +291,12 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
     val part = (line as? LineRef.OfPart)?.part
     when (params) {
         is OperationParams.LaserSheet -> {
-            SingleChoiceSegmentedButtonRow {
-                CutMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(
-                        selected = mode == params.mode,
-                        onClick = { if (part != null) model.onCutModeChange(part, mode) },
-                        shape = SegmentedButtonDefaults.itemShape(index, CutMode.entries.size),
-                        modifier = Modifier.testTag("${params.modeTag}/${mode.name}"),
-                    ) { Text(mode.title) }
-                }
-            }
+            SegmentedChoice(
+                options = CutMode.entries.map { it.title },
+                selectedIndex = CutMode.entries.indexOf(params.mode),
+                onSelect = { if (part != null) model.onCutModeChange(part, CutMode.entries[it]) },
+                testTagOf = { "${params.modeTag}/${CutMode.entries[it].name}" },
+            )
             when (params.mode) {
                 CutMode.BY_SHAPE -> Hint(
                     "Длина реза — все контуры формы детали; пробитий столько же, сколько контуров: кольцо — 2, остальные формы — 1. " +
@@ -353,7 +331,7 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
                                     "Через обе стенки",
                                     row.throughBothWalls,
                                     { model.onThroughBothWallsChange(part, row.id, it) },
-                                    Modifier.padding(top = Spacing.small).testTag("${row.tag}/both-walls"),
+                                    Modifier.besideField().testTag("${row.tag}/both-walls"),
                                 )
                             }
                             DeleteRowButton("${row.tag}/delete") { model.deleteRow(line, row.id) }
@@ -411,7 +389,7 @@ private fun RowsFooter(error: String?, addLabel: String, addTag: String, onAdd: 
 
 @Composable
 private fun DeleteRowButton(tag: String, onDelete: () -> Unit) {
-    IconButton(onClick = onDelete, modifier = Modifier.padding(top = Spacing.small).testTag(tag)) {
+    IconButton(onClick = onDelete, modifier = Modifier.besideField().testTag(tag)) {
         Icon(Icons.Filled.Delete, contentDescription = "Удалить строку")
     }
 }
@@ -487,11 +465,12 @@ private fun PriceSummaryRow(summary: PriceSummary) {
 
 @Composable
 private fun SummaryItem(label: String, value: String, tag: String, strong: Boolean = false) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // The label and the value are of different sizes: they stand on one baseline, not with their middles level.
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+        Text(label, modifier = Modifier.alignByBaseline(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
             value,
-            modifier = Modifier.testTag(tag),
+            modifier = Modifier.alignByBaseline().testTag(tag),
             style = (if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium).tabular(),
             softWrap = false,
         )

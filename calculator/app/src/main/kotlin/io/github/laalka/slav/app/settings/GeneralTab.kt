@@ -5,9 +5,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,9 +23,11 @@ import io.github.laalka.slav.app.ui.PasswordDialog
 import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.RemovableChips
 import io.github.laalka.slav.app.ui.SectionCard
+import io.github.laalka.slav.app.ui.SegmentedChoice
 import io.github.laalka.slav.app.ui.TabContent
 
-private val FIELD_WIDTH = 240.dp
+// Wide enough for the longest label here, «Мин. площадь окраски детали, м²», which 240 dp cut off.
+private val FIELD_WIDTH = 288.dp
 
 /** Test tags of «Общие». */
 object GeneralTags {
@@ -129,17 +128,11 @@ fun GeneralTab(model: GeneralModel) {
                 }
             }
             SectionCard("Тема оформления") {
-                SingleChoiceSegmentedButtonRow {
-                    ThemeMode.entries.forEachIndexed { index, mode ->
-                        SegmentedButton(
-                            selected = state.theme == mode,
-                            onClick = { model.setTheme(mode) },
-                            shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size),
-                        ) {
-                            Text(mode.title)
-                        }
-                    }
-                }
+                SegmentedChoice(
+                    options = ThemeMode.entries.map { it.title },
+                    selectedIndex = ThemeMode.entries.indexOf(state.theme),
+                    onSelect = { model.setTheme(ThemeMode.entries[it]) },
+                )
             }
             SectionCard(
                 "Режим разработчика",

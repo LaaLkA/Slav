@@ -23,6 +23,19 @@ private fun contrast(a: Color, b: Color): Double {
     return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
 }
 
+/** [color] with its opacity laid over [background]: what the eye sees of a translucent thing on a surface. */
+private fun over(color: Color, background: Color): Color {
+    val alpha = color.alpha
+    return Color(
+        red = color.red * alpha + background.red * (1 - alpha),
+        green = color.green * alpha + background.green * (1 - alpha),
+        blue = color.blue * alpha + background.blue * (1 - alpha),
+    )
+}
+
+/** The WCAG level for the parts of an interface that are not text: a scrollbar thumb is one of them, though it only needs to be seen. */
+private const val VISIBLE = 2.0
+
 /** How far the colour is from grey, 0..1: a saturated red has a high one. */
 private fun saturation(color: Color): Float {
     val top = maxOf(color.red, color.green, color.blue)
@@ -71,5 +84,25 @@ class ThemeContrastTest {
             assertTrue(error.red > error.green && error.red > error.blue, "$name error is not red: $error")
             assertTrue(saturation(error) >= 0.6f, "$name error is washed out: saturation ${saturation(error)}")
         }
+    }
+
+    @Test
+    fun `the scrollbar thumb is seen on the surface and on the cards in both themes, idle and under the pointer`() {
+        themes.forEach { (name, scheme) ->
+            val style = scrollbarStyle(scheme)
+            mapOf("surface" to scheme.surface, "surfaceContainerLow (the cards)" to scheme.surfaceContainerLow).forEach { (surface, background) ->
+                val idle = contrast(over(style.unhoverColor, background), background)
+                val hover = contrast(over(style.hoverColor, background), background)
+                assertTrue(idle >= VISIBLE, "$name idle scrollbar thumb on $surface is $idle:1")
+                assertTrue(hover > idle, "$name scrollbar thumb under the pointer is $hover:1, the idle one $idle:1")
+            }
+        }
+    }
+
+    @Test
+    fun `the library scrollbar, black at 12 percent, would be lost on the dark surface`() {
+        // The reason the program has its own: this is what the default gives on the dark theme.
+        val default = over(androidx.compose.foundation.defaultScrollbarStyle().unhoverColor, DarkColors.surface)
+        assertTrue(contrast(default, DarkColors.surface) < VISIBLE, "the default thumb is ${contrast(default, DarkColors.surface)}:1 on the dark surface")
     }
 }
