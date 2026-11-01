@@ -13,7 +13,6 @@ import io.github.laalka.slav.app.ui.formatMoney
 import io.github.laalka.slav.core.CalcError
 import io.github.laalka.slav.core.CalcOutcome
 import io.github.laalka.slav.core.Calculator
-import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.core.QuickCalculator
@@ -483,12 +482,7 @@ class CardModel(
     /** A recalculation priced on the current settings: [unitPrice] is shown, [save] makes the new calculation and returns its id. */
     private class PendingRecalc(val unitPrice: Money, val save: () -> UUID)
 
-    private fun line(line: BreakdownLine) = CardLine(line.title, line.extra?.let(::extra), money(line.cost))
-
-    private fun extra(extra: ManualExtra): String {
-        val amount = "в т. ч. доп. операции ${money(extra.amount)}"
-        return if (extra.comment.isBlank()) amount else "$amount — ${extra.comment.trim()}"
-    }
+    private fun line(line: BreakdownLine) = CardLine(line.title, line.extra?.let { manualExtraNote(it, currency) }, money(line.cost))
 
     private fun money(amount: Money) = formatMoney(amount, currency)
 

@@ -4,6 +4,7 @@ import io.github.laalka.slav.app.editor.title
 import io.github.laalka.slav.app.settings.toInputText
 import io.github.laalka.slav.app.ui.formatMoney
 import io.github.laalka.slav.core.CalcResult
+import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Money
 import io.github.laalka.slav.core.ProductOperation
 import io.github.laalka.slav.core.QuickResult
@@ -33,6 +34,12 @@ fun discountLabel(percent: BigDecimal): String = "Скидка (${percent.toInpu
 
 /** A discount is taken off the price, so it is written with a minus: «−1 134,00 ₽». */
 fun formatDiscount(amount: Money, currency: String): String = "−${formatMoney(amount, currency)}"
+
+/** «в т. ч. доп. операции 500,00 ₽ — срочно»: the manual extra of a line with its comment; without a comment there is no dash. */
+fun manualExtraNote(extra: ManualExtra, currency: String): String {
+    val amount = "в т. ч. доп. операции ${formatMoney(extra.amount, currency)}"
+    return if (extra.comment.isBlank()) amount else "$amount — ${extra.comment.trim()}"
+}
 
 /** The discount lines of a price; null without a discount, which has nothing to say besides the price. */
 fun discountLines(subtotal: Money, percent: BigDecimal?, discount: Money, currency: String): DiscountLines? =

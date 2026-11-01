@@ -3,7 +3,10 @@ package io.github.laalka.slav.app.export
 import io.github.laalka.slav.app.calculations.Breakdown
 import java.nio.file.Path
 
-/** The two exports of spec 8.5. [extension] includes its dot. */
+/**
+ * The two exports of spec 8.5. Both hold the full breakdown of the calculation, as the card shows it: [PDF] is the
+ * client's copy, laid out in pages, [XLSX] has the amounts as numbers. [extension] includes its dot.
+ */
 enum class ExportFormat(val title: String, val dialogTitle: String, val extension: String) {
     PDF("PDF для клиента", "Экспорт расчёта в PDF", ".pdf"),
     XLSX("Excel с разбивкой", "Экспорт расчёта в Excel", ".xlsx"),

@@ -327,7 +327,7 @@ class QuickCardTest {
     }
 
     @Test
-    fun `the client PDF of a simplified calculation holds the name and the price, with no run size, no total and no lines`() {
+    fun `the client PDF of a simplified calculation holds the name, the price and its two lines, with no run size and no total`() {
         val id = deps.saveQuickCalculated(quickGoldenInput("Лист на раскрой", quantity = 10))
         val target = temp.root.toPath().resolve("client.pdf")
         val model = list()
@@ -340,7 +340,8 @@ class QuickCardTest {
         assertTrue("Цена за единицу 5 400,00 ₽" in text, text)
         assertFalse("Тираж" in text, text)
         assertFalse("Итого" in text, text)
-        assertFalse("Резка" in text, text)
+        assertTrue("Материал 4 800,00 ₽" in text, text)
+        assertTrue("Резка (время) 600,00 ₽" in text, text)
         assertEquals("Лист на раскрой.pdf", model.suggestedFileName(id, ExportFormat.PDF))
     }
 

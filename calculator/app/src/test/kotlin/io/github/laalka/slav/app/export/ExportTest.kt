@@ -2,10 +2,15 @@ package io.github.laalka.slav.app.export
 
 import io.github.laalka.slav.app.Deps
 import io.github.laalka.slav.app.calculations.Breakdown
+import io.github.laalka.slav.app.calculations.BreakdownLine
+import io.github.laalka.slav.app.calculations.BreakdownPart
 import io.github.laalka.slav.app.calculations.breakdown
 import io.github.laalka.slav.app.calculations.goldenInput
+import io.github.laalka.slav.app.calculations.quickGoldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
+import io.github.laalka.slav.app.calculations.saveQuickCalculated
 import io.github.laalka.slav.app.ui.formatDate
+import io.github.laalka.slav.app.ui.formatMeasure
 import io.github.laalka.slav.core.ManualExtra
 import io.github.laalka.slav.core.Material
 import io.github.laalka.slav.core.Money
@@ -13,8 +18,11 @@ import io.github.laalka.slav.core.PartOperation
 import io.github.laalka.slav.core.SheetCutMode
 import io.github.laalka.slav.core.SheetShape
 import io.github.laalka.slav.data.AppPaths
+import io.github.laalka.slav.data.CalculationKind
+import io.github.laalka.slav.data.CalculationStatus
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
+import org.apache.pdfbox.text.TextPosition
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
@@ -60,22 +68,250 @@ class ExportTest {
 
     private fun pdfText(file: Path): String = Loader.loadPDF(file.toFile()).use { PDFTextStripper().getText(it) }
 
+    /** The text rows of the PDF, one per line, without blank lines; the spaces of the formatter normalised. */
+    private fun pdfLines(file: Path): List<String> =
+        pdfText(file).lines().map { it.replace('\u00a0', ' ').replace('\u202f', ' ').trim() }.filter { it.isNotEmpty() }
+
     @Test
     fun `the client PDF holds the Cyrillic name, the date, the run size, the unit price and the run total`() {
         val target = temp.root.toPath().resolve("client.pdf")
 
-        ExportFormat.PDF.write(golden(), "₽", target)
+        ExportFormat.PDF.write(golden("Рама сварная"), "₽", target)
 
         val text = pdfText(target)
-        assertTrue("Кронштейн" in text, text)
+        assertTrue("Рама сварная" in text, text)
         assertTrue("Дата: ${formatDate(LocalDate.now())}" in text, text)
+        assertTrue("Статус: Рассчитан" in text, text)
         assertTrue("Тираж 10 шт" in text, text)
         assertTrue("Цена за единицу 11 340,00 ₽" in text, text)
         assertTrue("Итого за тираж 113 400,00 ₽" in text, text)
-        // For the client: no breakdown lines, and nothing about a discount or a customer that is not there.
-        assertFalse("Гибка" in text, text)
+        assertTrue("Масса изделия 16 кг" in text, text)
+        assertTrue("Масса тиража 160 кг" in text, text)
+        // Nothing about a discount or a customer that is not there.
         assertFalse("Скидка" in text || "Сумма без скидки" in text, text)
         assertFalse("Контрагент" in text, text)
+    }
+
+    @Test
+    fun `the client PDF holds the whole breakdown of the card, every line with its amount`() {
+        val target = temp.root.toPath().resolve("breakdown.pdf")
+
+        ExportFormat.PDF.write(golden("Рама сварная"), "₽", target)
+
+        // The part is named «Кронштейн» and the calculation «Рама сварная», so the part name below is the part's own.
+        assertEquals(
+            listOf(
+                "Разбивка",
+                "Кронштейн",
+                "Масса: 16 кг",
+                "Материал: Лист Ст3, 2 мм, 1000 × 1000 мм 3 200,00 ₽",
+                "Лазер: рез листа 8 000,00 ₽",
+                "Гибка 100,00 ₽",
+                "Цена детали 11 300,00 ₽",
+                "Операции изделия",
+                "Сварка сборки (полуавтомат) 40,00 ₽",
+                // Without a discount the sum of the lines is the unit price: it is written once.
+                "Цена за единицу 11 340,00 ₽",
+                "Стр. 1 из 1",
+            ),
+            pdfLines(target).dropWhile { it != "Разбивка" },
+        )
+    }
+
+    /** The amounts of the breakdown lines of [lines], the text of a PDF: not the sums of the parts, the notes or the closing rows. */
+    private fun breakdownAmounts(lines: List<String>): List<BigDecimal> {
+        assertTrue("Разбивка" in lines, lines.toString())
+        val section = lines.dropWhile { it != "Разбивка" }.drop(1).takeWhile { !it.startsWith("Сумма без скидки") && !it.startsWith("Цена за единицу") }
+        val amount = Regex("""(\d[\d ]*,\d{2}) ₽$""")
+        return section
+            .filterNot { it.startsWith("Цена детали") || it.startsWith("в т. ч.") }
+            .mapNotNull { amount.find(it)?.groupValues?.get(1) }
+            .map { BigDecimal(it.replace(" ", "").replace(',', '.')) }
+    }
+
+    private fun assertLinesAddUp(lines: List<String>, breakdown: Breakdown) {
+        val amounts = breakdownAmounts(lines)
+        val lineCount = breakdown.parts.sumOf { it.lines.size } + breakdown.productLines.size
+        assertEquals(lineCount, amounts.size, "every line of the breakdown has its amount in the PDF:\n$lines")
+        assertEquals(0, amounts.fold(BigDecimal.ZERO, BigDecimal::add).compareTo(breakdown.subtotal.amount), "the amounts of the lines add up to ${breakdown.subtotal}: $amounts")
+    }
+
+    @Test
+    fun `the amounts of the breakdown lines in the PDF add up to the sum before the discount`() {
+        val input = goldenInput(quantity = 10).copy(discountPercent = BigDecimal("10"))
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(deps.saveCalculated(input))).breakdown(ZoneId.systemDefault()))
+        val target = temp.root.toPath().resolve("sum.pdf")
+
+        ExportFormat.PDF.write(breakdown, "₽", target)
+
+        assertLinesAddUp(pdfLines(target), breakdown)
+        assertEquals(0, breakdown.subtotal.compareTo(Money(BigDecimal("11340"))), "the sum before the 10 % discount is 11 340,00")
+    }
+
+    @Test
+    fun `a manual extra is written under its line with its comment, and with no dash when there is no comment`() {
+        val golden = goldenInput(quantity = 1)
+        val input = golden.copy(
+            parts = golden.parts.map { part ->
+                part.copy(
+                    materialExtra = ManualExtra(Money(BigDecimal("500")), "срочно"),
+                    operations = part.operations.map { if (it is PartOperation.Bending) it.copy(manualExtra = ManualExtra(Money(BigDecimal("100")), "  ")) else it },
+                )
+            },
+        )
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(deps.saveCalculated(input))).breakdown(ZoneId.systemDefault()))
+        val target = temp.root.toPath().resolve("extras.pdf")
+
+        ExportFormat.PDF.write(breakdown, "₽", target)
+
+        val lines = pdfLines(target)
+        val rows = lines.windowed(2)
+        assertTrue(listOf("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм 3 700,00 ₽", "в т. ч. доп. операции 500,00 ₽ — срочно") in rows, lines.toString())
+        assertTrue(listOf("Гибка 200,00 ₽", "в т. ч. доп. операции 100,00 ₽") in rows, "a blank comment leaves no dash:\n$lines")
+        assertLinesAddUp(lines, breakdown)
+    }
+
+    @Test
+    fun `the PDF of a simplified calculation holds its two lines and the mass, with no run size, no total and no caption of the product`() {
+        val id = deps.saveQuickCalculated(quickGoldenInput("Лист на раскрой", quantity = 10))
+        val breakdown = assertNotNull(assertNotNull(deps.calculations.get(id)).breakdown(ZoneId.systemDefault()))
+        val target = temp.root.toPath().resolve("quick.pdf")
+
+        ExportFormat.PDF.write(breakdown, "₽", target)
+
+        val lines = pdfLines(target)
+        assertTrue(lines.none { "ираж" in it }, "no «Тираж», «Итого за тираж», «Масса тиража»:\n$lines")
+        assertTrue("Операции изделия" !in lines, lines.toString())
+        assertEquals(
+            listOf(
+                "Разбивка",
+                "Материал 4 800,00 ₽",
+                "Резка (время) 600,00 ₽",
+                "Цена за единицу 5 400,00 ₽",
+                "Стр. 1 из 1",
+            ),
+            lines.dropWhile { it != "Разбивка" },
+        )
+        assertTrue("Масса изделия ${formatMeasure(breakdown.unitMassKg)} кг" in lines, lines.toString())
+        assertTrue("Статус: Рассчитан" in lines, lines.toString())
+        assertLinesAddUp(lines, breakdown)
+    }
+
+    @Test
+    fun `the archive PDF of a stored calculation holds the same breakdown`() {
+        val id = deps.saveCalculated(goldenInput("Рама сварная", quantity = 10))
+        val stored = assertNotNull(deps.calculations.get(id))
+        val bytes = assertNotNull(clientPdfBytes(stored, "₽", ZoneId.systemDefault()))
+
+        val text = Loader.loadPDF(bytes).use { PDFTextStripper().getText(it) }
+
+        assertTrue("Цена детали 11 300,00 ₽" in text, text)
+        assertTrue("Сварка сборки (полуавтомат) 40,00 ₽" in text, text)
+        assertTrue("Стр. 1 из 1" in text, text)
+    }
+
+    /** [count] parts of four lines each, one of them with the [longTitle]; the sums are the sums of the lines. */
+    private fun bigBreakdown(count: Int, longTitle: String): Breakdown {
+        val parts = (1..count).map { n ->
+            val lines = listOf(
+                BreakdownLine("Материал: Лист Ст3, 2 мм, 1000 × 1000 мм", null, Money(BigDecimal("3200.00"))),
+                BreakdownLine(if (n == 7) longTitle else "Лазер: рез листа", null, Money(BigDecimal("800.50"))),
+                BreakdownLine("Гибка", ManualExtra(Money(BigDecimal("20")), "по месту").takeIf { n % 5 == 0 }, Money(BigDecimal("100.00"))),
+                BreakdownLine("Сварка", null, Money(BigDecimal("40.25"))),
+            )
+            BreakdownPart("Деталь №%02d".format(n), BigDecimal("1.5"), lines, Money(lines.sumOf { it.cost.amount }))
+        }
+        val subtotal = Money(parts.sumOf { it.cost.amount })
+        return Breakdown(
+            name = "Большое изделие",
+            counterparty = "",
+            kind = CalculationKind.FULL,
+            status = CalculationStatus.CALCULATED,
+            quantity = 5,
+            snapshotDate = LocalDate.of(2026, 10, 30),
+            parts = parts,
+            productLines = emptyList(),
+            subtotal = subtotal,
+            discountPercent = null,
+            discount = Money.ZERO,
+            unitPrice = subtotal,
+            unitMassKg = BigDecimal("60"),
+        )
+    }
+
+    @Test
+    fun `a product of 40 parts goes on over several A4 pages, numbered, with every line whole and inside the margins`() {
+        val longTitle = "Лазерная резка контура с припуском под гибку и зачисткой кромок после реза, с проверкой размеров по чертежу перед отправкой на гибку и сварку " +
+            "в сборе с соседними деталями изделия"
+        assertTrue(longTitle.length > 150 && "  " !in longTitle)
+        val breakdown = bigBreakdown(40, longTitle)
+        val target = temp.root.toPath().resolve("big.pdf")
+
+        ExportFormat.PDF.write(breakdown, "₽", target)
+
+        val pages = Loader.loadPDF(target.toFile()).use { it.numberOfPages }
+        assertTrue(pages > 1, "40 parts do not fit one page")
+        val lines = pdfLines(target)
+        (1..40).forEach { n -> assertTrue("Деталь №%02d".format(n) in lines, "part $n is in the PDF") }
+        (1..pages).forEach { page -> assertTrue("Стр. $page из $pages" in lines, "page $page has its number:\n$lines") }
+        assertEquals(pages, lines.count { it.startsWith("Стр. ") }, "one number per page")
+        assertTrue("Стр. 1 из $pages" in lines && "Стр. $pages из $pages" in lines)
+
+        // The long title is wrapped inside the label column, its amount on the first line, and every word of it is kept.
+        val start = lines.indexOfFirst { it.startsWith(longTitle.take(24)) }
+        assertTrue(start >= 0, "the long title is in the PDF")
+        val wrapped = mutableListOf(lines[start].removeSuffix(" 800,50 ₽"))
+        assertTrue(lines[start].endsWith(" 800,50 ₽"), "the amount is on the first line of the label: ${lines[start]}")
+        while (wrapped.joinToString(" ").length < longTitle.length) wrapped += lines[start + wrapped.size]
+        assertTrue(wrapped.size > 1, "the title wraps")
+        assertEquals(longTitle, wrapped.joinToString(" "))
+
+        assertLinesAddUp(lines, breakdown)
+        assertEquals(40, lines.count { it.startsWith("Цена детали ") })
+
+        assertPagesAreTidy(target)
+    }
+
+    /**
+     * The rows of text of every page but the page numbers lie at least 50 pt from every edge, every page has its number
+     * in the bottom margin, and no two pieces of text on one row touch: a wrapped title stays clear of its amount.
+     */
+    private fun assertPagesAreTidy(file: Path) {
+        val edge = 50f
+        class Run(val page: Int, val text: String, val positions: List<TextPosition>)
+        val runs = mutableListOf<Run>()
+        val stripper = object : PDFTextStripper() {
+            override fun writeString(text: String, textPositions: MutableList<TextPosition>) {
+                runs += Run(currentPageNo, text, textPositions.toList())
+                super.writeString(text, textPositions)
+            }
+        }
+        Loader.loadPDF(file.toFile()).use { document ->
+            stripper.getText(document)
+            val box = document.getPage(0).mediaBox
+            val (numbers, body) = runs.partition { it.text.startsWith("Стр. ") }
+            assertTrue(body.isNotEmpty())
+            body.forEach { run ->
+                run.positions.forEach { position ->
+                    val where = "«${run.text}» on page ${run.page}"
+                    assertTrue(position.xDirAdj >= edge - 1f, "$where starts inside the left margin")
+                    assertTrue(position.xDirAdj + position.widthDirAdj <= box.width - edge + 1f, "$where ends inside the right margin")
+                    assertTrue(position.yDirAdj >= edge, "$where is below the top margin")
+                    assertTrue(position.yDirAdj <= box.height - edge, "$where is above the bottom margin, at ${box.height - position.yDirAdj} pt from the bottom")
+                }
+            }
+            numbers.forEach { run ->
+                run.positions.forEach { position ->
+                    assertTrue(position.yDirAdj <= box.height && position.yDirAdj > box.height - edge, "the number of page ${run.page} is in the bottom margin")
+                }
+            }
+            body.groupBy { it.page to Math.round(it.positions.first().yDirAdj) }.values.filter { it.size > 1 }.forEach { row ->
+                row.sortedBy { it.positions.first().xDirAdj }.zipWithNext().forEach { (left, right) ->
+                    val end = left.positions.last().let { it.xDirAdj + it.widthDirAdj }
+                    assertTrue(right.positions.first().xDirAdj - end >= 10f, "«${left.text}» and «${right.text}» on page ${left.page} do not touch")
+                }
+            }
+        }
     }
 
     @Test
@@ -219,6 +455,14 @@ class ExportTest {
         assertTrue("Скидка (10 %) −1 134,00 ₽" in text, text)
         assertTrue("Цена за единицу 10 206,00 ₽" in text, text)
         assertTrue("Итого за тираж 102 060,00 ₽" in text, text)
+        // The breakdown ends with the three rows that take the discount off the sum of its lines.
+        val lines = pdfLines(pdf)
+        assertEquals(
+            listOf("Сумма без скидки 11 340,00 ₽", "Скидка (10 %) −1 134,00 ₽", "Цена за единицу 10 206,00 ₽"),
+            lines.dropWhile { it != "Разбивка" }.dropLast(1).takeLast(3),
+        )
+        assertEquals("Стр. 1 из 1", lines.last())
+        assertLinesAddUp(lines, breakdown)
 
         val xlsx = temp.root.toPath().resolve("discount.xlsx")
         ExportFormat.XLSX.write(breakdown, "₽", xlsx)
