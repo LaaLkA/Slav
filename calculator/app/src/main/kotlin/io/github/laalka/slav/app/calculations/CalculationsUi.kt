@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.calculations
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -9,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
@@ -81,7 +83,13 @@ object CalculationTags {
 /** «упрощённый»: marks a simplified calculation next to its name, in the list and on its card. */
 @Composable
 fun QuickChip(modifier: Modifier = Modifier) {
-    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHighest, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier) {
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier,
+    ) {
         Text(
             QUICK_CHIP_TEXT,
             style = MaterialTheme.typography.labelMedium,
@@ -96,13 +104,13 @@ const val QUICK_CHIP_TEXT = "упрощённый"
 /** The status as a chip; the colour tells the stage apart at a glance in the list. */
 @Composable
 fun StatusChip(status: CalculationStatus, modifier: Modifier = Modifier) {
-    val scheme = MaterialTheme.colorScheme
+    val colors = MaterialTheme.extendedColors
     val (container: Color, content: Color) = when (status) {
-        CalculationStatus.DRAFT -> scheme.surfaceContainerHighest to scheme.onSurfaceVariant
-        CalculationStatus.CALCULATED -> scheme.primaryContainer to scheme.onPrimaryContainer
-        CalculationStatus.SENT -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        CalculationStatus.IN_WORK -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        CalculationStatus.ARCHIVED -> scheme.surfaceVariant to scheme.onSurfaceVariant
+        CalculationStatus.DRAFT -> colors.statusDraft.container to colors.statusDraft.content
+        CalculationStatus.CALCULATED -> colors.success to colors.onSuccess
+        CalculationStatus.SENT -> colors.statusSent.container to colors.statusSent.content
+        CalculationStatus.IN_WORK -> colors.statusInWork.container to colors.statusInWork.content
+        CalculationStatus.ARCHIVED -> colors.statusFinished.container to colors.statusFinished.content
     }
     Surface(shape = MaterialTheme.shapes.small, color = container, contentColor = content, modifier = modifier) {
         Text(

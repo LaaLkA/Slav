@@ -12,6 +12,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.laalka.slav.app.export.clientPdfBytes
 import io.github.laalka.slav.app.theme.SlavTheme
+import io.github.laalka.slav.app.ui.SlavLogoPainter
 import io.github.laalka.slav.data.AdminPassword
 import io.github.laalka.slav.data.AppPaths
 import io.github.laalka.slav.data.AttachmentRepository
@@ -79,6 +80,7 @@ fun main() {
                 }
             },
             title = "Slav — расчёт стоимости",
+            icon = SlavLogoPainter,
             state = rememberWindowState(size = DpSize(MIN_WIDTH.dp, MIN_HEIGHT.dp)),
         ) {
             LaunchedEffect(Unit) { window.minimumSize = Dimension(MIN_WIDTH, MIN_HEIGHT) }

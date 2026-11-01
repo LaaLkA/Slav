@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -53,12 +52,12 @@ fun PasswordDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(tags.confirm)) {
+            AccentTextButton(onClick = onConfirm, modifier = Modifier.testTag(tags.confirm)) {
                 Text(confirmLabel, color = confirmColor)
             }
         },
         dismissButton = {
-            TextButton(onClick = onCancel, modifier = Modifier.testTag(tags.cancel)) { Text("Отмена") }
+            AccentTextButton(onClick = onCancel, modifier = Modifier.testTag(tags.cancel)) { Text("Отмена") }
         },
     )
 }

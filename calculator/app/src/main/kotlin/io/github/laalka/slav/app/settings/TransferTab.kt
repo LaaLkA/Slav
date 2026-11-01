@@ -9,7 +9,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.HeaderText
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.NumberText
@@ -81,7 +81,7 @@ private fun PendingImportCard(pending: PendingImport, model: TransferModel) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
             Button(onClick = model::confirmImport) { Text("Применить") }
-            TextButton(onClick = model::cancelImport) { Text("Отмена") }
+            AccentTextButton(onClick = model::cancelImport) { Text("Отмена") }
         }
     }
 }

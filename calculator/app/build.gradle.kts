@@ -33,6 +33,19 @@ tasks.test {
     systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
 }
 
+// The icons of the installers are the logo, drawn by the generator of the test sources (IconGenerator.kt) and committed:
+// `./gradlew :app:generateIcons` redraws them after the logo changes, IconFilesTest fails when they are out of date.
+val iconsDir = layout.projectDirectory.dir("icons")
+
+tasks.register<JavaExec>("generateIcons") {
+    group = "build"
+    description = "Draws the logo into icons/Slav.ico, icons/Slav.icns and icons/Slav.png."
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass = "io.github.laalka.slav.app.icons.IconGeneratorKt"
+    args(iconsDir.asFile.absolutePath)
+    jvmArgs("-Djava.awt.headless=true")
+}
+
 compose.desktop {
     application {
         mainClass = "io.github.laalka.slav.app.MainKt"
@@ -51,9 +64,14 @@ compose.desktop {
                 upgradeUuid = "ac927098-2ae4-4dac-9c2d-a8dc800bc8fa"
                 menuGroup = "Slav"
                 perUserInstall = true
+                iconFile.set(iconsDir.file("Slav.ico"))
             }
             macOS {
                 bundleID = "io.github.laalka.slav"
+                iconFile.set(iconsDir.file("Slav.icns"))
+            }
+            linux {
+                iconFile.set(iconsDir.file("Slav.png"))
             }
         }
     }

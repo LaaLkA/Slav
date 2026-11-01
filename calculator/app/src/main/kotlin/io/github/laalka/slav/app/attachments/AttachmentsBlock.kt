@@ -16,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.SectionCard
 
@@ -89,8 +89,8 @@ private fun DrawingRow(tag: String, row: AttachmentRow, thumbnail: DrawingThumbn
                 modifier = Modifier.testTag("$tag/size"),
             )
         }
-        TextButton(onClick = { model.open(row.id) }, modifier = Modifier.testTag("$tag/open")) { Text("Открыть") }
-        TextButton(onClick = { model.remove(row.id) }, modifier = Modifier.testTag("$tag/remove")) {
+        AccentTextButton(onClick = { model.open(row.id) }, modifier = Modifier.testTag("$tag/open")) { Text("Открыть") }
+        AccentTextButton(onClick = { model.remove(row.id) }, modifier = Modifier.testTag("$tag/remove")) {
             Text("Удалить", color = MaterialTheme.colorScheme.error)
         }
     }
@@ -103,7 +103,7 @@ private fun Thumbnail(tag: String, thumbnail: DrawingThumbnail?, onOpen: () -> U
         modifier = Modifier
             .size(THUMBNAIL_SIZE)
             .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClickLabel = "Открыть", role = Role.Button, onClick = onOpen)
             .testTag(tag),
         contentAlignment = Alignment.Center,

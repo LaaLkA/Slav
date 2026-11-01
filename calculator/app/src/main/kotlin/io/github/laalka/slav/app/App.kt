@@ -2,17 +2,8 @@ package io.github.laalka.slav.app
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -26,6 +17,9 @@ import io.github.laalka.slav.app.editor.EditorScreen
 import io.github.laalka.slav.app.library.LibraryScreen
 import io.github.laalka.slav.app.quick.QuickEditorScreen
 import io.github.laalka.slav.app.settings.SettingsScreen
+import io.github.laalka.slav.app.ui.RailIcons
+import io.github.laalka.slav.app.ui.RailItem
+import io.github.laalka.slav.app.ui.SlavNavigationRail
 
 const val NAV_CALCULATIONS_TAG = "nav/calculations"
 const val NAV_LIBRARY_TAG = "nav/library"
@@ -39,30 +33,29 @@ fun App(deps: Deps, filePicker: FilePicker, navigator: Navigator = rememberNavig
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Row(modifier = Modifier.fillMaxSize()) {
-            NavigationRail {
-                NavigationRailItem(
+            SlavNavigationRail {
+                RailItem(
                     selected = page != Page.Library && page != Page.Settings,
                     onClick = navigator::selectCalculations,
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = null) },
-                    label = { Text("Расчёты") },
+                    icon = RailIcons.Calculations,
+                    label = "Расчёты",
                     modifier = Modifier.testTag(NAV_CALCULATIONS_TAG),
                 )
-                NavigationRailItem(
+                RailItem(
                     selected = page == Page.Library,
                     onClick = { navigator.navigate(Screen.Library) },
-                    icon = { Icon(Icons.Filled.Build, contentDescription = null) },
-                    label = { Text("Детали") },
+                    icon = RailIcons.Library,
+                    label = "Детали",
                     modifier = Modifier.testTag(NAV_LIBRARY_TAG),
                 )
-                NavigationRailItem(
+                RailItem(
                     selected = page == Page.Settings,
                     onClick = { navigator.navigate(Screen.Settings) },
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("Настройки") },
+                    icon = RailIcons.Settings,
+                    label = "Настройки",
                     modifier = Modifier.testTag(NAV_SETTINGS_TAG),
                 )
             }
-            VerticalDivider()
             when (val current = page) {
                 Page.Calculations -> CalculationsScreen(
                     navigator.calculationList,

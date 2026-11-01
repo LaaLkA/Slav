@@ -39,7 +39,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +60,9 @@ import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.export.ExportFormat
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.besideField
@@ -180,7 +181,7 @@ private fun SelectionBar(state: ListState, model: CalculationListModel, filePick
             enabled = checked > 0,
             modifier = Modifier.testTag(CalculationTags.ARCHIVE),
         ) { Text("В архив ($checked)") }
-        TextButton(onClick = model::stopSelecting, modifier = Modifier.testTag(CalculationTags.SELECT_CANCEL)) { Text("Отмена") }
+        AccentTextButton(onClick = model::stopSelecting, modifier = Modifier.testTag(CalculationTags.SELECT_CANCEL)) { Text("Отмена") }
     }
 }
 
@@ -256,7 +257,7 @@ private fun Filters(state: ListState, model: CalculationListModel) {
             error = state.toError,
         )
         if (state.hasFilters) {
-            TextButton(
+            AccentTextButton(
                 onClick = model::clearFilters,
                 modifier = Modifier.besideField().testTag(CalculationTags.CLEAR_FILTERS),
             ) { Text("Сбросить фильтры") }
@@ -360,14 +361,14 @@ private fun RowScope.SortHeader(column: ListColumn, state: ListState, model: Cal
         Text(
             column.title,
             style = MaterialTheme.typography.labelLarge,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (active) MaterialTheme.extendedColors.accentText else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
         if (active) {
             Icon(
                 if (state.sort.descending) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
                 contentDescription = if (state.sort.descending) "по убыванию" else "по возрастанию",
-                tint = MaterialTheme.colorScheme.primary,
+                tint = MaterialTheme.extendedColors.accentText,
                 modifier = Modifier.size(18.dp),
             )
         }

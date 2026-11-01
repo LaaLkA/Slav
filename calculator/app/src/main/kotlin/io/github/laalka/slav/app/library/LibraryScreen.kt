@@ -22,7 +22,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.InputField
 
 private val SEARCH_WIDTH = 320.dp
@@ -132,8 +132,8 @@ private fun TemplateRow(row: LibraryRow, tag: String, onRename: () -> Unit, onDe
                 modifier = Modifier.testTag("$tag/summary"),
             )
         }
-        TextButton(onClick = onRename, modifier = Modifier.testTag("$tag/rename")) { Text("Переименовать") }
-        TextButton(onClick = onDelete, modifier = Modifier.testTag("$tag/delete")) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+        AccentTextButton(onClick = onRename, modifier = Modifier.testTag("$tag/rename")) { Text("Переименовать") }
+        AccentTextButton(onClick = onDelete, modifier = Modifier.testTag("$tag/delete")) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -152,8 +152,8 @@ private fun RenameDialog(question: RenameQuestion, onChange: (String) -> Unit, o
                 onEnter = onConfirm,
             )
         },
-        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.testTag(LibraryTags.RENAME_CONFIRM)) { Text("Переименовать") } },
-        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.testTag(LibraryTags.RENAME_CANCEL)) { Text("Отмена") } },
+        confirmButton = { AccentTextButton(onClick = onConfirm, modifier = Modifier.testTag(LibraryTags.RENAME_CONFIRM)) { Text("Переименовать") } },
+        dismissButton = { AccentTextButton(onClick = onCancel, modifier = Modifier.testTag(LibraryTags.RENAME_CANCEL)) { Text("Отмена") } },
     )
 }
 
@@ -169,10 +169,10 @@ private fun DeleteDialog(name: String, onConfirm: () -> Unit, onCancel: () -> Un
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(LibraryTags.DELETE_CONFIRM)) {
+            AccentTextButton(onClick = onConfirm, modifier = Modifier.testTag(LibraryTags.DELETE_CONFIRM)) {
                 Text("Удалить", color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.testTag(LibraryTags.DELETE_CANCEL)) { Text("Отмена") } },
+        dismissButton = { AccentTextButton(onClick = onCancel, modifier = Modifier.testTag(LibraryTags.DELETE_CANCEL)) { Text("Отмена") } },
     )
 }

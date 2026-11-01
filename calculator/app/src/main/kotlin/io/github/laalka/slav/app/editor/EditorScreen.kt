@@ -31,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +50,7 @@ import io.github.laalka.slav.app.library.LibraryTags
 import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.FillRandomButton
@@ -135,12 +135,12 @@ fun DiscardEditsDialog(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
         title = { Text("Отменить изменения?") },
         text = { Text("Расчёт останется таким, каким он был: всё, что вы изменили, будет потеряно. Чертежи, прикреплённые при редактировании, остаются.") },
         confirmButton = {
-            TextButton(onClick = onDiscard, modifier = Modifier.testTag(EditorTags.LEAVE_CONFIRM)) {
+            AccentTextButton(onClick = onDiscard, modifier = Modifier.testTag(EditorTags.LEAVE_CONFIRM)) {
                 Text("Отменить изменения", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onKeepEditing, modifier = Modifier.testTag(EditorTags.LEAVE_STAY)) { Text("Продолжить редактирование") }
+            AccentTextButton(onClick = onKeepEditing, modifier = Modifier.testTag(EditorTags.LEAVE_STAY)) { Text("Продолжить редактирование") }
         },
     )
 }
@@ -180,11 +180,11 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
     SectionCard(part.title) {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
             TextInput(part.name, "Название детали", { model.onPartNameChange(part.id, it) }, Modifier.weight(1f))
-            TextButton(
+            AccentTextButton(
                 onClick = { model.copyPart(part.id) },
                 modifier = Modifier.besideField().testTag("${part.tag}/copy"),
             ) { Text("Копировать") }
-            TextButton(
+            AccentTextButton(
                 onClick = { model.library.requestSave(part.id) },
                 modifier = Modifier.besideField().testTag(LibraryTags.toLibrary(part.tag)),
             ) { Text("В библиотеку") }
@@ -372,7 +372,7 @@ private fun CountRows(line: LineRef, rows: List<CountRowView>, lengthLabel: Stri
 @Composable
 private fun RowsFooter(error: String?, addLabel: String, addTag: String, onAdd: () -> Unit) {
     error?.let { WarningPanel(it) }
-    TextButton(onClick = onAdd, modifier = Modifier.testTag(addTag)) {
+    AccentTextButton(onClick = onAdd, modifier = Modifier.testTag(addTag)) {
         Icon(Icons.Filled.Add, contentDescription = null)
         Text(addLabel, modifier = Modifier.padding(start = Spacing.small))
     }

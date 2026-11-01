@@ -23,7 +23,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
-import io.github.laalka.slav.data.AdminPassword
+import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.PasswordDialog
@@ -32,6 +32,7 @@ import io.github.laalka.slav.app.ui.RemovableChips
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.SegmentedChoice
 import io.github.laalka.slav.app.ui.TabContent
+import io.github.laalka.slav.data.AdminPassword
 
 // Wide enough for the longest label here, «Мин. площадь окраски детали, м²», which 240 dp cut off.
 private val FIELD_WIDTH = 288.dp
@@ -141,7 +142,7 @@ fun GeneralTab(model: GeneralModel) {
                     Text(
                         it,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.extendedColors.accentText,
                         modifier = Modifier.testTag(GeneralTags.PASSWORD_SUCCESS),
                     )
                 }
@@ -188,7 +189,7 @@ fun GeneralTab(model: GeneralModel) {
                         Text(
                             it,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.extendedColors.accentText,
                             modifier = Modifier.testTag(GeneralTags.DEVELOPER_NOTICE),
                         )
                     }
@@ -206,7 +207,7 @@ fun GeneralTab(model: GeneralModel) {
             onPasswordChange = model::onDeveloperPasswordChange,
             onConfirm = model::confirmDeveloperMode,
             onCancel = model::cancelDeveloperMode,
-            confirmColor = MaterialTheme.colorScheme.primary,
+            confirmColor = MaterialTheme.extendedColors.accentText,
         )
     }
     state.resetQuestion?.let { question ->

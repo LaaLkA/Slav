@@ -26,7 +26,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,13 +41,14 @@ import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.editor.CalcErrors
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.ArchiveIcon
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.app.ui.PasswordDialog
 import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.SectionCard
-import io.github.laalka.slav.app.ui.PasswordDialog
 
 private val SUMMARY_WIDTH = 400.dp
 private val STATUS_WIDTH = 200.dp
@@ -93,7 +93,7 @@ fun CardScreen(model: CardModel, filePicker: FilePicker, onBack: () -> Unit, onO
                         title = "Пересчёт не выполнен — в настройках не хватает данных",
                         modifier = Modifier.testTag(CalculationTags.CARD_RECALC_ERRORS),
                     )
-                    TextButton(onClick = model::dismissRecalcErrors) { Text("Скрыть") }
+                    AccentTextButton(onClick = model::dismissRecalcErrors) { Text("Скрыть") }
                 }
             }
         }
@@ -162,7 +162,7 @@ private fun Header(state: CardState, model: CardModel, onBack: () -> Unit, onOpe
             state.source?.let { source ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Создан на основе:", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { onOpenLink(source) }, modifier = Modifier.testTag(CalculationTags.CARD_SOURCE)) { Text(source.title) }
+                    AccentTextButton(onClick = { onOpenLink(source) }, modifier = Modifier.testTag(CalculationTags.CARD_SOURCE)) { Text(source.title) }
                 }
             }
         }
@@ -313,7 +313,7 @@ private fun Revisions(revisions: List<CardLink>, onOpenLink: (CardLink) -> Unit)
     SectionCard("Новые версии", modifier = Modifier.padding(top = Spacing.medium)) {
         revisions.forEachIndexed { index, revision ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                TextButton(onClick = { onOpenLink(revision) }, modifier = Modifier.testTag(CalculationTags.cardRevision(index))) { Text(revision.title) }
+                AccentTextButton(onClick = { onOpenLink(revision) }, modifier = Modifier.testTag(CalculationTags.cardRevision(index))) { Text(revision.title) }
                 revision.details?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
@@ -345,10 +345,10 @@ private fun QuantityDialogView(dialog: QuantityDialog, onChange: (String) -> Uni
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CONFIRM)) { Text("Создать новую версию") }
+            AccentTextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CONFIRM)) { Text("Создать новую версию") }
         },
         dismissButton = {
-            TextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CANCEL)) { Text("Отмена") }
+            AccentTextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_QUANTITY_CANCEL)) { Text("Отмена") }
         },
     )
 }
@@ -375,10 +375,10 @@ private fun RecalcDialog(preview: RecalcPreview, onConfirm: () -> Unit, onCancel
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CONFIRM)) { Text("Создать новую версию") }
+            AccentTextButton(onClick = onConfirm, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CONFIRM)) { Text("Создать новую версию") }
         },
         dismissButton = {
-            TextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CANCEL)) { Text("Отмена") }
+            AccentTextButton(onClick = onCancel, modifier = Modifier.testTag(CalculationTags.CARD_RECALC_CANCEL)) { Text("Отмена") }
         },
     )
 }

@@ -7,105 +7,222 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 
+// The palette of the design: slate neutrals and one accent, orange. Every value of the schemes below is one of these.
+private val Slate50 = Color(0xFFF8FAFC)
+private val Slate100 = Color(0xFFF1F5F9)
+private val Slate200 = Color(0xFFE2E8F0)
+private val Slate300 = Color(0xFFCBD5E1)
+private val Slate400 = Color(0xFF94A3B8)
+private val Slate600 = Color(0xFF475569)
+private val Slate700 = Color(0xFF334155)
+private val Slate800 = Color(0xFF1E293B)
+private val Slate900 = Color(0xFF0F172A)
+private val Slate950 = Color(0xFF020617)
+
+private val Orange100 = Color(0xFFFFEDD5)
+private val Orange300 = Color(0xFFFDBA74)
+private val Orange600 = Color(0xFFEA580C)
+private val Orange700 = Color(0xFFC2410C)
+private val Orange800 = Color(0xFF9A3412)
+
+private val Red300 = Color(0xFFFCA5A5)
+private val Red400 = Color(0xFFF87171)
+private val Red50 = Color(0xFFFEF2F2)
+private val Red700 = Color(0xFFB91C1C)
+private val Red900 = Color(0xFF7F1D1D)
+
+// Warnings of the editor (the `tertiary` role) are amber, the one hue besides orange and red.
+private val Amber100 = Color(0xFFFEF3C7)
+private val Amber200 = Color(0xFFFDE68A)
+private val Amber400 = Color(0xFFFBBF24)
+private val Amber700 = Color(0xFFB45309)
+private val Amber900 = Color(0xFF78350F)
+private val Amber950 = Color(0xFF422006)
+
+private val White = Color(0xFFFFFFFF)
+
 /**
- * Errors are the one colour that must not be missed, so both themes keep them saturated and well above
- * WCAG AA (4.5:1) for text on every surface a field or a message sits on. Measured with the WCAG
- * relative-luminance formula (the same one `ThemeContrastTest` computes):
- * light `error` #C62828 is 5.36:1 on `surface`, 5.09:1 on `surfaceContainerLow` (the cards) and 4.82:1 on
- * `surfaceContainer` (the bottom bar); dark `error` #FF5C5C is 6.14:1, 5.65:1 and 5.40:1 on the same.
- * `onError` on `error` is 5.62:1 (light) and 5.27:1 (dark).
+ * The light scheme. The page is `background`, a card `surface`, and a card holds a `surfaceVariant` track or
+ * field; everything that floats (a menu, a dialog, the bar of the editor) is the white of a card, and only
+ * `surfaceContainerHighest`, the fill of a badge, steps down to the track. Its text colours are checked against
+ * the surfaces they sit on by `ThemeContrastTest`. `surfaceTint` is the surface itself: the tonal elevation
+ * of Material then changes nothing, where the default would tint every raised surface orange.
  */
 internal val LightColors = lightColorScheme(
-    primary = Color(0xFF415F91),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFD6E3FF),
-    onPrimaryContainer = Color(0xFF284777),
-    secondary = Color(0xFF565F71),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFDAE2F9),
-    onSecondaryContainer = Color(0xFF3E4759),
-    tertiary = Color(0xFF705575),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFFAD8FD),
-    onTertiaryContainer = Color(0xFF573E5C),
-    error = Color(0xFFC62828),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF93000A),
-    background = Color(0xFFF9F9FF),
-    onBackground = Color(0xFF191C20),
-    surface = Color(0xFFF9F9FF),
-    onSurface = Color(0xFF191C20),
-    surfaceVariant = Color(0xFFE0E2EC),
-    onSurfaceVariant = Color(0xFF44474E),
-    outline = Color(0xFF74777F),
-    outlineVariant = Color(0xFFC4C6D0),
-    scrim = Color(0xFF000000),
-    inverseSurface = Color(0xFF2E3036),
-    inverseOnSurface = Color(0xFFF0F0F7),
-    inversePrimary = Color(0xFFAAC7FF),
-    surfaceDim = Color(0xFFD9D9E0),
-    surfaceBright = Color(0xFFF9F9FF),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF3F3FA),
-    surfaceContainer = Color(0xFFEDEDF4),
-    surfaceContainerHigh = Color(0xFFE7E8EE),
-    surfaceContainerHighest = Color(0xFFE2E2E9),
+    primary = Orange700,
+    onPrimary = White,
+    primaryContainer = Orange100,
+    onPrimaryContainer = Orange800,
+    secondary = Slate600,
+    onSecondary = White,
+    secondaryContainer = Slate200,
+    onSecondaryContainer = Slate900,
+    tertiary = Amber700,
+    onTertiary = White,
+    tertiaryContainer = Amber100,
+    onTertiaryContainer = Amber900,
+    error = Red700,
+    onError = White,
+    errorContainer = Red50,
+    onErrorContainer = Red900,
+    background = Slate50,
+    onBackground = Slate900,
+    surface = White,
+    onSurface = Slate900,
+    surfaceVariant = Slate100,
+    onSurfaceVariant = Slate600,
+    outline = Slate300,
+    outlineVariant = Slate200,
+    scrim = Slate950,
+    inverseSurface = Slate900,
+    inverseOnSurface = Slate100,
+    inversePrimary = Orange300,
+    surfaceTint = White,
+    surfaceDim = Slate200,
+    surfaceBright = White,
+    surfaceContainerLowest = White,
+    surfaceContainerLow = White,
+    surfaceContainer = White,
+    surfaceContainerHigh = White,
+    surfaceContainerHighest = Slate100,
 )
 
-/** The dark counterpart of [LightColors]; the contrast of its error colour is stated there. */
+/**
+ * The dark scheme. The page is `background`, a card `surface`, and a card holds a `surfaceVariant` track or
+ * field, which is the colour of the page. The containers step from the page (`Lowest`) through the card (`Low`)
+ * up to `Highest`, the border colour: lighter is higher, as in every dark theme of Material. `primary` is the
+ * fill of a button with dark text on it; orange as a text colour is [ExtendedColors.accentText], because the fill
+ * is not bright enough to be read on a card.
+ */
 internal val DarkColors = darkColorScheme(
-    primary = Color(0xFFAAC7FF),
-    onPrimary = Color(0xFF0A305F),
-    primaryContainer = Color(0xFF284777),
-    onPrimaryContainer = Color(0xFFD6E3FF),
-    secondary = Color(0xFFBEC6DC),
-    onSecondary = Color(0xFF283141),
-    secondaryContainer = Color(0xFF3E4759),
-    onSecondaryContainer = Color(0xFFDAE2F9),
-    tertiary = Color(0xFFDDBCE0),
-    onTertiary = Color(0xFF3F2844),
-    tertiaryContainer = Color(0xFF573E5C),
-    onTertiaryContainer = Color(0xFFFAD8FD),
-    error = Color(0xFFFF5C5C),
-    onError = Color(0xFF4D0003),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF111318),
-    onBackground = Color(0xFFE2E2E9),
-    surface = Color(0xFF111318),
-    onSurface = Color(0xFFE2E2E9),
-    surfaceVariant = Color(0xFF44474E),
-    onSurfaceVariant = Color(0xFFC4C6D0),
-    outline = Color(0xFF8E9099),
-    outlineVariant = Color(0xFF44474E),
-    scrim = Color(0xFF000000),
-    inverseSurface = Color(0xFFE2E2E9),
-    inverseOnSurface = Color(0xFF2E3036),
-    inversePrimary = Color(0xFF415F91),
-    surfaceDim = Color(0xFF111318),
-    surfaceBright = Color(0xFF37393E),
-    surfaceContainerLowest = Color(0xFF0C0E13),
-    surfaceContainerLow = Color(0xFF191C20),
-    surfaceContainer = Color(0xFF1D2024),
-    surfaceContainerHigh = Color(0xFF282A2F),
-    surfaceContainerHighest = Color(0xFF33353A),
+    primary = Orange600,
+    onPrimary = Slate900,
+    primaryContainer = Color(0x29FB923C),
+    onPrimaryContainer = Orange300,
+    secondary = Slate400,
+    onSecondary = Slate900,
+    secondaryContainer = Slate700,
+    onSecondaryContainer = Slate100,
+    tertiary = Amber400,
+    onTertiary = Slate900,
+    tertiaryContainer = Amber950,
+    onTertiaryContainer = Amber200,
+    error = Red400,
+    onError = Slate900,
+    errorContainer = Color(0x1FF87171),
+    onErrorContainer = Red300,
+    background = Slate900,
+    onBackground = Slate100,
+    surface = Slate800,
+    onSurface = Slate100,
+    surfaceVariant = Slate900,
+    onSurfaceVariant = Slate400,
+    outline = Slate600,
+    outlineVariant = Slate700,
+    scrim = Slate950,
+    inverseSurface = Slate100,
+    inverseOnSurface = Slate900,
+    inversePrimary = Orange700,
+    surfaceTint = Slate800,
+    surfaceDim = Slate950,
+    surfaceBright = Slate700,
+    surfaceContainerLowest = Slate900,
+    surfaceContainerLow = Slate800,
+    surfaceContainer = Color(0xFF253144),
+    surfaceContainerHigh = Color(0xFF2C394C),
+    surfaceContainerHighest = Slate700,
 )
 
-// Cards take `medium` (12 dp) and the settings sections `large` (16 dp).
-private val SlavShapes = Shapes(
+/** A pair of colours for something with text on a fill: a chip, a banner. A translucent [container] is read over the surface it lies on. */
+@Immutable
+class FilledColors(val container: Color, val content: Color)
+
+/**
+ * What Material3 has no role for. [success] is the fill of a success chip or note and [onSuccess] its text, the
+ * way `error` and `onError` are a pair; the status chips of the list and of the card are the same kind of pair
+ * ([success] is the one of «Рассчитан»). The rail is the dark strip of navigation: it stays dark in the light
+ * theme, and the selected item is tinted with the accent. [accentText] is the colour of links and of accented
+ * text, which [ColorScheme.primary] is not in the dark theme; [errorText] is the colour of an error message,
+ * lighter than [ColorScheme.error] in the dark theme, where `error` is the outline of a field.
+ */
+@Immutable
+class ExtendedColors(
+    val success: Color,
+    val onSuccess: Color,
+    val statusDraft: FilledColors,
+    val statusSent: FilledColors,
+    val statusInWork: FilledColors,
+    val statusFinished: FilledColors,
+    val rail: Color,
+    val railBorder: Color,
+    val onRail: Color,
+    val railSelected: Color,
+    val onRailSelected: Color,
+    val accentText: Color,
+    val errorText: Color,
+)
+
+internal val LightExtendedColors = ExtendedColors(
+    success = Color(0xFFDCFCE7),
+    onSuccess = Color(0xFF166534),
+    statusDraft = FilledColors(Slate100, Slate600),
+    statusSent = FilledColors(Color(0xFFDBEAFE), Color(0xFF1E40AF)),
+    statusInWork = FilledColors(Orange100, Orange800),
+    statusFinished = FilledColors(Slate200, Slate700),
+    rail = Slate900,
+    railBorder = Color.Transparent,
+    onRail = Slate400,
+    railSelected = Color(0x29EA580C),
+    onRailSelected = Orange300,
+    accentText = Orange700,
+    errorText = Red700,
+)
+
+internal val DarkExtendedColors = ExtendedColors(
+    success = Color(0x2922C55E),
+    onSuccess = Color(0xFF86EFAC),
+    statusDraft = FilledColors(Color(0x2994A3B8), Slate300),
+    statusSent = FilledColors(Color(0x2960A5FA), Color(0xFF93C5FD)),
+    statusInWork = FilledColors(Color(0x29FB923C), Orange300),
+    statusFinished = FilledColors(Color(0x3D94A3B8), Slate200),
+    rail = Slate950,
+    railBorder = Slate800,
+    onRail = Slate400,
+    railSelected = Color(0x29FB923C),
+    onRailSelected = Orange300,
+    accentText = Orange300,
+    errorText = Red300,
+)
+
+private val LocalExtendedColors = staticCompositionLocalOf<ExtendedColors> { error("SlavTheme is not installed") }
+
+/** The colours of the theme that Material has no role for. */
+val MaterialTheme.extendedColors: ExtendedColors
+    @Composable
+    @ReadOnlyComposable
+    get() = LocalExtendedColors.current
+
+// Material's slots, named for what they carry: a badge 6 dp, a segment of a segmented control 8, a field, a button
+// and a message 10, a card 14, a dialog 16.
+internal val SlavShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(16.dp),
 )
 
 /** Every gap and padding is a multiple of 8 dp. */
@@ -138,7 +255,13 @@ fun SlavTheme(
     content: @Composable () -> Unit,
 ) {
     val colors = if (darkTheme) DarkColors else LightColors
-    MaterialTheme(colorScheme = colors, shapes = SlavShapes) {
-        CompositionLocalProvider(LocalScrollbarStyle provides scrollbarStyle(colors), content = content)
+    MaterialTheme(colorScheme = colors, typography = SlavTypography, shapes = SlavShapes) {
+        CompositionLocalProvider(
+            LocalExtendedColors provides if (darkTheme) DarkExtendedColors else LightExtendedColors,
+            LocalScrollbarStyle provides scrollbarStyle(colors),
+        ) {
+            // Text with no style of its own is the body: 14 sp, not Material's 16.
+            ProvideTextStyle(SlavTypography.bodyMedium, content)
+        }
     }
 }

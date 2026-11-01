@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
 
@@ -81,18 +81,18 @@ private fun SaveDialog(dialog: SavePartDialog, model: EditorLibraryModel) {
         },
         confirmButton = {
             if (existing == null) {
-                TextButton(onClick = model::confirmSave, modifier = Modifier.testTag(LibraryTags.SAVE_CONFIRM)) { Text("Сохранить") }
+                AccentTextButton(onClick = model::confirmSave, modifier = Modifier.testTag(LibraryTags.SAVE_CONFIRM)) { Text("Сохранить") }
             } else {
-                TextButton(onClick = model::confirmReplace, modifier = Modifier.testTag(LibraryTags.REPLACE_CONFIRM)) {
+                AccentTextButton(onClick = model::confirmReplace, modifier = Modifier.testTag(LibraryTags.REPLACE_CONFIRM)) {
                     Text("Заменить", color = MaterialTheme.colorScheme.error)
                 }
             }
         },
         dismissButton = {
             if (existing == null) {
-                TextButton(onClick = model::cancelSave, modifier = Modifier.testTag(LibraryTags.SAVE_CANCEL)) { Text("Отмена") }
+                AccentTextButton(onClick = model::cancelSave, modifier = Modifier.testTag(LibraryTags.SAVE_CANCEL)) { Text("Отмена") }
             } else {
-                TextButton(onClick = model::backToName, modifier = Modifier.testTag(LibraryTags.REPLACE_BACK)) { Text("Назад") }
+                AccentTextButton(onClick = model::backToName, modifier = Modifier.testTag(LibraryTags.REPLACE_BACK)) { Text("Назад") }
             }
         },
     )
@@ -134,7 +134,7 @@ private fun PickDialog(dialog: PickPartDialog, model: EditorLibraryModel) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = model::closePick, modifier = Modifier.testTag(LibraryTags.PICK_CLOSE)) { Text("Закрыть") } },
+        confirmButton = { AccentTextButton(onClick = model::closePick, modifier = Modifier.testTag(LibraryTags.PICK_CLOSE)) { Text("Закрыть") } },
     )
 }
 

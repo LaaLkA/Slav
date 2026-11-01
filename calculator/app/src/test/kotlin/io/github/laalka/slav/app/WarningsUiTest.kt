@@ -3,8 +3,8 @@ package io.github.laalka.slav.app
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toAwtImage
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -77,12 +77,14 @@ class WarningsUiTest {
         Deps(AppPaths(temp.root.toPath()), appVersion = "test").use { deps ->
             openNewEditor(deps, dark)
 
-            // The bottom message is a panel: its container is the error container, edge to edge of the text.
+            // The bottom message is a panel: its container is the error container, edge to edge of the text. The container
+            // of the dark theme is translucent, so what is seen is the container over the bar the panel lies on.
             val message = node(EditorTags.MISSING).captureToImage()
-            assertEquals(
-                scheme.errorContainer.toArgb(),
-                message.toPixelMap()[4, message.height / 2].toArgb(),
-                "the panel of «Заполните выделенные поля» is not on the error container",
+            val expected = scheme.errorContainer.compositeOver(scheme.surfaceContainer)
+            val actual = message.toPixelMap()[4, message.height / 2]
+            assertTrue(
+                abs(expected.red - actual.red) < 0.01f && abs(expected.green - actual.green) < 0.01f && abs(expected.blue - actual.blue) < 0.01f,
+                "the panel of «Заполните выделенные поля» is $actual, not on the error container ($expected)",
             )
 
             // The outline of a field in error is 2 dp, unfocused as well.
