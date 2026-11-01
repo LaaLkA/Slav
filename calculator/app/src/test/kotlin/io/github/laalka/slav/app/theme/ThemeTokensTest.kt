@@ -90,6 +90,7 @@ class ThemeTokensTest {
         assertToken(token("#FFFFFF"), light.buttonFill, "light secondary button: white")
         assertToken(token("#FECACA"), light.errorBorder, "light line of a destructive button and an alert")
         assertToken(token("#0F172A", alpha = 0.12), light.raisedShadow, "light shadow under the chosen segment")
+        assertToken(token("#E2E8F0"), light.headerBorder, "light line under the title bar of an editor and of a card")
 
         val dark = DarkExtendedColors
         assertToken(token("#86EFAC"), dark.onSuccess, "dark success text")
@@ -103,6 +104,7 @@ class ThemeTokensTest {
         assertEquals(0f, dark.buttonFill.alpha, "dark secondary button: nothing, the card or the page shows through")
         assertToken(token("#F87171", alpha = 0.5), dark.errorBorder, "dark line of a destructive button and an alert")
         assertEquals(0f, dark.raisedShadow.alpha, "dark: the chosen segment is lifted by its colour, not by a shadow")
+        assertToken(token("#1E293B"), dark.headerBorder, "dark line under the title bar: the colour of the card, as the mockups draw it")
         // The dark chips: the hue of the light one at 16 % on the surface, with its light tint as text.
         listOf(dark.statusDraft, dark.statusSent, dark.statusInWork).forEach { chip ->
             assertEquals(0.16f, chip.container.alpha, 0.01f, "a dark chip is the hue at 16 %")
@@ -120,9 +122,11 @@ class ThemeTokensTest {
     }
 
     @Test
-    fun `the cards are drawn with 20 dp of padding and 12 dp between their blocks`() {
+    fun `the cards are drawn with 20 dp of padding and 12 dp between their blocks, and a page has 28 to 32 dp at its sides`() {
         assertEquals(20f, Spacing.card.value)
         assertEquals(12f, Spacing.gap.value)
+        assertEquals(32f, Spacing.page.value, "the list, the library and the settings")
+        assertEquals(28f, Spacing.pageTight.value, "an editor and a card, which have a title bar")
     }
 
     @Test
@@ -134,5 +138,6 @@ class ThemeTokensTest {
         assertEquals(10f, radius(SlavShapes.medium), "fields and buttons")
         assertEquals(8f, radius(SlavShapes.small), "the segments")
         assertEquals(6f, radius(SlavShapes.extraSmall), "badges")
+        assertEquals(16f, radius(SlavShapes.extraLarge), "dialogs")
     }
 }

@@ -7,7 +7,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
@@ -19,6 +21,7 @@ object CalculationTags {
     const val PERIOD_TO = "calculations/period-to"
     const val CLEAR_FILTERS = "calculations/clear-filters"
     const val EMPTY = "calculations/empty"
+    const val COUNT = "calculations/count"
     const val NO_MATCHES = "calculations/no-matches"
     const val MESSAGE = "calculations/message"
     const val DELETE_CONFIRM = "calculations/delete/confirm"
@@ -63,7 +66,13 @@ object CalculationTags {
     const val CARD_RECALC_ERRORS = "card/recalc/errors"
     const val CARD_BACK = "card/back"
 
+    /** The «Все» pill of the list, which clears the status filter. */
+    const val STATUS_ALL = "calculations/status/all"
+
     fun status(status: CalculationStatus) = "calculations/status/${status.name}"
+
+    /** The export button of the card for [format]. */
+    fun cardExport(format: io.github.laalka.slav.app.export.ExportFormat) = "card/export/${format.name}"
 
     /** The item of the «Новый расчёт» menu that starts a calculation of [kind]. */
     fun newOf(kind: CalculationKind) = "calculations/new/${kind.name}"
@@ -77,11 +86,11 @@ object CalculationTags {
     fun row(index: Int) = "calculations/row/$index"
 }
 
-/** «упрощённый»: marks a simplified calculation next to its name, in the list and on its card. */
+/** «упрощённый»: marks a simplified calculation next to its name, in the list and on its card: 11 sp semibold on the track colour. */
 @Composable
 fun QuickChip(modifier: Modifier = Modifier) {
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.extraSmall,
         color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -89,9 +98,9 @@ fun QuickChip(modifier: Modifier = Modifier) {
     ) {
         Text(
             QUICK_CHIP_TEXT,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold),
             maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
         )
     }
 }

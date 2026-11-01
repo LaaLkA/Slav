@@ -116,6 +116,12 @@ class CalculationListModel(
         refresh()
     }
 
+    /** «Все»: no status is chosen, which shows every status. */
+    fun showAllStatuses() {
+        statuses = emptySet()
+        refresh()
+    }
+
     /** The first day of the period, «дд.мм.гггг»; empty leaves the period open. */
     fun onFromChange(text: String) {
         fromText = text

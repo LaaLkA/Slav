@@ -282,4 +282,22 @@ class CalculationListModelTest {
         assertTrue(message.isError)
         assertTrue(message.text.startsWith("Не удалось сохранить файл"))
     }
+
+    @Test
+    fun `showAllStatuses lets go of the chosen statuses and nothing else`() {
+        stored()
+        val list = model()
+        list.onQueryChange("Кронштейн")
+        list.toggleStatus(CalculationStatus.SENT)
+        list.toggleStatus(CalculationStatus.IN_WORK)
+        assertEquals(setOf(CalculationStatus.SENT, CalculationStatus.IN_WORK), list.state.value.statuses)
+
+        list.showAllStatuses()
+
+        assertEquals(emptySet(), list.state.value.statuses)
+        assertEquals("Кронштейн", list.state.value.query, "the search is kept")
+        assertTrue(list.state.value.hasFilters, "and it is still a filter")
+        list.showAllStatuses()
+        assertEquals(emptySet(), list.state.value.statuses, "with none chosen it changes nothing")
+    }
 }

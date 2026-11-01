@@ -35,7 +35,8 @@ private const val ICON_SIZE = 22
 private const val VIEWPORT = 24f
 private const val LINE = 2f
 
-private fun lineIcon(name: String, path: String): ImageVector =
+/** A 24-unit icon drawn as a 2-unit line with round ends: the way every icon of the mockups is drawn. */
+internal fun lineIcon(name: String, path: String): ImageVector =
     ImageVector.Builder(name, ICON_SIZE.dp, ICON_SIZE.dp, VIEWPORT, VIEWPORT).addPath(
         pathData = addPathNodes(path),
         stroke = SolidColor(Color.Black),

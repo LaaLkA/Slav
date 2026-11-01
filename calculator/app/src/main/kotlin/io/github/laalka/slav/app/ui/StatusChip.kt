@@ -1,6 +1,7 @@
 package io.github.laalka.slav.app.ui
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
@@ -10,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,18 +35,27 @@ fun statusColors(status: CalculationStatus): FilledColors {
     }
 }
 
-/** The status as a chip: 26 dp high, fully rounded, 12 sp semibold, in the colours of its stage. */
+/**
+ * The status as a chip: 26 dp high, fully rounded, 12 sp semibold, in the colours of its stage. A chip that opens a
+ * menu says so with a [trailing] mark after its text.
+ */
 @Composable
-fun StatusChip(status: CalculationStatus, modifier: Modifier = Modifier) {
+fun StatusChip(status: CalculationStatus, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
     val colors = statusColors(status)
-    Surface(shape = CircleShape, color = colors.container, contentColor = colors.content, modifier = modifier) {
-        Box(Modifier.height(CHIP_HEIGHT).padding(horizontal = CHIP_PADDING), contentAlignment = Alignment.Center) {
+    // One node that says its status, whether or not it is a menu.
+    Surface(shape = CircleShape, color = colors.container, contentColor = colors.content, modifier = modifier.semantics(mergeDescendants = true) {}) {
+        Row(
+            modifier = Modifier.height(CHIP_HEIGHT).padding(horizontal = CHIP_PADDING),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
                 status.title,
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            trailing?.invoke()
         }
     }
 }

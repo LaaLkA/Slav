@@ -14,7 +14,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.calculations.WRONG_PASSWORD
 import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
@@ -72,7 +71,7 @@ class DeveloperTablesUiTest {
     }
 
     @Test
-    fun `the buttons are absent with developer mode off, appear in its card under the switch when it is switched on, and go when it is switched off`() {
+    fun `the buttons are absent with developer mode off, appear in its card under its title when it is switched on, and go when it is switched off`() {
         deps(developerMode = false).use { deps ->
             open(deps)
             openTab(SettingsTab.GENERAL)
@@ -93,8 +92,9 @@ class DeveloperTablesUiTest {
             val switch = node(GeneralTags.DEVELOPER_SWITCH).getBoundsInRoot()
             val fill = node(GeneralTags.FILL_TABLES).getBoundsInRoot()
             val reset = node(GeneralTags.RESET_TABLES).getBoundsInRoot()
+            // The switch stands at the right end of the title of the card, the buttons are under that line, from the card's left edge.
             assertTrue(fill.top >= switch.bottom, "the fill button is above the switch: $fill, $switch")
-            assertTrue(fill.top - switch.bottom < 32.dp, "the fill button is not right under the switch: $fill, $switch")
+            assertTrue(fill.left < switch.left, "the fill button is not at the left of the switch, which is at the right end of the title: $fill, $switch")
             assertEquals(fill.top, reset.top, "the two buttons are in one row")
             assertTrue(reset.left >= fill.right, "the reset button is not next to the fill button: $fill, $reset")
 

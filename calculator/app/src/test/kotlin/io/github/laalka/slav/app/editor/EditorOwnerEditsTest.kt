@@ -5,6 +5,7 @@ import io.github.laalka.slav.app.InterferingClock
 import io.github.laalka.slav.app.RecordingOpener
 import io.github.laalka.slav.app.calculations.DiscountLines
 import io.github.laalka.slav.app.calculations.PriceSummary
+import io.github.laalka.slav.app.calculations.SummaryLine
 import io.github.laalka.slav.app.calculations.goldenInput
 import io.github.laalka.slav.app.calculations.saveCalculated
 import io.github.laalka.slav.app.calculations.setSt3TwoMillimetrePrice
@@ -147,11 +148,18 @@ class EditorOwnerEditsTest {
         val editor = golden()
         editor.onQuantityChange("10")
 
-        assertEquals(PriceSummary(discount = null, unitPrice = "11 340,00 ₽", total = "113 400,00 ₽"), editor.state.value.summary)
+        // The lines are what the sum before the discount is made of: 3 200 + 8 000 + 100 + 40 = 11 340.
+        val lines = listOf(
+            SummaryLine("Материал", "3 200,00 ₽"),
+            SummaryLine("Лазер: рез листа", "8 000,00 ₽"),
+            SummaryLine("Гибка", "100,00 ₽"),
+            SummaryLine("Сварка сборки (полуавтомат)", "40,00 ₽"),
+        )
+        assertEquals(PriceSummary(discount = null, unitPrice = "11 340,00 ₽", total = "113 400,00 ₽", lines = lines), editor.state.value.summary)
 
         editor.onDiscountChange("10")
         assertEquals(
-            PriceSummary(DiscountLines("11 340,00 ₽", "Скидка (10 %)", "−1 134,00 ₽"), "10 206,00 ₽", "102 060,00 ₽"),
+            PriceSummary(DiscountLines("11 340,00 ₽", "Скидка (10 %)", "−1 134,00 ₽"), "10 206,00 ₽", "102 060,00 ₽", lines),
             editor.state.value.summary,
         )
 
@@ -160,6 +168,25 @@ class EditorOwnerEditsTest {
         val saved = stored(calculated.single())
         assertEquals(0, BigDecimal("10206.00").compareTo(assertNotNull(saved.unitPrice).amount))
         assertEquals(0, BigDecimal("1134.00").compareTo(assertNotNull(saved.result).discount.amount))
+    }
+
+    @Test
+    fun `the lines of the price are summed over the parts, a kind of operation being one line`() = runTest {
+        val editor = golden()
+        editor.copyPart(editor.state.value.parts.single().id)
+
+        val summary = assertNotNull(editor.state.value.summary)
+        assertEquals(2, editor.state.value.parts.size)
+        // Two equal parts: every line of one part twice, the operation of the product once.
+        assertEquals(
+            listOf(
+                SummaryLine("Материал", "6 400,00 ₽"),
+                SummaryLine("Лазер: рез листа", "16 000,00 ₽"),
+                SummaryLine("Гибка", "200,00 ₽"),
+                SummaryLine("Сварка сборки (полуавтомат)", "40,00 ₽"),
+            ),
+            summary.lines,
+        )
     }
 
     @Test

@@ -5,6 +5,7 @@ import io.github.laalka.slav.app.InterferingClock
 import io.github.laalka.slav.app.RecordingOpener
 import io.github.laalka.slav.app.calculations.DiscountLines
 import io.github.laalka.slav.app.calculations.PriceSummary
+import io.github.laalka.slav.app.calculations.SummaryLine
 import io.github.laalka.slav.app.calculations.quickGoldenInput
 import io.github.laalka.slav.app.calculations.saveQuickCalculated
 import io.github.laalka.slav.app.calculations.updateSettings
@@ -142,11 +143,13 @@ class QuickOwnerEditsTest {
         assertNull(editor.state.value.summary, "an empty editor")
         editor.fillQuickGoldenCase()
 
-        assertEquals(PriceSummary(discount = null, unitPrice = "5 400,00 ₽", total = null), editor.state.value.summary)
+        // The sheet and the laser time are what the sum before the discount is made of: 4 800 + 600 = 5 400.
+        val lines = listOf(SummaryLine("Материал", "4 800,00 ₽"), SummaryLine("Резка (время)", "600,00 ₽"))
+        assertEquals(PriceSummary(discount = null, unitPrice = "5 400,00 ₽", total = null, lines = lines), editor.state.value.summary)
 
         editor.onDiscountChange("10")
         assertEquals(
-            PriceSummary(DiscountLines("5 400,00 ₽", "Скидка (10 %)", "−540,00 ₽"), "4 860,00 ₽", total = null),
+            PriceSummary(DiscountLines("5 400,00 ₽", "Скидка (10 %)", "−540,00 ₽"), "4 860,00 ₽", total = null, lines = lines),
             editor.state.value.summary,
         )
 

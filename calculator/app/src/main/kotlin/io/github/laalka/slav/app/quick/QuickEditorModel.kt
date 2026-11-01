@@ -4,6 +4,7 @@ import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.calculations.priceSummary
+import io.github.laalka.slav.app.calculations.summaryLines
 import io.github.laalka.slav.app.developer.RandomCalculation
 import io.github.laalka.slav.app.editor.CalculationEditor
 import io.github.laalka.slav.app.editor.EditorModel
@@ -280,7 +281,11 @@ class QuickEditorModel(
         val prices = snapshot ?: book
         val result = (QuickCalculator(prices).calculate(read.input) as? QuickOutcome.Ok)?.result ?: return null
         // A simplified calculation is one piece: its price is its total, so there is no run total to show.
-        return priceSummary(result.subtotal, result.discountPercent, result.discount, result.unitPrice, quantity = null, prices.general.currencySymbol)
+        val currency = prices.general.currencySymbol
+        return priceSummary(
+            result.subtotal, result.discountPercent, result.discount, result.unitPrice, quantity = null, currency,
+            lines = result.summaryLines(currency),
+        )
     }
 
     private fun refresh() {

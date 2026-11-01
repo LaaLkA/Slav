@@ -53,6 +53,9 @@ object EditorTags {
     const val SUMMARY_TOTAL = "editor/summary/total"
     const val PRODUCT = "product"
 
+    /** The amount of a line of the price in the cost panel, by its position; the lines are what the sum before the discount is made of. */
+    fun summaryLine(index: Int) = "editor/summary/line/$index"
+
     fun part(index: Int) = "part/$index"
 
     /** [owner] is a part's tag or [PRODUCT]. */

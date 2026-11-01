@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -58,6 +59,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.ParentDataModifier
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -90,7 +96,7 @@ fun TabContent(content: @Composable ColumnScope.() -> Unit) {
     val scroll = rememberScrollState()
     Box(Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(Spacing.large),
+            modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = Spacing.page, vertical = Spacing.large),
             verticalArrangement = Arrangement.spacedBy(Spacing.medium),
             content = content,
         )
@@ -99,32 +105,148 @@ fun TabContent(content: @Composable ColumnScope.() -> Unit) {
 }
 
 /**
- * A titled section of a tab: the surface of the theme with a 1 dp line round it and no shadow, [Spacing.card] of
- * room round its content, the [title] 15 sp semibold and the [subtitle] 13 sp in the secondary colour.
+ * The card of the design: the surface of the theme with a 1 dp line round it and no shadow, [Spacing.card] of room
+ * round its content and [Spacing.gap] between the blocks of it. A [dashed] card has the line dashed in that colour
+ * instead: the one of developer mode, which is not part of the product.
+ */
+@Composable
+fun CardSurface(
+    modifier: Modifier = Modifier,
+    dashed: Color? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = MaterialTheme.shapes.large
+    Surface(
+        modifier = modifier.fillMaxWidth().then(if (dashed == null) Modifier else Modifier.dashedBorder(1.dp, dashed, shape.topStart)),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = if (dashed == null) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+    ) {
+        Column(Modifier.padding(Spacing.card), verticalArrangement = Arrangement.spacedBy(Spacing.gap), content = content)
+    }
+}
+
+/**
+ * A titled section of a tab or an editor: a [CardSurface] with the [title] 15 sp semibold and the [subtitle] 13 sp in
+ * the secondary colour over its content. [trailing] stands at the right end of the title, a switch for instance.
  */
 @Composable
 fun SectionCard(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    dashed: Color? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(Modifier.padding(Spacing.card), verticalArrangement = Arrangement.spacedBy(Spacing.gap)) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    CardSurface(modifier, dashed) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.gap), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (subtitle != null) {
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            content()
+            trailing?.invoke(this)
         }
+        content()
+    }
+}
+
+/** How many cells of a [FieldGrid] the field takes; the default is one. */
+private class GridSpan(val span: Int) : ParentDataModifier {
+    override fun Density.modifyParentData(parentData: Any?): Any = this@GridSpan
+}
+
+/** The field takes [span] cells of the [FieldGrid] it is in, a name beside a number for instance. */
+fun Modifier.gridSpan(span: Int): Modifier = this.then(GridSpan(span))
+
+/**
+ * Lays [content] out in a grid of equal cells, as many columns as fit when each cell is at least [minCell] wide: the
+ * `repeat(auto-fit, minmax(…, 1fr))` of the mockups, with fewer columns when there are fewer cells to fill them. A
+ * field with [gridSpan] takes several cells; one that does not fit in the rest of a row starts the next. A row is as
+ * high as its highest field and the fields are aligned to the top.
+ */
+@Composable
+fun FieldGrid(modifier: Modifier = Modifier, minCell: Dp = 160.dp, gap: Dp = Spacing.gap, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier.fillMaxWidth()) { measurables, constraints ->
+        val gapPx = gap.roundToPx()
+        val width = constraints.maxWidth
+        val spans = measurables.map { (it.parentData as? GridSpan)?.span ?: 1 }
+        val columns = ((width + gapPx) / (minCell.roundToPx() + gapPx)).coerceIn(1, maxOf(1, spans.sum()))
+        val cell = (width - gapPx * (columns - 1)) / columns
+        var column = 0
+        var row = 0
+        val cells = measurables.mapIndexed { index, measurable ->
+            val span = minOf(spans[index], columns)
+            if (column + span > columns) {
+                row++
+                column = 0
+            }
+            val cellWidth = cell * span + gapPx * (span - 1)
+            val placed = Triple(measurable.measure(Constraints(minWidth = cellWidth, maxWidth = cellWidth)), column, row)
+            column += span
+            placed
+        }
+        val rowHeights = (0..row).map { r -> cells.filter { it.third == r }.maxOfOrNull { it.first.height } ?: 0 }
+        layout(width, rowHeights.sum() + gapPx * row) {
+            cells.forEach { (placeable, c, r) ->
+                placeable.placeRelative(c * (cell + gapPx), rowHeights.take(r).sum() + gapPx * r)
+            }
+        }
+    }
+}
+
+/**
+ * A filter shown as a pill, 36 dp high: the chosen one is the inverse surface (the dark pill of the light theme, the
+ * light one of the dark theme), the others are outlined. It is a check box to a screen reader: several can be chosen.
+ */
+@Composable
+fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .height(PILL_HEIGHT)
+            .clip(CircleShape)
+            .background(if (selected) scheme.inverseSurface else MaterialTheme.extendedColors.buttonFill, CircleShape)
+            .border(1.dp, if (selected) scheme.inverseSurface else scheme.outline, CircleShape)
+            .selectable(selected = selected, role = Role.Checkbox, onClick = onClick)
+            .padding(horizontal = PILL_PADDING),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium),
+            color = if (selected) scheme.inverseOnSurface else scheme.onSurface,
+            maxLines = 1,
+        )
+    }
+}
+
+private val PILL_HEIGHT = 36.dp
+private val PILL_PADDING = 14.dp
+
+/** The side of a small icon button, which a title row or a card carries: the comfortable minimum for a segment or a chip. */
+private val ICON_ACTION = 36.dp
+
+/** A 36 dp button with only an icon, [description] being what a screen reader says; the icon is [tint]ed. */
+@Composable
+fun IconAction(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Box(
+        modifier = modifier
+            .size(ICON_ACTION)
+            .clip(MaterialTheme.shapes.small)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = description, tint = tint, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -421,6 +543,22 @@ fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) 
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Скрыть") }
             }
         }
+    }
+}
+
+/**
+ * A plain note of what was done, the success colours on a 8 dp strip: «Добавлено: …», «Пароль администратора
+ * изменён». It is one node for a test and a screen reader; [modifier] carries the tag.
+ */
+@Composable
+fun SuccessStrip(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.extendedColors.success,
+        contentColor = MaterialTheme.extendedColors.onSuccess,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+    ) {
+        Text(text, modifier = Modifier.padding(horizontal = Spacing.gap, vertical = Spacing.small), style = MaterialTheme.typography.bodySmall)
     }
 }
 

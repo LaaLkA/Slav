@@ -123,6 +123,22 @@ private fun pairings(scheme: ColorScheme, extended: ExtendedColors): List<Pairin
     grounds.forEach { (ground, base) ->
         add(Pairing("the icon of an alert on a fill over $ground", scheme.error, over(scheme.errorContainer, base), LARGE))
     }
+    // The pills of the status filter: the chosen one is the inverse surface, the others are read on the fill of a button.
+    add(Pairing("the text of the chosen filter pill", scheme.inverseOnSurface, scheme.inverseSurface))
+    onFill("the text of a filter pill not chosen", scheme.onSurface, extended.buttonFill)
+    // The tabs of the settings lie on the page: the chosen one in the text colour, the others in the secondary one.
+    on("the text of the chosen tab", scheme.onSurface, "background" to scheme.background)
+    on("the text of a tab not chosen", scheme.onSurfaceVariant, "background" to scheme.background)
+    // The number of a part in its badge, and a subtotal on the shade of the track at 60 % over the card.
+    on("the number in the badge of a part", scheme.onSurface, "the badge (surfaceContainerHighest)" to scheme.surfaceContainerHighest)
+    onFill("the text of a shaded row of the breakdown", scheme.onSurface, scheme.surfaceVariant.copy(alpha = 0.6f))
+    // The large figures of the cost, 22 to 26 sp bold, read at 3 to 1: the price in the text colour, the total in the accent.
+    grounds.forEach { (ground, base) ->
+        add(Pairing("the price of a piece (onSurface, 24 sp bold) on $ground", scheme.onSurface, base, LARGE))
+        add(Pairing("the total of a run (accentText, 22 sp bold) on $ground", extended.accentText, base, LARGE))
+    }
+    // The dashed line of the card of developer mode is not text, and is seen against the card.
+    add(Pairing("the dashed line of developer mode against the card", scheme.tertiary, scheme.surface, LARGE))
     add(Pairing("onRail on rail", extended.onRail, extended.rail))
     add(Pairing("onRailSelected on the selected item", extended.onRailSelected, over(extended.railSelected, extended.rail)))
     // Not text: the fill of a button against the card and the page it lies on.
@@ -137,7 +153,7 @@ class ThemeContrastTest {
     fun `every text colour of the design is at least 4,5 to 1 on every fill it is drawn on, in both themes`() {
         val pairings = themes.flatMap { (name, scheme) -> pairings(scheme, extendedThemes.getValue(name)).map { name to it } }
         // The table is long on purpose: one that shrank to a handful would pass just as well.
-        assertTrue(pairings.size >= 100, "only ${pairings.size} pairs are checked")
+        assertTrue(pairings.size >= 130, "only ${pairings.size} pairs are checked")
         val failing = pairings.filter { (_, pairing) -> pairing.ratio < pairing.minimum }
             .map { (theme, pairing) -> "$theme: ${pairing.name} is ${"%.2f".format(pairing.ratio)}:1, needs ${pairing.minimum}" }
         assertTrue(failing.isEmpty(), failing.joinToString("\n"))

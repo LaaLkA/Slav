@@ -162,6 +162,8 @@ class FilledColors(val container: Color, val content: Color)
  * in the dark one, where it shows the card or the page it lies on. [errorBorder] is the line round a destructive
  * button and an alert, softer than the 2 dp outline of a field in error. [raisedShadow] is the shadow under the
  * chosen segment of a segmented control, which the light theme lifts off its track and the dark one does not.
+ * [headerBorder] is the line under the title bar of an editor and of a card, the colour of the card in the dark theme
+ * (the page and the bar are one surface there, so a line of the card's border would be too bright).
  */
 @Immutable
 class ExtendedColors(
@@ -181,6 +183,7 @@ class ExtendedColors(
     val buttonFill: Color,
     val errorBorder: Color,
     val raisedShadow: Color,
+    val headerBorder: Color,
 )
 
 internal val LightExtendedColors = ExtendedColors(
@@ -200,6 +203,7 @@ internal val LightExtendedColors = ExtendedColors(
     buttonFill = White,
     errorBorder = Red200,
     raisedShadow = Color(0x1F0F172A),
+    headerBorder = Slate200,
 )
 
 internal val DarkExtendedColors = ExtendedColors(
@@ -219,6 +223,7 @@ internal val DarkExtendedColors = ExtendedColors(
     buttonFill = Color.Transparent,
     errorBorder = Color(0x80F87171),
     raisedShadow = Color.Transparent,
+    headerBorder = Slate800,
 )
 
 private val LocalExtendedColors = staticCompositionLocalOf<ExtendedColors> { error("SlavTheme is not installed") }
@@ -240,8 +245,8 @@ internal val SlavShapes = Shapes(
 )
 
 /**
- * Every gap and padding is a multiple of 4 dp: the steps below, and the two the cards of the design are drawn with,
- * [card] round their content and [gap] between the fields and the blocks inside them.
+ * Every gap and padding is a multiple of 4 dp: the steps below, the two the cards of the design are drawn with,
+ * [card] round their content and [gap] between the fields and the blocks inside them, and the two margins of a page.
  */
 object Spacing {
     val small = 8.dp
@@ -249,6 +254,10 @@ object Spacing {
     val large = 24.dp
     val card = 20.dp
     val gap = 12.dp
+
+    /** The room at the sides of a page of the list and of the settings; an editor or a card, which has a title bar, takes [pageTight]. */
+    val page = 32.dp
+    val pageTight = 28.dp
 }
 
 /** Digits of equal width, so the numbers of a column line up. */

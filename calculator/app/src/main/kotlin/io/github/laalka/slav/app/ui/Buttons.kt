@@ -12,6 +12,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.laalka.slav.app.theme.extendedColors
 
 /** The height of a button and of a field: the least that is a comfortable target for a pointer. */
@@ -178,33 +180,44 @@ fun DashedButton(
 /**
  * A text button in the accent text colour. Material colours the text of a [androidx.compose.material3.TextButton]
  * with `primary`, which in the dark theme is the orange of a filled button and is not read on a card;
- * [io.github.laalka.slav.app.theme.ExtendedColors.accentText] is the orange for text, in both themes.
+ * [io.github.laalka.slav.app.theme.ExtendedColors.accentText] is the orange for text, in both themes. A [compact]
+ * one is 36 dp high with 13 sp text: the actions in the title of a card and in a row of a table.
  */
 @Composable
 fun AccentTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    compact: Boolean = false,
     content: @Composable RowScope.() -> Unit,
 ) {
     Compact {
         TextButton(
             onClick = onClick,
-            modifier = modifier.heightIn(min = ControlHeight),
+            modifier = modifier.heightIn(min = if (compact) COMPACT_HEIGHT else ControlHeight),
             enabled = enabled,
-            shape = MaterialTheme.shapes.medium,
+            shape = if (compact) MaterialTheme.shapes.small else MaterialTheme.shapes.medium,
             colors = ButtonDefaults.textButtonColors(
                 contentColor = MaterialTheme.extendedColors.accentText,
                 disabledContentColor = MaterialTheme.extendedColors.accentText.copy(alpha = DISABLED_ALPHA),
             ),
             contentPadding = TEXT_BUTTON_PADDING,
-            content = content,
-        )
+        ) {
+            if (compact) {
+                ProvideTextStyle(MaterialTheme.typography.labelLarge.copy(fontSize = COMPACT_TEXT)) { content() }
+            } else {
+                content()
+            }
+        }
     }
 }
 
+/** The height of a [compact] text button and the size of its text. */
+private val COMPACT_HEIGHT = 36.dp
+private val COMPACT_TEXT = 13.sp
+
 /** [width] of a dashed line round a rounded rectangle with corners of [corner], drawn inside the bounds of the element. */
-private fun Modifier.dashedBorder(width: Dp, color: Color, corner: CornerSize): Modifier = drawWithContent {
+internal fun Modifier.dashedBorder(width: Dp, color: Color, corner: CornerSize): Modifier = drawWithContent {
     // Over the content: a button paints its own fill, which would hide a line drawn behind it.
     drawContent()
     val stroke = width.toPx()

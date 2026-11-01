@@ -257,7 +257,8 @@ class ScreenGalleryTest {
         onNodeWithTag(CalculationTags.CARD_RECALC_CANCEL).performClick()
         waitForIdle()
 
-        onNodeWithTag(CalculationTags.CARD_EDIT).performScrollTo().performClick()
+        // «Изменить» is in the title bar of the card, which does not scroll.
+        onNodeWithTag(CalculationTags.CARD_EDIT).performClick()
         waitForIdle()
         shots.take("card-password-dialog")
         onNodeWithTag(CalculationTags.EDIT_PASSWORD).performTextReplacement(ADMIN_PASSWORD)

@@ -3,6 +3,7 @@ package io.github.laalka.slav.app.calculations
 import io.github.laalka.slav.app.ADMIN_PASSWORD
 import io.github.laalka.slav.app.Deps
 import io.github.laalka.slav.app.testAdminSeed
+import io.github.laalka.slav.app.export.ExportFormat
 import io.github.laalka.slav.app.testScope
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.core.ManualExtra
@@ -23,11 +24,15 @@ import java.nio.file.Path
 import java.time.LocalDate
 import java.util.UUID
 import java.util.zip.ZipFile
+import kotlin.io.path.exists
+import kotlin.io.path.fileSize
 import kotlin.io.path.listDirectoryEntries
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -624,5 +629,47 @@ class CardModelTest {
         ZipFile(target.toFile()).use { zip ->
             assertEquals(setOf("manifest.json", "Кронштейн__${id.toString().take(8)}/calculation.json"), zip.entries().asSequence().map { it.name }.toSet())
         }
+    }
+
+    @Test
+    fun `the card exports the calculation to PDF and Excel and says where the file went`() {
+        val id = deps.saveCalculated()
+        val card = card(id)
+
+        assertEquals("Кронштейн.pdf", card.suggestedFileName(ExportFormat.PDF))
+        assertEquals("Кронштейн.xlsx", card.suggestedFileName(ExportFormat.XLSX))
+        for (format in ExportFormat.entries) {
+            val target = temp.root.toPath().resolve("card-export${format.extension}")
+            card.export(format, target)
+
+            assertTrue(target.exists() && target.fileSize() > 0, "$format is not written")
+            val message = assertNotNull(card.state.value.message)
+            assertFalse(message.isError)
+            assertTrue(target.toString() in message.text, message.text)
+        }
+    }
+
+    @Test
+    fun `an export of the card to a folder that does not exist is an error on the card, and the card is as it was`() {
+        val id = deps.saveCalculated()
+        val card = card(id)
+        val before = card.state.value.copy(message = null)
+
+        card.export(ExportFormat.XLSX, temp.root.toPath().resolve("missing").resolve("Кронштейн.xlsx"))
+
+        val message = assertNotNull(card.state.value.message)
+        assertTrue(message.isError)
+        assertTrue(message.text.startsWith("Не удалось сохранить файл"), message.text)
+        assertEquals(before, card.state.value.copy(message = null))
+        card.dismissMessage()
+        assertNull(card.state.value.message)
+    }
+
+    @Test
+    fun `a draft has no price, so the card refuses to export it`() {
+        val card = card(deps.calculations.saveDraft(goldenInput()))
+
+        assertFalse(card.state.value.isPriced)
+        assertFailsWith<IllegalStateException> { card.export(ExportFormat.PDF, temp.root.toPath().resolve("draft.pdf")) }
     }
 }

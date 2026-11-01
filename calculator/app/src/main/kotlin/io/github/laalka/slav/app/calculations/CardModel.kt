@@ -4,6 +4,8 @@ import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.editor.ReadableError
 import io.github.laalka.slav.app.editor.readable
+import io.github.laalka.slav.app.export.ExportFormat
+import io.github.laalka.slav.app.export.exportFileName
 import io.github.laalka.slav.app.ui.formatDate
 import io.github.laalka.slav.app.ui.formatDateTime
 import io.github.laalka.slav.app.ui.formatMeasure
@@ -29,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Path
 import java.time.ZoneId
@@ -93,7 +96,7 @@ data class CardState(
     val editQuestion: EditQuestion?,
     /** The administrator password asked before this calculation is sent to an archive file and deleted. */
     val archiveQuestion: ArchiveQuestion?,
-    /** Why «В архив» did not go through; the card is still here, and nothing was deleted. */
+    /** What the last export did, or why «В архив» did not go through (the card is still here, and nothing was deleted). */
     val message: ListMessage?,
 ) {
     val isPriced: Boolean get() = unitPrice != null
@@ -111,6 +114,7 @@ data class CardState(
  * the new calculation only once confirmed, under the name «… №N»; a new run size keeps the snapshot
  * and the result, so the total follows from the stored unit price. A draft is edited as it is,
  * with no password. Deleting needs the administrator password; [onDeleted] is called when it is done.
+ * The card exports a priced calculation to PDF and Excel like the list does ([export]); the outcome is [CardState.message].
  * «В архив» writes the calculation to a zip file the user has chosen and then deletes it ([ArchiveFlow]),
  * after the administrator password; [onArchived] is called once it is done, the calculation being gone
  * with the card, and a failure is shown on the card ([CardState.message]) with nothing deleted.
@@ -367,6 +371,21 @@ class CardModel(
 
     fun cancelArchive() {
         archiving.cancel()
+        refresh()
+    }
+
+    /** What the save dialog of the export offers: the calculation name with the extension of [format]. */
+    fun suggestedFileName(format: ExportFormat): String = exportFileName(calculation.name, format)
+
+    /** Spec 8.5: the priced calculation written to [target]; the outcome is shown on the card. A draft has no price to export. */
+    fun export(format: ExportFormat, target: Path) {
+        val breakdown = checkNotNull(calculation.breakdown(zone)) { "Draft $id has no price to export" }
+        message = try {
+            format.write(breakdown, currency, target)
+            ListMessage("Расчёт «${calculation.name.ifBlank { UNNAMED }}» сохранён в файл $target", isError = false)
+        } catch (e: IOException) {
+            ListMessage("Не удалось сохранить файл $target: ${e.message}", isError = true)
+        }
         refresh()
     }
 

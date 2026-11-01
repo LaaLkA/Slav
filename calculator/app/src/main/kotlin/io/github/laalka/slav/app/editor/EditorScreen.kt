@@ -1,28 +1,27 @@
 package io.github.laalka.slav.app.editor
 
-import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,8 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.calculations.PriceSummary
@@ -49,20 +50,30 @@ import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
+import io.github.laalka.slav.app.ui.BarTitleStyle
 import io.github.laalka.slav.app.ui.ButtonIcon
+import io.github.laalka.slav.app.ui.CardSurface
 import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
+import io.github.laalka.slav.app.ui.DashedButton
+import io.github.laalka.slav.app.ui.DestructiveButton
+import io.github.laalka.slav.app.ui.FieldGrid
 import io.github.laalka.slav.app.ui.FillRandomButton
+import io.github.laalka.slav.app.ui.IconAction
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.LineIcons
 import io.github.laalka.slav.app.ui.PrimaryButton
 import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.SegmentedChoice
+import io.github.laalka.slav.app.ui.SlavDialog
+import io.github.laalka.slav.app.ui.TitleBar
 import io.github.laalka.slav.app.ui.TouchTarget
 import io.github.laalka.slav.app.ui.WarningPanel
 import io.github.laalka.slav.app.ui.WarningWeight
 import io.github.laalka.slav.app.ui.besideField
 import io.github.laalka.slav.app.ui.fieldTextOffset
+import io.github.laalka.slav.app.ui.gridSpan
 
 internal val NUMBER_WIDTH = 168.dp
 internal val CHOICE_WIDTH = 208.dp
@@ -89,43 +100,48 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit,
             onBack = onBack,
             actions = { onFillRandom?.let { FillRandomButton(it, Modifier.testTag(EditorTags.FILL_RANDOM)) } },
         )
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            val scroll = rememberScrollState()
-            Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(scroll)
-                    .padding(start = Spacing.large, end = Spacing.large, bottom = Spacing.large),
-                verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-            ) {
-                // The fields keep what was typed; a form replaced as a whole needs them created again.
-                key(state.epoch) {
-                    SectionCard("Изделие") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-                            TextInput(state.name, "Название расчёта", model::onNameChange, Modifier.weight(1f))
-                            TextInput(state.counterparty, "Контрагент", model::onCounterpartyChange, Modifier.weight(1f))
-                            NumberInput(state.quantity, "Тираж, шт", model::onQuantityChange)
-                        }
-                    }
-                    AttachmentsBlock(model.attachments, filePicker)
-                    AddFromLibraryRow(model.library)
-                    state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
-                    state.partsError?.let { WarningPanel(it) }
-                    SecondaryButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
-                        ButtonIcon(Icons.Filled.Add)
-                        Text("Добавить деталь", modifier = Modifier.padding(start = Spacing.small))
-                    }
-                    SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
-                        state.productOperations.forEach { op -> key(op.ref) { OperationBlock(op, state.currency, model) } }
-                    }
-                    DiscountCard(state.discount, model::onDiscountChange)
+        EditorBody(
+            canCalculate = state.canCalculate,
+            missingCount = state.missingCount,
+            summary = state.summary,
+            calcErrors = state.calcErrors,
+            calcErrorsHint = state.calcErrorsHint,
+            onCalculate = model::calculate,
+            modifier = Modifier.weight(1f),
+        ) {
+            // The fields keep what was typed; a form replaced as a whole needs them created again.
+            key(state.epoch) {
+                ProductCard(
+                    name = state.name,
+                    onNameChange = model::onNameChange,
+                    counterparty = state.counterparty,
+                    onCounterpartyChange = model::onCounterpartyChange,
+                    quantity = state.quantity,
+                    onQuantityChange = model::onQuantityChange,
+                    discount = state.discount,
+                    onDiscountChange = model::onDiscountChange,
+                )
+                AttachmentsBlock(model.attachments, filePicker)
+                AddFromLibraryRow(model.library)
+                state.parts.forEachIndexed { index, part -> key(part.id) { PartCard(index + 1, part, state.currency, model) } }
+                state.partsError?.let { WarningPanel(it) }
+                DashedButton(
+                    onClick = model::addPart,
+                    modifier = Modifier.fillMaxWidth().height(ADD_PART_HEIGHT).testTag(EditorTags.ADD_PART),
+                ) {
+                    ButtonIcon(LineIcons.Plus)
+                    Text("Добавить деталь", modifier = Modifier.padding(start = Spacing.small))
+                }
+                SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
+                    state.productOperations.forEach { op -> key(op.ref) { OperationBlock(op, state.currency, model) } }
                 }
             }
-            VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
         }
-        HorizontalDivider()
-        CalculateBar(state.canCalculate, state.missingCount, state.summary, state.calcErrors, state.calcErrorsHint, model::calculate)
     }
     EditorLibraryDialogs(model.library)
 }
+
+private val ADD_PART_HEIGHT = 48.dp
 
 /**
  * «Отменить изменения?»: a calculated record edited in place is rewritten only by «Рассчитать», so leaving
@@ -133,71 +149,79 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit,
  */
 @Composable
 fun DiscardEditsDialog(onDiscard: () -> Unit, onKeepEditing: () -> Unit) {
-    AlertDialog(
+    SlavDialog(
+        title = "Отменить изменения?",
         onDismissRequest = onKeepEditing,
-        title = { Text("Отменить изменения?") },
-        text = { Text("Расчёт останется таким, каким он был: всё, что вы изменили, будет потеряно. Чертежи, прикреплённые при редактировании, остаются.") },
         confirmButton = {
-            AccentTextButton(onClick = onDiscard, modifier = Modifier.testTag(EditorTags.LEAVE_CONFIRM)) {
-                Text("Отменить изменения", color = MaterialTheme.colorScheme.error)
-            }
+            DestructiveButton(onClick = onDiscard, modifier = Modifier.testTag(EditorTags.LEAVE_CONFIRM)) { Text("Отменить изменения") }
         },
         dismissButton = {
-            AccentTextButton(onClick = onKeepEditing, modifier = Modifier.testTag(EditorTags.LEAVE_STAY)) { Text("Продолжить редактирование") }
+            SecondaryButton(onClick = onKeepEditing, modifier = Modifier.testTag(EditorTags.LEAVE_STAY)) { Text("Продолжить редактирование") }
         },
-    )
-}
-
-/** «Скидка»: one optional percent, taken off the price of the product, shared by both kinds of editor. */
-@Composable
-internal fun DiscountCard(discount: FieldView, onChange: (String) -> Unit) {
-    SectionCard("Скидка", subtitle = "Необязательно: процент от цены изделия, больше 0 и меньше 100") {
-        NumberInput(discount, "Скидка, %", onChange)
+    ) {
+        Text("Расчёт останется таким, каким он был: всё, что вы изменили, будет потеряно. Чертежи, прикреплённые при редактировании, остаются.")
     }
 }
 
 /**
- * The title of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK].
+ * «Изделие»: the name, the counterparty, the run size and the optional discount of a calculation, in one row while the
+ * card is wide enough, shared by both kinds of editor. A simplified calculation is one piece, so its [quantity] is null
+ * and it has no field for it. The discount is one optional percent taken off the price, above 0 and below 100.
+ */
+@Composable
+internal fun ProductCard(
+    name: FieldView,
+    onNameChange: (String) -> Unit,
+    counterparty: FieldView,
+    onCounterpartyChange: (String) -> Unit,
+    quantity: FieldView?,
+    onQuantityChange: (String) -> Unit,
+    discount: FieldView,
+    onDiscountChange: (String) -> Unit,
+) {
+    SectionCard("Изделие") {
+        FieldGrid(minCell = PRODUCT_CELL) {
+            TextInput(name, "Название расчёта", onNameChange, Modifier.gridSpan(2))
+            TextInput(counterparty, "Контрагент", onCounterpartyChange, Modifier.gridSpan(2))
+            if (quantity != null) NumberInput(quantity, "Тираж, шт", onQuantityChange, Modifier)
+            NumberInput(discount, "Скидка, %", onDiscountChange, Modifier)
+        }
+    }
+}
+
+// The cell of the product card: a number fits in one, a name takes two.
+private val PRODUCT_CELL = 100.dp
+
+/**
+ * The title bar of an editor with the line saying which prices it uses; the back button is tagged [EditorTags.BACK].
  * [actions] stand at the right end of the bar.
  */
 @Composable
 internal fun Header(title: String, subtitle: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(start = Spacing.small, end = Spacing.large, top = Spacing.medium, bottom = Spacing.small),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-    ) {
-        IconButton(onClick = onBack, modifier = Modifier.testTag(EditorTags.BACK)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "К расчётам")
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        actions()
+    TitleBar(onBack = onBack, backTag = EditorTags.BACK, actions = actions) {
+        Text(title, style = BarTitleStyle)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
+/** One part: a numbered title with its actions, then the material, the shape, the grid of fields, the mass and the operations. */
 @Composable
-private fun PartCard(part: PartView, currency: String, model: EditorModel) {
-    SectionCard(part.title) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-            TextInput(part.name, "Название детали", { model.onPartNameChange(part.id, it) }, Modifier.weight(1f))
-            AccentTextButton(
-                onClick = { model.copyPart(part.id) },
-                modifier = Modifier.besideField().testTag("${part.tag}/copy"),
-            ) { Text("Копировать") }
+private fun PartCard(number: Int, part: PartView, currency: String, model: EditorModel) {
+    CardSurface {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.gap), verticalAlignment = Alignment.CenterVertically) {
+            NumberBadge(number)
+            Text(part.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            AccentTextButton(onClick = { model.copyPart(part.id) }, modifier = Modifier.testTag("${part.tag}/copy"), compact = true) { Text("Копировать") }
             AccentTextButton(
                 onClick = { model.library.requestSave(part.id) },
-                modifier = Modifier.besideField().testTag(LibraryTags.toLibrary(part.tag)),
+                modifier = Modifier.testTag(LibraryTags.toLibrary(part.tag)),
+                compact = true,
             ) { Text("В библиотеку") }
-            IconButton(
-                onClick = { model.deletePart(part.id) },
-                modifier = Modifier.besideField(TouchTarget).testTag("${part.tag}/delete"),
-            ) { Icon(Icons.Filled.Delete, contentDescription = "Удалить деталь") }
+            IconAction(LineIcons.Trash, "Удалить деталь", { model.deletePart(part.id) }, Modifier.testTag("${part.tag}/delete"))
         }
+        TextInput(part.name, "Название детали", { model.onPartNameChange(part.id, it) }, Modifier.fillMaxWidth())
 
-        Subheader("Материал")
+        Caption("Материал")
         SegmentedChoice(
             options = SortamentKind.entries.map { it.title },
             selectedIndex = SortamentKind.entries.indexOf(part.kind),
@@ -213,49 +237,64 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
                 testTagOf = { EditorTags.shape(part.tag, ShapeKind.entries[it]) },
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
-            Choice(part.grade, Modifier.width(CHOICE_WIDTH)) { model.onGradeChange(part.id, part.grade.options[it]) }
-            Choice(part.size, Modifier.width(CHOICE_WIDTH)) { model.onSizeChange(part.id, part.sizeOptions[it]) }
+        FieldGrid(minCell = PART_CELL) {
+            Choice(part.grade, Modifier.fillMaxWidth()) { model.onGradeChange(part.id, part.grade.options[it]) }
+            Choice(part.size, Modifier.fillMaxWidth()) { model.onSizeChange(part.id, part.sizeOptions[it]) }
             part.dimensions.forEach { dimension ->
                 key(dimension.field) {
-                    NumberInput(dimension.value, dimension.field.label, { model.onDimensionChange(part.id, dimension.field, it) }, WIDE_NUMBER_WIDTH)
+                    NumberInput(dimension.value, dimension.field.label, { model.onDimensionChange(part.id, dimension.field, it) }, Modifier)
                 }
+            }
+            if (part.massOverrideShown) {
+                NumberInput(part.massOverride, "Вес по чертежу, кг", { model.onMassOverrideChange(part.id, it) }, Modifier)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium), verticalAlignment = Alignment.Top) {
-            if (part.massOverrideShown) {
-                NumberInput(part.massOverride, "Вес по чертежу, кг", { model.onMassOverrideChange(part.id, it) }, WIDE_NUMBER_WIDTH)
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Bottom) {
+            Text("Масса детали", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                part.mass ?: "—",
+                style = MaterialTheme.typography.titleMedium.tabular(),
+                modifier = Modifier.testTag("${part.tag}/mass"),
+                softWrap = false,
+            )
+            val massSource = when {
+                part.massFromDrawing -> "по чертежу"
+                part.massByWeight -> "по весу"
+                else -> null
             }
-            Column(Modifier.padding(top = Spacing.small)) {
-                Text("Масса детали", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (massSource != null) {
                 Text(
-                    part.mass ?: "—",
-                    style = MaterialTheme.typography.titleMedium.tabular(),
-                    modifier = Modifier.testTag("${part.tag}/mass"),
-                    softWrap = false,
+                    massSource,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("${part.tag}/mass-hint"),
                 )
-                val massSource = when {
-                    part.massFromDrawing -> "по чертежу"
-                    part.massByWeight -> "по весу"
-                    else -> null
-                }
-                if (massSource != null) {
-                    Text(
-                        massSource,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("${part.tag}/mass-hint"),
-                    )
-                }
             }
         }
         val material = LineRef.MaterialOf(part.id)
         ExtraRow(part.materialExtra, currency, { model.onExtraAmountChange(material, it) }, { model.onExtraCommentChange(material, it) })
 
-        Subheader("Операции")
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Caption("Операции")
         part.operations.forEach { op -> key(op.ref) { OperationBlock(op, currency, model) } }
     }
 }
+
+// The cell of the grid of a part's fields: the label «Типоразмер» and a size such as «100 × 100 × 4» fit in one.
+private val PART_CELL = 140.dp
+
+/** The number of a part in its card: a 28 dp square on the track colour. */
+@Composable
+private fun NumberBadge(number: Int) {
+    Box(
+        modifier = Modifier.size(BADGE_SIZE).background(MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.shapes.small),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(number.toString(), style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp), color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+private val BADGE_SIZE = 28.dp
 
 @Composable
 private fun OperationBlock(op: OperationView, currency: String, model: EditorModel) {
@@ -473,7 +512,9 @@ private fun SummaryItem(label: String, value: String, tag: String, strong: Boole
 
 /**
  * Spec 7.3: everything that stopped the calculation at once; the table, row and column of each
- * missing price. Also shown by the card when «Пересчитать по текущим ценам» fails (spec 8.3).
+ * missing price. Also shown by the card when «Пересчитать по текущим ценам» fails (spec 8.3). Wide enough
+ * it is a table of four columns; in a narrow place (the cost panel) each missing price is two lines, what is missing
+ * and where to fill it, because four columns of 70 dp wrap every word.
  */
 @Composable
 fun CalcErrors(
@@ -483,31 +524,44 @@ fun CalcErrors(
     modifier: Modifier = Modifier,
 ) {
     WarningPanel(title, modifier) {
-        Column(
-            modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Spacing.small),
-        ) {
-            val cells = errors.mapNotNull { it.cell }
-            if (cells.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                    listOf("Таблица" to 2f, "Строка" to 1f, "Столбец" to 1f, "Где заполнить" to 2f).forEach { (title, weight) ->
-                        Text(title, modifier = Modifier.weight(weight), style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-                cells.forEach { cell ->
+        BoxWithConstraints {
+            val table = maxWidth >= CALC_ERRORS_TABLE_WIDTH
+            Column(
+                modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                val cells = errors.mapNotNull { it.cell }
+                if (cells.isNotEmpty() && table) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
-                        Text(cell.table, modifier = Modifier.weight(2f), style = errorBody())
-                        Text(cell.row, modifier = Modifier.weight(1f), style = errorBody())
-                        Text(cell.column, modifier = Modifier.weight(1f), style = errorBody().tabular())
-                        Text("Настройки → ${cell.tab.title}", modifier = Modifier.weight(2f), style = errorBody())
+                        listOf("Таблица" to 2f, "Строка" to 1f, "Столбец" to 1f, "Где заполнить" to 2f).forEach { (title, weight) ->
+                            Text(title, modifier = Modifier.weight(weight), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    cells.forEach { cell ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.medium)) {
+                            Text(cell.table, modifier = Modifier.weight(2f), style = errorBody())
+                            Text(cell.row, modifier = Modifier.weight(1f), style = errorBody())
+                            Text(cell.column, modifier = Modifier.weight(1f), style = errorBody().tabular())
+                            Text("Настройки → ${cell.tab.title}", modifier = Modifier.weight(2f), style = errorBody())
+                        }
+                    }
+                } else {
+                    cells.forEach { cell ->
+                        Column {
+                            Text("${cell.table}: ${cell.row}, ${cell.column}", style = errorBody())
+                            Text("Настройки → ${cell.tab.title}", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
+                errors.filter { it.cell == null }.forEach { Text(it.message, style = errorBody()) }
+                hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
-            errors.filter { it.cell == null }.forEach { Text(it.message, style = errorBody()) }
-            hint?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
+
+// The width of the error list from which its four columns each fit a word: the cost panel and the narrow bar are on either side of it.
+private val CALC_ERRORS_TABLE_WIDTH = 460.dp
 
 /** The text of an error list: heavier than the body text around it. */
 @Composable
@@ -520,7 +574,13 @@ internal fun TextInput(field: FieldView, label: String, onChange: (String) -> Un
 
 @Composable
 internal fun NumberInput(field: FieldView, label: String, onChange: (String) -> Unit, width: Dp = NUMBER_WIDTH) {
-    InputField(field.text, onChange, Modifier.width(width).testTag(field.tag), label = label, error = field.error, numeric = true)
+    NumberInput(field, label, onChange, Modifier.width(width))
+}
+
+/** A number field that takes the room [modifier] gives it, a cell of a [FieldGrid] for instance. */
+@Composable
+internal fun NumberInput(field: FieldView, label: String, onChange: (String) -> Unit, modifier: Modifier) {
+    InputField(field.text, onChange, modifier.testTag(field.tag), label = label, error = field.error, numeric = true)
 }
 
 @Composable
@@ -531,11 +591,6 @@ internal fun Choice(choice: ChoiceView, modifier: Modifier, onSelect: (Int) -> U
 @Composable
 private fun Caption(text: String) {
     Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
-@Composable
-private fun Subheader(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = Spacing.small))
 }
 
 @Composable

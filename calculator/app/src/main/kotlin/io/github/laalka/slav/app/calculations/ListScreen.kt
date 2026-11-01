@@ -1,5 +1,6 @@
 package io.github.laalka.slav.app.calculations
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,20 +23,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -48,9 +46,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -62,22 +62,29 @@ import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.ButtonIcon
+import io.github.laalka.slav.app.ui.FilterPill
 import io.github.laalka.slav.app.ui.HeaderText
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.LineIcons
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.PrimaryButton
 import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.StatusChip
 import io.github.laalka.slav.app.ui.TableDivider
-import io.github.laalka.slav.app.ui.besideField
+import io.github.laalka.slav.app.ui.pluralRu
 import io.github.laalka.slav.app.ui.tableRow
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
 import java.util.UUID
 
-private val SEARCH_WIDTH = 320.dp
-private val DATE_WIDTH = 168.dp
+private val SEARCH_WIDTH = 360.dp
+private val DATE_FROM_WIDTH = 224.dp
+private val DATE_TO_WIDTH = 168.dp
+
+// The room at the sides of a row of the table, inside its card, and between its cells.
+private val ROW_INSET = Spacing.card
+private val CELL_GAP = Spacing.gap
 
 /**
  * A table column: its width (null takes the rest of the row) and whether it holds numbers. The fixed columns are
@@ -95,6 +102,7 @@ private enum class ListColumn(val title: String, val sort: CalculationSortColumn
 }
 
 private val ACTIONS_WIDTH = 48.dp
+private val HEADER_PADDING = 14.dp
 private val SELECT_WIDTH = 48.dp
 
 /**
@@ -111,11 +119,21 @@ fun CalculationsScreen(
 ) {
     val state by model.state.collectAsState()
     Column(
-        modifier = Modifier.fillMaxSize().padding(Spacing.large),
-        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        modifier = Modifier.fillMaxSize().padding(horizontal = Spacing.page, vertical = Spacing.pageTight),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-            Text("Готовые расчёты", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Готовые расчёты", style = MaterialTheme.typography.headlineSmall)
+                if (!state.isEmpty) {
+                    Text(
+                        if (state.hasFilters) "Найдено: ${state.rows.size}" else pluralRu(state.rows.size, "расчёт", "расчёта", "расчётов"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag(CalculationTags.COUNT),
+                    )
+                }
+            }
             // Nothing to select while the list is empty, and a selection already open has its own bar below.
             if (!state.isEmpty && !state.selecting) {
                 SecondaryButton(onClick = model::startSelecting, modifier = Modifier.testTag(CalculationTags.SELECT)) { Text("Выбрать") }
@@ -131,7 +149,7 @@ fun CalculationsScreen(
         } else {
             // Clearing the filters re-creates their fields, which keep what is typed in their own state.
             key(state.filterEpoch) { Filters(state, model) }
-            Table(state, model, filePicker, onOpen, onCopy, Modifier.weight(1f))
+            Table(state, model, filePicker, onOpen, onCopy, Modifier.weight(1f, fill = false))
         }
     }
 
@@ -154,7 +172,7 @@ private fun SelectionBar(state: ListState, model: CalculationListModel, filePick
         // Laid out like a row of the table below (its inset, a check box column, a gap), so the check boxes stand in one line and the text over the names.
         Row(
             modifier = Modifier
-                .padding(start = Spacing.small)
+                .padding(start = ROW_INSET)
                 .toggleable(
                     value = state.rows.isNotEmpty() && checked == state.rows.size,
                     role = Role.Checkbox,
@@ -196,7 +214,7 @@ private fun NewCalculationButton(onNew: (CalculationKind) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         PrimaryButton(onClick = { expanded = true }, modifier = Modifier.testTag(CalculationTags.NEW)) {
-            ButtonIcon(Icons.Filled.Add)
+            ButtonIcon(LineIcons.Plus)
             Text("Новый расчёт", modifier = Modifier.padding(start = Spacing.small))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -233,60 +251,57 @@ private fun EmptyState() {
     }
 }
 
+/**
+ * The search, the period and the status as pills, in one wrapping row. «Все» is the pill of the state with no status
+ * chosen, which shows every status; the others are chosen one by one, any number of them.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Filters(state: ListState, model: CalculationListModel) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.gap),
+        verticalArrangement = Arrangement.spacedBy(Spacing.gap),
+        itemVerticalAlignment = Alignment.Top,
+    ) {
         InputField(
             value = state.query,
             onValueChange = model::onQueryChange,
             modifier = Modifier.width(SEARCH_WIDTH).testTag(CalculationTags.SEARCH),
-            label = "Поиск",
-            placeholder = "По названию и контрагенту",
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            placeholder = "Название или контрагент",
+            leadingIcon = { Icon(LineIcons.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
         )
         InputField(
             value = state.fromText,
             onValueChange = model::onFromChange,
-            modifier = Modifier.width(DATE_WIDTH).testTag(CalculationTags.PERIOD_FROM),
-            label = "Изменён с",
-            placeholder = "дд.мм.гггг",
+            modifier = Modifier.width(DATE_FROM_WIDTH).testTag(CalculationTags.PERIOD_FROM),
+            placeholder = "Изменён с дд.мм.гггг",
             error = state.fromError,
+            leadingIcon = { Icon(LineIcons.Calendar, contentDescription = null, modifier = Modifier.size(18.dp)) },
         )
         InputField(
             value = state.toText,
             onValueChange = model::onToChange,
-            modifier = Modifier.width(DATE_WIDTH).testTag(CalculationTags.PERIOD_TO),
-            label = "по",
-            placeholder = "дд.мм.гггг",
+            modifier = Modifier.width(DATE_TO_WIDTH).testTag(CalculationTags.PERIOD_TO),
+            placeholder = "по дд.мм.гггг",
             error = state.toError,
         )
-        if (state.hasFilters) {
-            AccentTextButton(
-                onClick = model::clearFilters,
-                modifier = Modifier.besideField().testTag(CalculationTags.CLEAR_FILTERS),
-            ) { Text("Сбросить фильтры") }
+        Row(
+            modifier = Modifier.heightIn(min = io.github.laalka.slav.app.ui.ControlHeight),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterPill("Все", selected = state.statuses.isEmpty(), onClick = model::showAllStatuses, modifier = Modifier.testTag(CalculationTags.STATUS_ALL))
+            CalculationStatus.entries.forEach { status ->
+                FilterPill(
+                    status.title,
+                    selected = status in state.statuses,
+                    onClick = { model.toggleStatus(status) },
+                    modifier = Modifier.testTag(CalculationTags.status(status)),
+                )
+            }
         }
-    }
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-        verticalArrangement = Arrangement.spacedBy(Spacing.small),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Статус", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        CalculationStatus.entries.forEach { status ->
-            val selected = status in state.statuses
-            FilterChip(
-                selected = selected,
-                onClick = { model.toggleStatus(status) },
-                label = { Text(status.title) },
-                leadingIcon = if (selected) {
-                    { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                } else {
-                    null
-                },
-                modifier = Modifier.testTag(CalculationTags.status(status)),
-            )
+        if (state.hasFilters) {
+            AccentTextButton(onClick = model::clearFilters, modifier = Modifier.testTag(CalculationTags.CLEAR_FILTERS)) { Text("Сбросить фильтры") }
         }
     }
 }
@@ -300,52 +315,64 @@ private fun Table(
     onCopy: (UUID) -> Unit,
     modifier: Modifier,
 ) {
-    // The rest of the page below the filters; the rows scroll inside it.
-    Column(modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.small),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-        ) {
-            if (state.selecting) Box(Modifier.width(SELECT_WIDTH))
-            ListColumn.entries.forEach { column -> SortHeader(column, state, model) }
-            Box(Modifier.width(ACTIONS_WIDTH))
-        }
-        TableDivider()
-        if (state.rows.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.large).testTag(CalculationTags.NO_MATCHES),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Spacing.small),
+    // A card that is as high as its rows, up to the rest of the page below the filters; the rows scroll inside it.
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.clip(MaterialTheme.shapes.large)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = ROW_INSET),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
             ) {
-                Text("Ничего не найдено", style = MaterialTheme.typography.titleMedium)
-                SecondaryButton(onClick = model::clearFilters) { Text("Сбросить фильтры") }
+                if (state.selecting) Box(Modifier.width(SELECT_WIDTH))
+                ListColumn.entries.forEach { column -> SortHeader(column, state, model) }
+                Box(Modifier.width(ACTIONS_WIDTH))
             }
-        } else {
-            val listState = rememberLazyListState()
-            // Rows are keyed, so the list would hold on to the first visible row across a new search;
-            // a new search, filter or order starts from the top instead.
-            LaunchedEffect(state.query, state.statuses, state.fromText, state.toText, state.sort) { listState.scrollToItem(0) }
-            Box(Modifier.fillMaxSize()) {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(state.rows, key = { _, row -> row.id }) { index, row ->
-                        TableRow(
-                            row = row,
-                            tag = CalculationTags.row(index),
-                            checked = if (state.selecting) row.id in state.selected else null,
-                            onToggle = { model.toggleSelected(row.id) },
-                            onOpen = { onOpen(row) },
-                            onCopy = { onCopy(row.id) },
-                            onDelete = { model.requestDelete(row.id) },
-                            onExport = { format ->
-                                filePicker.chooseSaveTarget(format.dialogTitle, model.suggestedFileName(row.id, format), format.extension)
-                                    ?.let { model.export(row.id, format, it) }
-                            },
-                        )
-                        TableDivider()
+            TableDivider()
+            if (state.rows.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.large).testTag(CalculationTags.NO_MATCHES),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    Text("Ничего не найдено", style = MaterialTheme.typography.titleMedium)
+                    SecondaryButton(onClick = model::clearFilters) { Text("Сбросить фильтры") }
+                }
+            } else {
+                val listState = rememberLazyListState()
+                // Rows are keyed, so the list would hold on to the first visible row across a new search;
+                // a new search, filter or order starts from the top instead.
+                LaunchedEffect(state.query, state.statuses, state.fromText, state.toText, state.sort) { listState.scrollToItem(0) }
+                Box {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
+                        itemsIndexed(state.rows, key = { _, row -> row.id }) { index, row ->
+                            TableRow(
+                                row = row,
+                                tag = CalculationTags.row(index),
+                                checked = if (state.selecting) row.id in state.selected else null,
+                                onToggle = { model.toggleSelected(row.id) },
+                                onOpen = { onOpen(row) },
+                                onCopy = { onCopy(row.id) },
+                                onDelete = { model.requestDelete(row.id) },
+                                onExport = { format ->
+                                    filePicker.chooseSaveTarget(format.dialogTitle, model.suggestedFileName(row.id, format), format.extension)
+                                        ?.let { model.export(row.id, format, it) }
+                                },
+                            )
+                            // The last row has no line under it: the card's own border closes the table.
+                            if (index < state.rows.lastIndex) TableDivider()
+                        }
+                    }
+                    // Laid over the rows, not asked to fill the height: the card is as high as its rows.
+                    Box(Modifier.matchParentSize(), contentAlignment = Alignment.CenterEnd) {
+                        VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.fillMaxHeight())
                     }
                 }
-                VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
             }
         }
     }
@@ -358,7 +385,7 @@ private fun RowScope.SortHeader(column: ListColumn, state: ListState, model: Cal
     Row(
         modifier = cell(column)
             .clickable { model.sortBy(column.sort) }
-            .padding(vertical = Spacing.small)
+            .padding(vertical = HEADER_PADDING)
             .testTag(CalculationTags.sort(column.sort)),
         horizontalArrangement = if (column.numeric) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
@@ -393,9 +420,9 @@ private fun TableRow(
 ) {
     Row(
         // While rows are being selected a click on the row checks it, and «Открыть» in its menu is how to open it.
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).tableRow().clickable(onClick = if (checked == null) onOpen else onToggle).padding(horizontal = Spacing.small).testTag(tag),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).tableRow().clickable(onClick = if (checked == null) onOpen else onToggle).padding(horizontal = ROW_INSET).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        horizontalArrangement = Arrangement.spacedBy(CELL_GAP),
     ) {
         if (checked != null) {
             Checkbox(checked = checked, onCheckedChange = { onToggle() }, modifier = Modifier.width(SELECT_WIDTH).testTag("$tag/check"))
@@ -404,7 +431,7 @@ private fun TableRow(
             Text(
                 row.name,
                 modifier = Modifier.weight(1f, fill = false).testTag("$tag/name"),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -414,21 +441,29 @@ private fun TableRow(
             row.counterparty,
             modifier = cell(ListColumn.COUNTERPARTY).testTag("$tag/counterparty"),
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(row.updatedAt, modifier = cell(ListColumn.UPDATED), style = MaterialTheme.typography.bodyMedium.tabular(), maxLines = 1)
+        Text(
+            row.updatedAt,
+            modifier = cell(ListColumn.UPDATED),
+            style = MaterialTheme.typography.bodyMedium.tabular(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
         Box(cell(ListColumn.STATUS)) { StatusChip(row.status) }
         MoneyCell(row.unitPrice ?: "—", cell(ListColumn.UNIT_PRICE))
-        MoneyCell(row.quantity, cell(ListColumn.QUANTITY).testTag("$tag/quantity"))
-        MoneyCell(row.total ?: "—", cell(ListColumn.TOTAL).testTag("$tag/total"))
+        MoneyCell(row.quantity, cell(ListColumn.QUANTITY).testTag("$tag/quantity"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        MoneyCell(row.total ?: "—", cell(ListColumn.TOTAL).testTag("$tag/total"), bold = true)
         RowMenu(row, tag, onOpen, onCopy, onDelete, onExport)
     }
 }
 
 @Composable
-private fun MoneyCell(text: String, modifier: Modifier) {
-    Text(text, modifier = modifier, style = MaterialTheme.typography.bodyMedium.tabular(), textAlign = TextAlign.End, maxLines = 1, softWrap = false)
+private fun MoneyCell(text: String, modifier: Modifier, bold: Boolean = false, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
+    val style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it }
+    Text(text, modifier = modifier, style = style.tabular(), color = color, textAlign = TextAlign.End, maxLines = 1, softWrap = false)
 }
 
 @Composable

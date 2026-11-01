@@ -4,6 +4,7 @@ import io.github.laalka.slav.app.FileOpener
 import io.github.laalka.slav.app.attachments.AttachmentsModel
 import io.github.laalka.slav.app.calculations.PriceSummary
 import io.github.laalka.slav.app.calculations.priceSummary
+import io.github.laalka.slav.app.calculations.summaryLines
 import io.github.laalka.slav.app.developer.RandomCalculation
 import io.github.laalka.slav.app.library.EditorLibraryModel
 import io.github.laalka.slav.app.settings.SortamentKind
@@ -384,7 +385,11 @@ class EditorModel(
         if (read.errors.isNotEmpty()) return null
         val prices = snapshot ?: book
         val result = (Calculator(prices).calculate(read.input) as? CalcOutcome.Ok)?.result ?: return null
-        return priceSummary(result.subtotal, result.discountPercent, result.discount, result.unitPrice, read.input.quantity, prices.general.currencySymbol)
+        val currency = prices.general.currencySymbol
+        return priceSummary(
+            result.subtotal, result.discountPercent, result.discount, result.unitPrice, read.input.quantity, currency,
+            lines = result.summaryLines(read.input.productOperations, currency),
+        )
     }
 
     private fun refresh() {

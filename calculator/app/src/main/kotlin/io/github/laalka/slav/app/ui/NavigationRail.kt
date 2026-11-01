@@ -34,7 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.extendedColors
 
-private val RAIL_WIDTH = 88.dp
+/** The width of the navigation rail; the part of the window the pages share is what is left of it. */
+internal val RailWidth = 88.dp
 private val ITEM_WIDTH = 72.dp
 private val ITEM_RADIUS = 12.dp
 private val ICON_SIZE = 22.dp
@@ -49,7 +50,7 @@ fun SlavNavigationRail(modifier: Modifier = Modifier, content: @Composable Colum
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .width(RAIL_WIDTH)
+            .width(RailWidth)
             .background(colors.rail)
             .endBorder(colors.railBorder)
             .padding(vertical = 20.dp)

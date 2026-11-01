@@ -165,7 +165,7 @@ internal fun SheetShape.ByMass.weightDescription(): String {
     return perimeterMm?.let { "$weight, периметр ${formatMeasure(it)} мм" } ?: weight
 }
 
-private fun OperationLine.productTitle(operations: List<ProductOperation>): String = when (kind) {
+internal fun OperationLine.productTitle(operations: List<ProductOperation>): String = when (kind) {
     OperationKind.WELDING -> {
         val welding = operations.firstOrNull { it.kind == kind } as? ProductOperation.AssemblyWelding
         if (welding != null) "Сварка сборки (${welding.weldType})" else "Сварка сборки"
