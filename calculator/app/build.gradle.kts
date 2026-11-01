@@ -9,7 +9,7 @@ plugins {
 kotlin { jvmToolchain(17) }
 
 /** The version of the installers, also written into exported settings files (spec 9). */
-val appVersion = "1.0.0"
+val appVersion = "1.0.1"
 
 dependencies {
     implementation(project(":core"))
