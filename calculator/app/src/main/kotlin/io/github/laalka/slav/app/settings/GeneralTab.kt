@@ -2,9 +2,15 @@ package io.github.laalka.slav.app.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.data.AdminPassword
+import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.PasswordDialog
 import io.github.laalka.slav.app.ui.PasswordDialogTags
@@ -41,11 +48,23 @@ object GeneralTags {
     const val DEVELOPER_PASSWORD = "settings/general/developer-password"
     const val DEVELOPER_CONFIRM = "settings/general/developer-confirm"
     const val DEVELOPER_CANCEL = "settings/general/developer-cancel"
+    const val FILL_TABLES = "settings/general/fill-tables"
+    const val RESET_TABLES = "settings/general/reset-tables"
+    const val DEVELOPER_NOTICE = "settings/general/developer-notice"
+    const val RESET_PASSWORD = "settings/general/reset-password"
+    const val RESET_CONFIRM = "settings/general/reset-confirm"
+    const val RESET_CANCEL = "settings/general/reset-cancel"
 }
 
 private val DEVELOPER_TAGS = PasswordDialogTags(
     GeneralTags.DEVELOPER_PASSWORD, GeneralTags.DEVELOPER_CONFIRM, GeneralTags.DEVELOPER_CANCEL,
 )
+
+private val RESET_TAGS = PasswordDialogTags(GeneralTags.RESET_PASSWORD, GeneralTags.RESET_CONFIRM, GeneralTags.RESET_CANCEL)
+
+private const val RESET_MESSAGE = "Материалы, сортамент, цены материала и цены операций вернутся к состоянию после установки " +
+    "программы. Вместе с ними вернутся настройки вкладки «Общие», кроме пароля, темы и режима разработчика. " +
+    "Сохранённые расчёты, чертежи и детали библиотеки не изменятся: у каждого расчёта остаются его собственные цены."
 
 @Composable
 fun GeneralTab(model: GeneralModel) {
@@ -136,8 +155,10 @@ fun GeneralTab(model: GeneralModel) {
             }
             SectionCard(
                 "Режим разработчика",
-                subtitle = "В редакторах появляется кнопка «Заполнить случайными данными». " +
-                    "Хранится на этом компьютере, в настройки и экспорт не входит. Включить можно, зная пароль администратора.",
+                subtitle = "В редакторах расчётов появляется кнопка «Заполнить случайными данными», а здесь — кнопка " +
+                    "«Заполнить таблицы случайными данными»: она добавляет марки, размеры и цены во все таблицы настроек, " +
+                    "введённые цены не перезаписываются. Режим хранится на этом компьютере, в настройки и экспорт не входит. " +
+                    "Включить можно, зная пароль администратора.",
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
                     Switch(
@@ -146,6 +167,31 @@ fun GeneralTab(model: GeneralModel) {
                         modifier = Modifier.testTag(GeneralTags.DEVELOPER_SWITCH),
                     )
                     Text("Режим разработчика", style = MaterialTheme.typography.bodyLarge)
+                }
+                if (state.developerMode) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.CenterVertically) {
+                        FillRandomButton(
+                            model::fillTablesRandomly,
+                            Modifier.testTag(GeneralTags.FILL_TABLES),
+                            label = "Заполнить таблицы случайными данными",
+                        )
+                        OutlinedButton(
+                            onClick = model::requestResetTables,
+                            modifier = Modifier.testTag(GeneralTags.RESET_TABLES),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = null)
+                            Text("Очистить таблицы (исходное состояние)", modifier = Modifier.padding(start = Spacing.small))
+                        }
+                    }
+                    state.developerNotice?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.testTag(GeneralTags.DEVELOPER_NOTICE),
+                        )
+                    }
                 }
             }
         }
@@ -161,6 +207,18 @@ fun GeneralTab(model: GeneralModel) {
             onConfirm = model::confirmDeveloperMode,
             onCancel = model::cancelDeveloperMode,
             confirmColor = MaterialTheme.colorScheme.primary,
+        )
+    }
+    state.resetQuestion?.let { question ->
+        PasswordDialog(
+            title = "Очистить таблицы?",
+            message = "$RESET_MESSAGE Введите пароль администратора.",
+            confirmLabel = "Очистить",
+            error = question.error,
+            tags = RESET_TAGS,
+            onPasswordChange = model::onResetPasswordChange,
+            onConfirm = model::confirmResetTables,
+            onCancel = model::cancelResetTables,
         )
     }
 }

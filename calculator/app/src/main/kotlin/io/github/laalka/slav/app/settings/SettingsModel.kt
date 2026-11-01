@@ -7,6 +7,7 @@ import io.github.laalka.slav.data.SettingsTransfer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.random.Random
 
 enum class SettingsTab(val title: String) {
     MATERIALS("Материалы"),
@@ -20,18 +21,19 @@ enum class SettingsTab(val title: String) {
     val testTag: String get() = "settings-tab/$name"
 }
 
-/** The Settings section: one model per tab, all editing the same [SettingsStore]. */
+/** The Settings section: one model per tab, all editing the same [SettingsStore]; [random] feeds the developer-mode fill. */
 class SettingsModel(
     repository: SettingsRepository,
     transfer: SettingsTransfer,
     preferences: AppPreferences,
     adminPassword: AdminPassword,
+    random: Random = Random.Default,
 ) {
     private val store = SettingsStore(repository)
     val materials = MaterialsModel(store)
     val sortament = SortamentModel(store)
     val prices = PricesModel(store)
-    val general = GeneralModel(store, preferences, adminPassword)
+    val general = GeneralModel(store, preferences, adminPassword, random)
     val transfer = TransferModel(store, transfer)
 
     private val _tab = MutableStateFlow(SettingsTab.MATERIALS)

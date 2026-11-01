@@ -321,6 +321,12 @@ class ScreenGalleryTest {
                 onNodeWithTag(GeneralTags.DEVELOPER_CONFIRM).performClick()
                 waitForIdle()
                 assertTrue(deps.preferences.developerMode.value, "developer mode did not turn on")
+                // The reset of the tables asks the password too; the picture is taken and the question is cancelled.
+                onNodeWithTag(GeneralTags.RESET_TABLES).performScrollTo().performClick()
+                waitForIdle()
+                shots.take("settings-developer-reset-dialog")
+                onNodeWithTag(GeneralTags.RESET_CANCEL).performClick()
+                waitForIdle()
             }
             shots.takePaged("settings-${tab.name.lowercase().replace('_', '-')}", maxPages = 4)
         }
@@ -408,7 +414,7 @@ class ScreenGalleryTest {
             "card-full", "card-quantity-dialog", "card-recalc-dialog", "card-password-dialog", "editor-in-place", "editor-discard-dialog", "card-quick",
             "library-empty", "library", "editor-library-pick-dialog",
             "settings-materials", "settings-sortament", "settings-material-prices", "settings-operation-prices", "settings-general",
-            "settings-transfer", "settings-developer-password-dialog",
+            "settings-transfer", "settings-developer-password-dialog", "settings-developer-reset-dialog",
             "editor-full-developer", "editor-quick-developer",
         )
     }

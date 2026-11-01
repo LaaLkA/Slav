@@ -30,13 +30,13 @@ import io.github.laalka.slav.app.editor.CalculateBar
 import io.github.laalka.slav.app.editor.Choice
 import io.github.laalka.slav.app.editor.DiscountCard
 import io.github.laalka.slav.app.editor.ExtraRow
-import io.github.laalka.slav.app.editor.FillRandomButton
 import io.github.laalka.slav.app.editor.Header
 import io.github.laalka.slav.app.editor.NumberInput
 import io.github.laalka.slav.app.editor.TextInput
 import io.github.laalka.slav.app.editor.WIDE_NUMBER_WIDTH
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.SectionCard
 
 /**

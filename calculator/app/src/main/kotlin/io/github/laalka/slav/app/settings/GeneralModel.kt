@@ -3,10 +3,15 @@ package io.github.laalka.slav.app.settings
 import io.github.laalka.slav.app.AppPreferences
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.calculations.PasswordFlow
+import io.github.laalka.slav.app.developer.Added
+import io.github.laalka.slav.app.developer.RandomSettings
+import io.github.laalka.slav.app.ui.pluralRu
+import io.github.laalka.slav.core.PriceBook
 import io.github.laalka.slav.data.AdminPassword
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.random.Random
 
 /** What is wrong with the password form, field by field; [success] confirms the last change. */
 data class PasswordFormState(
@@ -20,9 +25,18 @@ const val WRONG_CURRENT_PASSWORD = "Неверный текущий пароль
 const val PASSWORD_TOO_SHORT = "Не короче ${AdminPassword.MIN_LENGTH} символов"
 const val PASSWORDS_DIFFER = "Пароли не совпадают"
 const val PASSWORD_CHANGED = "Пароль администратора изменён"
+const val TABLES_RESET = "Таблицы приведены в исходное состояние"
+
+/** «Добавлено: 4 марки, 120 размеров, 1000 цен»: what one press of the fill button put into the tables. */
+fun Added.message(): String =
+    "Добавлено: ${pluralRu(grades, "марка", "марки", "марок")}, ${pluralRu(sizes, "размер", "размера", "размеров")}, " +
+        pluralRu(prices, "цена", "цены", "цен")
 
 /** The question in front of switching developer mode on: [error] is what is wrong with the password typed so far. */
 data class DeveloperQuestion(val error: String?)
+
+/** The question in front of returning the tables to the first-run state: what is wrong with the password typed so far. */
+data class ResetQuestion(val error: String?)
 
 data class GeneralState(
     val currency: FieldState,
@@ -40,6 +54,10 @@ data class GeneralState(
     val developerMode: Boolean,
     /** Set while the administrator password is asked before developer mode is switched on. */
     val developerQuestion: DeveloperQuestion?,
+    /** Set while the administrator password is asked before the tables are returned to the first-run state. */
+    val resetQuestion: ResetQuestion?,
+    /** What the last press of a developer button did, shown under the buttons; null until one is pressed. */
+    val developerNotice: String?,
     val password: PasswordFormState,
     /** Grows when the fields must show the model's text again, dropping what was typed. */
     val epoch: Int,
@@ -49,11 +67,14 @@ data class GeneralState(
  * «Общие» (spec 4.6), the colour theme (spec 11), developer mode and the administrator password, which deleting
  * a calculation asks for. The password is not part of the settings: it is not exported, imported or saved with
  * them, and neither are the theme and developer mode, which stay with this computer ([AppPreferences]).
+ * In developer mode the tables of the settings can be filled with random data ([RandomSettings], drawn from
+ * [random]) and, after the password, returned to the state of a first run.
  */
 class GeneralModel(
     private val store: SettingsStore,
     private val preferences: AppPreferences,
     private val adminPassword: AdminPassword,
+    private val random: Random = Random.Default,
 ) {
     /** Text of a field that cannot be saved as it is, null while the field shows the saved value. */
     private var currencyEdit: String? = null
@@ -71,6 +92,10 @@ class GeneralModel(
 
     /** Switching developer mode on asks the administrator password; switching it off asks nothing. */
     private val developerPassword = PasswordFlow<Unit>(adminPassword) { preferences.setDeveloperMode(true) }
+
+    /** Returning the tables to the first-run state is destructive, so it asks the administrator password like a delete. */
+    private val resetPassword = PasswordFlow<Unit>(adminPassword) { resetTables() }
+    private var developerNotice: String? = null
 
     private val _state = MutableStateFlow(build())
     val state: StateFlow<GeneralState> = _state.asStateFlow()
@@ -223,7 +248,12 @@ class GeneralModel(
 
     /** On asks the administrator password first ([confirmDeveloperMode]); off is done at once. */
     fun onDeveloperModeChange(on: Boolean) {
-        if (on) developerPassword.request(Unit) else preferences.setDeveloperMode(false)
+        if (on) {
+            developerPassword.request(Unit)
+        } else {
+            developerNotice = null
+            preferences.setDeveloperMode(false)
+        }
         refresh()
     }
 
@@ -241,6 +271,49 @@ class GeneralModel(
     fun cancelDeveloperMode() {
         developerPassword.cancel()
         refresh()
+    }
+
+    /**
+     * Developer mode: one press fills «Материалы», «Сортамент», «Цены материала» and «Цены операций» in one
+     * change of the settings, so it is saved once. Typed prices and every name already there stay as they are.
+     */
+    fun fillTablesRandomly() {
+        val before = store.book.value
+        store.update(RandomSettings(random).all())
+        developerNotice = Added.between(before, store.book.value).message()
+        refresh()
+    }
+
+    /** Asks the administrator password before [resetTables]. */
+    fun requestResetTables() {
+        developerNotice = null
+        resetPassword.request(Unit)
+        refresh()
+    }
+
+    fun onResetPasswordChange(text: String) {
+        resetPassword.onPasswordChange(text)
+        refresh()
+    }
+
+    /** A wrong password leaves the question open with its error and the tables as they were. */
+    fun confirmResetTables() {
+        resetPassword.confirm()
+        refresh()
+    }
+
+    fun cancelResetTables() {
+        resetPassword.cancel()
+        refresh()
+    }
+
+    /**
+     * The settings become what a first run stores ([PriceBook.default]); the tabs drop what was typed into
+     * their fields. Saved calculations keep the prices they were made with (spec 8.4) and are not touched.
+     */
+    private fun resetTables() {
+        store.replace(PriceBook.default())
+        developerNotice = TABLES_RESET
     }
 
     private fun refresh() {
@@ -272,6 +345,8 @@ class GeneralModel(
             theme = preferences.themeMode.value,
             developerMode = preferences.developerMode.value,
             developerQuestion = developerPassword.pending?.let { DeveloperQuestion(developerPassword.error) },
+            resetQuestion = resetPassword.pending?.let { ResetQuestion(resetPassword.error) },
+            developerNotice = developerNotice,
             password = passwordForm,
             epoch = epoch,
         )

@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,6 +53,7 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
+import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.SegmentedChoice
@@ -172,15 +172,6 @@ internal fun Header(title: String, subtitle: String, onBack: () -> Unit, actions
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         actions()
-    }
-}
-
-/** Developer mode: «Заполнить случайными данными» in the bar of an editor. */
-@Composable
-internal fun FillRandomButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier) {
-        Icon(Icons.Filled.Refresh, contentDescription = null)
-        Text("Заполнить случайными данными", modifier = Modifier.padding(start = Spacing.small))
     }
 }
 

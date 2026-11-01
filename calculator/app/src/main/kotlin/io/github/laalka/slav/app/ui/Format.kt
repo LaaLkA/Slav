@@ -33,6 +33,17 @@ fun formatMoney(money: Money, currency: String): String = "${formatMoney(money)}
 fun formatMeasure(value: BigDecimal, fractionDigits: Int = 3): String =
     decimalFormat("#,##0." + "#".repeat(fractionDigits)).format(value)
 
+/** The count with the word in the form Russian grammar asks for: "1 марка", "2 марки", "5 марок", "11 марок". */
+fun pluralRu(count: Int, one: String, few: String, many: String): String {
+    val form = when {
+        count % 100 in 11..14 -> many
+        count % 10 == 1 -> one
+        count % 10 in 2..4 -> few
+        else -> many
+    }
+    return "$count $form"
+}
+
 /** The size of a file: "812 Б", "345,6 КБ", "12,3 МБ". */
 fun formatFileSize(bytes: Long): String = when {
     bytes < KILOBYTE -> "$bytes Б"

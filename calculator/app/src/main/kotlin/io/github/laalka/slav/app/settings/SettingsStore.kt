@@ -33,6 +33,16 @@ class SettingsStore(private val repository: SettingsRepository) {
         listeners.forEach { it(false) }
     }
 
+    /**
+     * Swaps all the settings for [book]. The tabs are told they were replaced even when [book] equals
+     * the current settings, so text typed into their fields and not saved is dropped.
+     */
+    fun replace(book: PriceBook) {
+        repository.save(book)
+        _book.value = book
+        listeners.forEach { it(true) }
+    }
+
     /** Takes the stored settings after something else saved them. */
     fun reload() {
         _book.value = repository.load()

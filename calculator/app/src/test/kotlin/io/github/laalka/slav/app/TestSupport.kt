@@ -2,6 +2,9 @@ package io.github.laalka.slav.app
 
 import io.github.laalka.slav.core.CalcResult
 import io.github.laalka.slav.core.CalculationInput
+import io.github.laalka.slav.core.GeneralSettings
+import io.github.laalka.slav.core.PriceBook
+import io.github.laalka.slav.core.Sortament
 import io.github.laalka.slav.data.PasswordSeed
 import io.github.laalka.slav.data.StoredCalculation
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +20,26 @@ const val ADMIN_PASSWORD = "test-admin-pass"
 
 /** The seed of [ADMIN_PASSWORD], with few rounds so the tests stay quick. */
 fun testAdminSeed(): PasswordSeed = PasswordSeed.of(ADMIN_PASSWORD.toCharArray(), ByteArray(16) { 3 }, iterations = 1_000)
+
+/**
+ * Settings with nothing in the tables: no groups, grades, sizes or prices. Only the general settings (bend
+ * ranges, weld types) are the defaults, as the tables are built on them.
+ */
+fun emptyPriceBook() = PriceBook(
+    general = GeneralSettings.default(),
+    groups = emptyList(),
+    grades = emptyList(),
+    sortament = Sortament(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList()),
+    materialPricesPerKg = emptyList(),
+    laserSheetCutPerCm = emptyList(),
+    laserSheetPiercePerPiece = emptyList(),
+    tubeLaserCutPerCm = emptyList(),
+    tubeLaserPiercePerPiece = emptyList(),
+    bendingPerBend = emptyList(),
+    weldingPerCm = emptyList(),
+    paintingPerM2 = null,
+    laserCutPerMinute = null,
+)
 
 /**
  * A scope for a model whose background work (the thumbnails of the drawings) the test does not look

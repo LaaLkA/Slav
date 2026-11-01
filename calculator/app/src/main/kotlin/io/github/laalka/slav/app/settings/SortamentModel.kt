@@ -125,7 +125,7 @@ class SortamentModel(private val store: SettingsStore) {
 }
 
 /** A parsed form row: [designation] is empty for kinds without one, [sizes] are in column order. */
-private class SizeRow(val designation: String, val sizes: List<BigDecimal>)
+internal class SizeRow(val designation: String, val sizes: List<BigDecimal>)
 
 private fun SortamentKind.rows(s: Sortament): List<List<String>> = when (this) {
     SortamentKind.SHEET -> s.sheetThicknessesMm.map { listOf(it.toInputText()) }
@@ -137,7 +137,7 @@ private fun SortamentKind.rows(s: Sortament): List<List<String>> = when (this) {
 }
 
 /** Numeric lists are kept sorted by size; designated sections stay in the order the user entered them. */
-private fun SortamentKind.withRow(s: Sortament, row: SizeRow): Sortament {
+internal fun SortamentKind.withRow(s: Sortament, row: SizeRow): Sortament {
     val n = row.sizes
     return when (this) {
         SortamentKind.SHEET -> s.copy(sheetThicknessesMm = (s.sheetThicknessesMm + n[0]).sorted())
@@ -165,7 +165,7 @@ private fun SortamentKind.withoutRow(s: Sortament, index: Int): Sortament = when
 }
 
 /** Matched the way an import matches sizes (spec 9): numbers by value, designations trimmed in any case. */
-private fun SortamentKind.contains(s: Sortament, row: SizeRow): Boolean {
+internal fun SortamentKind.contains(s: Sortament, row: SizeRow): Boolean {
     val n = row.sizes
     fun same(a: BigDecimal, b: BigDecimal) = a.compareTo(b) == 0
     fun sameName(a: String) = a.trim().equals(row.designation, ignoreCase = true)

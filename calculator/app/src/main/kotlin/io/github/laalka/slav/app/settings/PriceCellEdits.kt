@@ -95,6 +95,24 @@ fun PriceBook.withPrice(cell: PriceCell, price: BigDecimal?): PriceBook = when (
     PriceCell.LaserCutPerMinute -> copy(laserCutPerMinute = price)
 }
 
+/**
+ * Every cell the price tabs show for this book, filled or not: rows and columns come from the groups,
+ * grades, weld types, bend ranges and the thicknesses of the sortament, as in [PricesModel].
+ */
+fun PriceBook.priceCells(): List<PriceCell> {
+    val sheet = sortament.sheetThicknesses()
+    val longProducts = sortament.longProductThicknesses()
+    val all = sortament.allThicknesses()
+    val ranges = general.bendRanges()
+    return grades.flatMap { grade -> all.map { PriceCell.Material(grade.name, it) } } +
+        GroupTable.entries.flatMap { table ->
+            groups.flatMap { group -> (if (table.isSheetTable) sheet else longProducts).map { PriceCell.Group(table, group.name, it) } }
+        } +
+        groups.flatMap { group -> sheet.flatMap { t -> ranges.map { PriceCell.Bending(group.name, t, it) } } } +
+        general.weldTypes.flatMap { type -> groups.flatMap { group -> all.map { PriceCell.Welding(type, group.name, it) } } } +
+        listOf(PriceCell.Painting, PriceCell.LaserCutPerMinute)
+}
+
 /** Without the rows of [group] in the operation tables: a deleted group leaves no prices behind. */
 fun PriceBook.withoutGroupPrices(group: String): PriceBook {
     val tables = GroupTable.entries.fold(this) { book, table -> table.withCells(book, table.cells(book).filterNot { it.group == group }) }
