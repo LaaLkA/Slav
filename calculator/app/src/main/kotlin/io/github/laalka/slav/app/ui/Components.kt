@@ -129,7 +129,8 @@ fun CardSurface(
 
 /**
  * A titled section of a tab or an editor: a [CardSurface] with the [title] 15 sp semibold and the [subtitle] 13 sp in
- * the secondary colour over its content. [trailing] stands at the right end of the title, a switch for instance.
+ * the secondary colour over its content. [trailing] stands at the right end of the title's row, level with the title,
+ * a switch for instance; the subtitle is under that row and as wide as the card, not squeezed in beside [trailing].
  */
 @Composable
 fun SectionCard(
@@ -141,14 +142,18 @@ fun SectionCard(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     CardSurface(modifier, dashed) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.gap), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (trailing == null) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                if (subtitle != null) {
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.gap), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    trailing()
                 }
             }
-            trailing?.invoke(this)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         content()
     }

@@ -1,14 +1,18 @@
 package io.github.laalka.slav.app
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
@@ -96,6 +100,24 @@ class CardScreenUiTest {
             compose.onNodeWithTag(CalculationTags.CARD_STATUS).assertTextContains("Черновик").assertHasNoClickAction()
             ExportFormat.entries.forEach { compose.onNodeWithTag(CalculationTags.cardExport(it)).assertIsNotEnabled() }
             compose.onNodeWithTag(CalculationTags.CARD_EDIT).assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun `the card of the golden calculation names the product mass once, in the cost panel, and the header of the breakdown does not repeat it`() {
+        deps().use { deps ->
+            val id = deps.saveCalculated(goldenInput("Кронштейн"))
+            open(deps, id)
+
+            // The header of «Разбивка» used to write «Масса изделия 16 кг» over the row of the panel that says the same.
+            compose.onAllNodesWithText("Масса изделия", substring = true).assertCountEquals(1)
+            compose.onNodeWithTag(CalculationTags.CARD_UNIT_MASS).assertTextEquals("16 кг")
+            val label = compose.onNodeWithText("Масса изделия", substring = true).getBoundsInRoot()
+            val value = compose.onNodeWithTag(CalculationTags.CARD_UNIT_MASS).getBoundsInRoot()
+            assertTrue(label.top < value.bottom && value.top < label.bottom, "the one «Масса изделия» is the label of the panel's row: $label, $value")
+            // The mass of the part and the mass of the run are not repeats and stay.
+            compose.onNodeWithText("Масса: 16 кг").assertExists()
+            compose.onNodeWithTag(CalculationTags.CARD_RUN_MASS).assertExists()
         }
     }
 

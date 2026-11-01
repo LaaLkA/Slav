@@ -45,6 +45,8 @@ object EditorTags {
     const val FILL_RANDOM = "editor/fill-random"
     const val LEAVE_CONFIRM = "editor/leave/confirm"
     const val LEAVE_STAY = "editor/leave/stay"
+    const val FORM_SCROLLBAR = "editor/form-scrollbar"
+    const val COST_PANEL = "editor/cost-panel"
 
     // The price in the bottom bar, shared by both kinds of editor.
     const val SUMMARY_SUBTOTAL = "editor/summary/subtotal"

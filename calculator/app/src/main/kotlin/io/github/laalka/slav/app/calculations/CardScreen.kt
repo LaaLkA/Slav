@@ -272,14 +272,11 @@ private fun TableCard(modifier: Modifier = Modifier, content: @Composable Column
 @Composable
 private fun BreakdownCard(state: CardState) {
     TableCard {
-        Row(
+        Text(
+            "Разбивка",
             modifier = Modifier.fillMaxWidth().padding(horizontal = LINE_INSET, vertical = Spacing.medium),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.medium),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Разбивка", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            state.unitMass?.let { Text("Масса изделия $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
+            style = MaterialTheme.typography.titleMedium,
+        )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         state.parts.forEachIndexed { index, part ->
             SectionCaption(part.title, part.details, first = index == 0)

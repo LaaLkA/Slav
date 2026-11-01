@@ -23,6 +23,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performMouseInput
@@ -289,6 +290,42 @@ class ComponentsUiTest {
                 assertEquals(13.sp, subtitle.textLayout().layoutInput.style.fontSize)
                 assertEquals(palette.scheme.onSurfaceVariant, subtitle.textLayout().layoutInput.style.color)
                 assertEquals(bounds.bottom - 20f, onNodeWithText("Содержимое", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.bottom, 2f, "20 dp of room under it")
+            }
+        }
+    }
+
+    @Test
+    fun `a card with trailing content has it level with the title on one row, and the subtitle under that row at the full width of the card`() {
+        val subtitle = "Пояснение, которое длиннее одной строки: оно не должно ужиматься в узкую колонку рядом с тем, что стоит в конце заголовка, " +
+            "а должно занимать всю ширину карточки под строкой заголовка и переносится только по её краю."
+        for (palette in palettes) {
+            inTheme(
+                palette,
+                {
+                    Column {
+                        SectionCard(
+                            "С правым краем", Modifier.width(400.dp).testTag("with"), subtitle = subtitle,
+                            trailing = { Box(Modifier.width(80.dp).height(40.dp).testTag("trailing")) },
+                        ) {}
+                        SectionCard("Без правого края", Modifier.width(400.dp).testTag("without"), subtitle = subtitle) {}
+                    }
+                },
+            ) {
+                // The card is 400 dp wide with 20 dp of room on both sides: the content is 360 dp wide.
+                val with = onNodeWithTag("with").fetchSemanticsNode().boundsInRoot
+                val trailing = onNodeWithTag("trailing").fetchSemanticsNode().boundsInRoot
+                val title = onNodeWithText("С правым краем", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                val (under, plain) = onAllNodesWithText(subtitle, useUnmergedTree = true).let { it[0] to it[1] }
+                assertEquals(with.right - 20f, trailing.right, "the trailing content is at the right end of the title's row")
+                assertEquals((trailing.top + trailing.bottom) / 2, (title.top + title.bottom) / 2, 1f, "level with the title")
+                assertEquals(360, under.textLayout().layoutInput.constraints.maxWidth, "the subtitle has the full width of the card to wrap in")
+                assertEquals(trailing.bottom + 4f, under.fetchSemanticsNode().boundsInRoot.top, 1f, "4 dp under the row of the title")
+                assertEquals(with.left + 20f, under.fetchSemanticsNode().boundsInRoot.left, "from the left edge of the content")
+
+                // A card with none is what it was: the title, 4 dp, the subtitle, the whole width to wrap in.
+                val without = onNodeWithText("Без правого края", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                assertEquals(without.bottom + 4f, plain.fetchSemanticsNode().boundsInRoot.top, 1f, "4 dp under the title")
+                assertEquals(360, plain.textLayout().layoutInput.constraints.maxWidth, "the whole width of the card")
             }
         }
     }

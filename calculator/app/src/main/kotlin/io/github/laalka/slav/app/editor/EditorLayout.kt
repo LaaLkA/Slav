@@ -1,5 +1,7 @@
 package io.github.laalka.slav.app.editor
 
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +53,10 @@ private val CALCULATE_HEIGHT = 48.dp
  * What both editors are made of under their title bar: the scrolling [form] and the price with «Рассчитать». In a
  * window of [TWO_COLUMN_WINDOW] or more the price is the [CostPanel] to the right of the form; in a narrower one it is
  * the [CalculateBar] under it. The page the layout is on lies right of the rail, so the rail is part of the window.
+ *
+ * The form scrolls on its own and the panel stays where it is, but the scrollbar of the form is not part of the form's
+ * column: in the wide layout it stands at the right edge of the whole body, as the scrollbar of the page does in the
+ * mockup, and the panel leaves room for it.
  */
 @Composable
 internal fun EditorBody(
@@ -64,14 +70,25 @@ internal fun EditorBody(
     form: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
+        val scroll = rememberScrollState()
         if (maxWidth + RailWidth >= TWO_COLUMN_WINDOW) {
-            Row(Modifier.fillMaxSize()) {
-                FormScroll(Modifier.weight(1f).fillMaxHeight(), end = Spacing.large, content = form)
-                CostPanel(canCalculate, missingCount, summary, calcErrors, calcErrorsHint, onCalculate)
+            Box(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxSize()) {
+                    FormScroll(scroll, Modifier.weight(1f).fillMaxHeight(), end = Spacing.large, content = form)
+                    // The scrollbar stands in the margin of the page, at the edge of the window; a thicker one would push the panel in.
+                    CostPanel(
+                        canCalculate, missingCount, summary, calcErrors, calcErrorsHint, onCalculate,
+                        end = maxOf(Spacing.pageTight, LocalScrollbarStyle.current.thickness),
+                    )
+                }
+                FormScrollbar(scroll, Modifier.align(Alignment.CenterEnd))
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                FormScroll(Modifier.weight(1f).fillMaxWidth(), end = Spacing.pageTight, content = form)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    FormScroll(scroll, Modifier.fillMaxSize(), end = Spacing.pageTight, content = form)
+                    FormScrollbar(scroll, Modifier.align(Alignment.CenterEnd))
+                }
                 HorizontalDivider()
                 CalculateBar(canCalculate, missingCount, summary, calcErrors, calcErrorsHint, onCalculate)
             }
@@ -79,26 +96,29 @@ internal fun EditorBody(
     }
 }
 
-/** The form of an editor: its cards one under another, scrolling, with [end] of room on the right for the scrollbar and what stands beside it. */
+/** The form of an editor: its cards one under another, scrolling by [scroll], with [end] of room on the right for what stands beside it. */
 @Composable
-private fun FormScroll(modifier: Modifier, end: Dp, content: @Composable ColumnScope.() -> Unit) {
-    Box(modifier) {
-        val scroll = rememberScrollState()
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scroll)
-                .padding(start = Spacing.pageTight, end = end, top = Spacing.large, bottom = Spacing.large),
-            verticalArrangement = Arrangement.spacedBy(Spacing.medium),
-            content = content,
-        )
-        VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
-    }
+private fun FormScroll(scroll: ScrollState, modifier: Modifier, end: Dp, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = modifier.verticalScroll(scroll)
+            .padding(start = Spacing.pageTight, end = end, top = Spacing.large, bottom = Spacing.large),
+        verticalArrangement = Arrangement.spacedBy(Spacing.medium),
+        content = content,
+    )
+}
+
+/** The scrollbar of the [FormScroll] of [scroll]; the box it is in decides where it stands, [modifier] says on which side. */
+@Composable
+private fun FormScrollbar(scroll: ScrollState, modifier: Modifier) {
+    VerticalScrollbar(rememberScrollbarAdapter(scroll), modifier.fillMaxHeight().testTag(EditorTags.FORM_SCROLLBAR))
 }
 
 /**
  * «Стоимость»: the price of the input as it stands, live, in the right column of the wide layout. The lines it is
  * made of, the discount, the price of a piece, the run total, then why «Рассчитать» is shut or what stopped the last
  * attempt, and the button. While a field is missing there is no price: the two sums stand as dashes. The tags are the
- * ones of the bar, so a test finds the price in either layout.
+ * ones of the bar, so a test finds the price in either layout. [end] is the room on its right, where the scrollbar of the
+ * form stands at the edge of the window: the margin of the page, or the scrollbar if that is wider.
  */
 @Composable
 private fun CostPanel(
@@ -108,13 +128,14 @@ private fun CostPanel(
     calcErrors: List<ReadableError>,
     calcErrorsHint: String?,
     onCalculate: () -> Unit,
+    end: Dp,
 ) {
     Column(
-        modifier = Modifier.width(COST_PANEL_WIDTH + Spacing.pageTight)
-            .padding(end = Spacing.pageTight, top = Spacing.large, bottom = Spacing.large)
+        modifier = Modifier.width(COST_PANEL_WIDTH + end)
+            .padding(end = end, top = Spacing.large, bottom = Spacing.large)
             .verticalScroll(rememberScrollState()),
     ) {
-        CardSurface {
+        CardSurface(Modifier.testTag(EditorTags.COST_PANEL)) {
             Text("Стоимость", style = MaterialTheme.typography.titleMedium)
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
                 summary?.lines?.forEachIndexed { index, line -> PanelLine(line.title, line.amount, EditorTags.summaryLine(index)) }
