@@ -13,10 +13,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -29,6 +27,8 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.app.ui.SecondaryButton
+import io.github.laalka.slav.app.ui.TableDivider
 
 private val DIALOG_WIDTH = 480.dp
 private val LIST_MAX_HEIGHT = 320.dp
@@ -41,7 +41,7 @@ fun AddFromLibraryRow(model: EditorLibraryModel) {
         state.notice?.let { notice ->
             Box(Modifier.testTag(LibraryTags.NOTICE)) { NoticeCard(notice, isError = false, onDismiss = model::dismissNotice) }
         }
-        OutlinedButton(onClick = model::openPick, modifier = Modifier.testTag(LibraryTags.ADD_FROM_LIBRARY)) {
+        SecondaryButton(onClick = model::openPick, modifier = Modifier.testTag(LibraryTags.ADD_FROM_LIBRARY)) {
             Text("Добавить из библиотеки")
         }
     }
@@ -128,7 +128,7 @@ private fun PickDialog(dialog: PickPartDialog, model: EditorLibraryModel) {
                     else -> Column(Modifier.heightIn(max = LIST_MAX_HEIGHT).verticalScroll(rememberScrollState())) {
                         dialog.rows.forEachIndexed { index, row ->
                             PickRow(row, LibraryTags.pickRow(index), onPick = { model.pick(row.id) })
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            TableDivider()
                         }
                     }
                 }

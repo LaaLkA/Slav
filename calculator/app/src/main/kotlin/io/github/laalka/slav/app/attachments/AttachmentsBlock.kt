@@ -14,7 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,7 +33,9 @@ import io.github.laalka.slav.app.FilePicker
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
+import io.github.laalka.slav.app.ui.ButtonIcon
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 
 object AttachmentTags {
@@ -69,8 +70,8 @@ fun AttachmentsBlock(model: AttachmentsModel, filePicker: FilePicker, modifier: 
             )
         }
         state.rows.forEachIndexed { index, row -> DrawingRow(AttachmentTags.row(index), row, state.thumbnails[row.id], model) }
-        OutlinedButton(onClick = { filePicker.chooseDrawing()?.let(model::attach) }, modifier = Modifier.testTag(AttachmentTags.ATTACH)) {
-            Icon(Icons.Filled.Add, contentDescription = null)
+        SecondaryButton(onClick = { filePicker.chooseDrawing()?.let(model::attach) }, modifier = Modifier.testTag(AttachmentTags.ATTACH)) {
+            ButtonIcon(Icons.Filled.Add)
             Text("Прикрепить чертёж", modifier = Modifier.padding(start = Spacing.small))
         }
     }

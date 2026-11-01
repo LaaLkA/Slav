@@ -1,27 +1,35 @@
 package io.github.laalka.slav.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -29,29 +37,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -62,14 +69,19 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.app.theme.tabular
 
 /** The scrolling body of a settings tab. */
@@ -86,7 +98,10 @@ fun TabContent(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-/** A titled section of a tab. */
+/**
+ * A titled section of a tab: the surface of the theme with a 1 dp line round it and no shadow, [Spacing.card] of
+ * room round its content, the [title] 15 sp semibold and the [subtitle] 13 sp in the secondary colour.
+ */
 @Composable
 fun SectionCard(
     title: String,
@@ -94,27 +109,78 @@ fun SectionCard(
     subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(
+    Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.padding(Spacing.medium), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.padding(Spacing.card), verticalArrangement = Arrangement.spacedBy(Spacing.gap)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (subtitle != null) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             content()
         }
     }
 }
 
+// ---- fields ----
+
+/** The thickness of the outline of a field in error: the same whether or not the field is focused. */
+private val ERROR_OUTLINE = 2.dp
+
+/** The thickness of the outline of a focused field. */
+private val FOCUS_OUTLINE = 2.dp
+
+private val IDLE_OUTLINE = 1.dp
+
+/** The room between the outline of a field and its text, measured from the outside edge whatever the thickness of the outline. */
+val FieldTextInset = 12.dp
+
+// The gap between the label of a field, the field and the message under it.
+private val LABEL_GAP = 6.dp
+
+// The line of a label (12 sp, 16 sp of line height) and the gap under it: what a labelled field has above its box.
+private val LABEL_LINE = 16.dp
+
+// What the width of a field comes to when the layout gives it none.
+private val FIELD_MIN_WIDTH = 280.dp
+
+private const val DISABLED_ALPHA = 0.38f
+
+/** The room a field leaves above its box for its label. */
+val FieldLabelRoom = LABEL_LINE + LABEL_GAP
+
+/** The height of a button with its touch area, an icon button or a check box: Material gives them all 48 dp. */
+val TouchTarget = 48.dp
+
+/**
+ * Puts a control (a button, an icon button, a check box) that stands in a top-aligned row beside a labelled field
+ * level with it: the middle of the control meets the middle of the box of the field, which is [ControlHeight] tall
+ * below its label. [controlHeight] is the height of the control, [TouchTarget] for an icon button and a check box.
+ */
+fun Modifier.besideField(controlHeight: Dp = ControlHeight): Modifier = padding(top = FieldLabelRoom + (ControlHeight - controlHeight) / 2)
+
+/**
+ * The room above a text of [lineHeight] that stands in a top-aligned row beside a field, so its line is level with
+ * the text in the box: under the label of a [labelled] field, or from the top of a field that has none.
+ */
+fun fieldTextOffset(lineHeight: Dp, labelled: Boolean = true): Dp = (if (labelled) FieldLabelRoom else 0.dp) + (ControlHeight - lineHeight) / 2
+
+/** The text of every field: 15 sp, on a screen and in a dialog alike. */
+private val FIELD_TEXT: TextStyle
+    @Composable get() = MaterialTheme.typography.bodyLarge
+
 /**
  * A single-line field whose error is shown under it. What is typed lives in the field's own state
  * and every change is reported: typing never waits for a model round trip, which would move the
  * caret. [value] is therefore read only when the field enters the composition; a screen whose
  * model replaces the text itself re-creates the field (a `key` on the model's epoch). A [password]
- * field shows dots instead of the text.
+ * field shows dots instead of the text. A [numeric] field is right-aligned, in digits of equal width.
  */
 @Composable
 fun InputField(
@@ -132,7 +198,7 @@ fun InputField(
     var text by remember { mutableStateOf(value) }
     // Not the ambient style: a dialog sets its body text 14 sp, which would make the same field smaller there than on a screen.
     val style = FIELD_TEXT
-    OutlinedField(
+    Field(
         value = text,
         onValueChange = {
             text = it
@@ -144,109 +210,129 @@ fun InputField(
             isEnter
         },
         textStyle = if (numeric) style.tabular().copy(textAlign = TextAlign.End) else style,
-        label = label?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-        placeholder = placeholder?.let { { Text(it, maxLines = 1) } },
+        label = label,
+        placeholder = placeholder,
         leadingIcon = leadingIcon,
         error = error,
+        numeric = numeric,
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
     )
 }
 
-/** The text of every field: 16 sp, on a screen and in a dialog alike. */
-private val FIELD_TEXT: TextStyle
-    @Composable get() = MaterialTheme.typography.bodyLarge
-
-/** The outline of a field in error is this thick whether or not the field is focused. */
-private val ERROR_OUTLINE = 2.dp
-
-// The room an outlined field leaves above itself for its floating label (Material's OutlinedTextField does the same).
-private val LABEL_ROOM = 8.dp
-
-// The height of a button, an icon button or a check box with its touch area: Material gives them all 48 dp.
-private val TOUCH_TARGET = 48.dp
-
 /**
- * Puts a 48 dp control (a button, an icon button, a check box) that stands in a top-aligned row beside an outlined
- * field level with it: the field is [OutlinedTextFieldDefaults.MinHeight] tall below its [LABEL_ROOM], so the middle
- * of the control meets the middle of the field. A control as tall as the field, such as [OptionPicker], takes
- * [LABEL_ROOM] alone.
+ * A labelled single-line field with [error] under it, assembled from `BasicTextField` because Material's text
+ * field puts the label inside the outline and draws the outline of a field in error 1 dp thick until the field is
+ * focused. Here the [label] stands above the box (12 sp, in the secondary colour; in the error colour and heavier
+ * while the field is in error), the box is [ControlHeight] tall with the outline of the theme, [FOCUS_OUTLINE]
+ * thick in the accent while focused and [ERROR_OUTLINE] thick in the error colour whether focused or not, and
+ * the message is [WarningWeight]. Everything is drawn in the decoration of the text field, so the field is one
+ * node for a test and for a screen reader: it carries the label and the message with the text.
  */
-fun Modifier.besideField(): Modifier = padding(top = LABEL_ROOM + (OutlinedTextFieldDefaults.MinHeight - TOUCH_TARGET) / 2)
-
-/**
- * An outlined single-line field with [error] under it. It is Material's `OutlinedTextField` assembled from
- * its parts, because that one draws the outline of a field in error 1 dp thick until the field is focused:
- * here it is [ERROR_OUTLINE] always, and the supporting error text is [WarningWeight].
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun OutlinedField(
+private fun Field(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier,
     textStyle: TextStyle,
-    label: (@Composable () -> Unit)?,
+    label: String?,
     error: String?,
+    numeric: Boolean = false,
     enabled: Boolean = true,
     readOnly: Boolean = false,
-    placeholder: (@Composable () -> Unit)? = null,
+    placeholder: String? = null,
     leadingIcon: (@Composable () -> Unit)? = null,
     trailingIcon: (@Composable () -> Unit)? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
-    val colors = OutlinedTextFieldDefaults.colors()
+    val scheme = MaterialTheme.colorScheme
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
     val isError = error != null
-    val textColor = when {
-        !enabled -> colors.disabledTextColor
-        isError -> colors.errorTextColor
-        focused -> colors.focusedTextColor
-        else -> colors.unfocusedTextColor
-    }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier
-            .then(if (label != null) Modifier.padding(top = LABEL_ROOM) else Modifier)
-            .semantics(mergeDescendants = true) {}
-            .defaultMinSize(minWidth = OutlinedTextFieldDefaults.MinWidth, minHeight = OutlinedTextFieldDefaults.MinHeight),
+        modifier = modifier.semantics(mergeDescendants = true) {}.defaultMinSize(minWidth = FIELD_MIN_WIDTH),
         enabled = enabled,
         readOnly = readOnly,
-        textStyle = textStyle.merge(TextStyle(color = textColor)),
-        cursorBrush = SolidColor(if (isError) colors.errorCursorColor else colors.cursorColor),
+        textStyle = textStyle.merge(TextStyle(color = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = DISABLED_ALPHA))),
+        cursorBrush = SolidColor(if (isError) scheme.error else scheme.primary),
         visualTransformation = visualTransformation,
         interactionSource = interactionSource,
         singleLine = true,
         decorationBox = { innerTextField ->
-            OutlinedTextFieldDefaults.DecorationBox(
-                value = value,
-                innerTextField = innerTextField,
-                enabled = enabled,
-                singleLine = true,
-                visualTransformation = visualTransformation,
-                interactionSource = interactionSource,
-                isError = isError,
-                label = label,
-                placeholder = placeholder,
-                leadingIcon = leadingIcon,
-                trailingIcon = trailingIcon,
-                supportingText = error?.let { { Text(it, fontWeight = WarningWeight) } },
-                colors = colors,
-                container = {
-                    OutlinedTextFieldDefaults.Container(
-                        enabled = enabled,
-                        isError = isError,
-                        interactionSource = interactionSource,
-                        colors = colors,
-                        shape = OutlinedTextFieldDefaults.shape,
-                        focusedBorderThickness = if (isError) ERROR_OUTLINE else OutlinedTextFieldDefaults.FocusedBorderThickness,
-                        unfocusedBorderThickness = if (isError) ERROR_OUTLINE else OutlinedTextFieldDefaults.UnfocusedBorderThickness,
+            Column(verticalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
+                if (label != null) {
+                    // The line is [LABEL_LINE] whatever height the font gives the text, so [FieldLabelRoom] is true.
+                    Box(Modifier.height(LABEL_LINE), contentAlignment = Alignment.CenterStart) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isError) MaterialTheme.extendedColors.errorText else scheme.onSurfaceVariant,
+                            fontWeight = if (isError) WarningWeight else null,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                FieldBox(
+                    outline = when {
+                        isError -> BorderStroke(ERROR_OUTLINE, scheme.error)
+                        focused -> BorderStroke(FOCUS_OUTLINE, scheme.primary)
+                        else -> BorderStroke(IDLE_OUTLINE, if (enabled) scheme.outline else scheme.outline.copy(alpha = 0.5f))
+                    },
+                    numeric = numeric,
+                    placeholder = placeholder.takeIf { value.isEmpty() },
+                    textStyle = textStyle,
+                    leadingIcon = leadingIcon,
+                    trailingIcon = trailingIcon,
+                    innerTextField = innerTextField,
+                )
+                if (error != null) {
+                    Text(
+                        error,
+                        modifier = Modifier.heightIn(min = LABEL_LINE),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.extendedColors.errorText,
+                        fontWeight = WarningWeight,
                     )
-                },
-            )
+                }
+            }
         },
     )
+}
+
+/** The box of a field: [ControlHeight] tall, on the fill the theme gives a field, with [outline] round it. */
+@Composable
+private fun FieldBox(
+    outline: BorderStroke,
+    numeric: Boolean,
+    placeholder: String?,
+    textStyle: TextStyle,
+    leadingIcon: (@Composable () -> Unit)?,
+    trailingIcon: (@Composable () -> Unit)?,
+    innerTextField: @Composable () -> Unit,
+) {
+    val shape = MaterialTheme.shapes.medium
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(ControlHeight)
+                .background(MaterialTheme.colorScheme.surfaceContainerLowest, shape)
+                .border(outline, shape)
+                .padding(horizontal = FieldTextInset),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            leadingIcon?.invoke()
+            // The text is anchored to the end of its slot in a number, to the start in anything else.
+            Box(Modifier.weight(1f), contentAlignment = if (numeric) Alignment.CenterEnd else Alignment.CenterStart) {
+                if (placeholder != null) {
+                    Text(placeholder, style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                innerTextField()
+            }
+            trailingIcon?.invoke()
+        }
+    }
 }
 
 /** A text in a numeric column: tabular figures, right-aligned. */
@@ -255,19 +341,63 @@ fun NumberText(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier = modifier, style = MaterialTheme.typography.bodyMedium.tabular(), textAlign = TextAlign.End)
 }
 
-/** A column header of a table; numeric columns are right-aligned like their values. */
+// ---- tables ----
+
+/**
+ * A column header of a table: 12 sp semibold in capitals, opened by 0.6 sp; numeric columns are right-aligned like
+ * their values. The capitals are drawn, not stored: a test and a screen reader still get the text as it was written.
+ */
 @Composable
-fun HeaderText(text: String, modifier: Modifier = Modifier, numeric: Boolean = false) {
+fun HeaderText(
+    text: String,
+    modifier: Modifier = Modifier,
+    numeric: Boolean = false,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Text(
-        text,
-        modifier = modifier,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        text.uppercase(),
+        modifier = modifier.semantics { this.text = AnnotatedString(text) },
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        maxLines = 1,
         textAlign = if (numeric) TextAlign.End else TextAlign.Start,
     )
 }
 
-/** A message inside the screen; errors are never shown in dialogs. An error is a [WarningPanel]. */
+/** The line between the rows of a table and under its header: 1 dp, the colour of the borders of a card. */
+@Composable
+fun TableDivider() {
+    HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+}
+
+/** The header row of a table: its labels in [HeaderText], a little air round them and the divider under them. */
+@Composable
+fun TableHeaderRow(
+    modifier: Modifier = Modifier,
+    verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Column(modifier) {
+        Row(
+            modifier = Modifier.padding(vertical = Spacing.small),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            verticalAlignment = verticalAlignment,
+            content = content,
+        )
+        TableDivider()
+    }
+}
+
+/** A row of a table: it is lit with the track colour while the pointer is over it. */
+fun Modifier.tableRow(): Modifier = composed {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    hoverable(interactionSource).background(if (hovered) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+}
+
+// ---- messages ----
+
+/** A message inside the screen; errors are never shown in dialogs. An error is a [WarningPanel], anything else a success strip. */
 @Composable
 fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) {
     if (isError) {
@@ -275,18 +405,18 @@ fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) 
         return
     }
     Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = MaterialTheme.extendedColors.success,
+        contentColor = MaterialTheme.extendedColors.onSuccess,
         shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier.padding(start = Spacing.medium, top = Spacing.small, bottom = Spacing.small, end = Spacing.small),
+            modifier = Modifier.padding(start = Spacing.gap, top = Spacing.small, bottom = Spacing.small, end = Spacing.small),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.gap),
         ) {
-            Icon(Icons.Filled.Info, contentDescription = null)
-            Text(text, modifier = Modifier.weight(1f).padding(vertical = Spacing.small), style = MaterialTheme.typography.bodyMedium)
+            Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(text, modifier = Modifier.weight(1f).padding(vertical = Spacing.small), style = MaterialTheme.typography.bodySmall)
             if (onDismiss != null) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Скрыть") }
             }
@@ -294,21 +424,34 @@ fun NoticeCard(text: String, isError: Boolean, onDismiss: (() -> Unit)? = null) 
     }
 }
 
-/** A choice from [options]; disabled while there is nothing to choose. */
+// ---- choices ----
+
+/** A choice from [options], drawn like a field without a label; disabled while there is nothing to choose. */
 @Composable
 fun OptionPicker(selected: String?, options: List<String>, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
+    val enabled = options.isNotEmpty()
+    val scheme = MaterialTheme.colorScheme
+    val shape = MaterialTheme.shapes.medium
     Box(modifier) {
-        // Shaped and sized like the outlined text fields it stands next to.
-        OutlinedButton(
-            onClick = { expanded = true },
-            enabled = options.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-            shape = MaterialTheme.shapes.extraSmall,
-            contentPadding = PaddingValues(start = Spacing.medium, end = Spacing.small),
+        Row(
+            modifier = Modifier.fillMaxWidth().height(ControlHeight)
+                .clip(shape)
+                .background(scheme.surfaceContainerLowest, shape)
+                .border(IDLE_OUTLINE, if (enabled) scheme.outline else scheme.outline.copy(alpha = 0.5f), shape)
+                .clickable(enabled = enabled, role = Role.DropdownList) { expanded = true }
+                .padding(start = FieldTextInset, end = Spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(selected ?: "—", modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+            Text(
+                selected ?: "—",
+                modifier = Modifier.weight(1f),
+                style = FIELD_TEXT,
+                color = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = DISABLED_ALPHA),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = scheme.onSurfaceVariant)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
@@ -364,12 +507,12 @@ fun ChoiceField(
     var expanded by remember { mutableStateOf(false) }
     val enabled = options.isNotEmpty()
     Box(modifier) {
-        OutlinedField(
+        Field(
             value = selected.orEmpty(),
             onValueChange = {},
             modifier = Modifier.fillMaxWidth(),
             textStyle = FIELD_TEXT,
-            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            label = label,
             error = error,
             enabled = enabled,
             readOnly = true,
@@ -399,15 +542,20 @@ fun ChoiceField(
 // The room between the edge of a segment and its label, the same on both sides of every segment of every row.
 private val SEGMENT_PADDING = Spacing.medium
 
+// A segment is 36 dp high, in a track that leaves 3 dp round the segments and 2 dp between them.
+private val SEGMENT_HEIGHT = 36.dp
+private val TRACK_PADDING = 3.dp
+private val SEGMENT_GAP = 2.dp
+
 /**
  * One of [options] chosen in a row of segments; [selectedIndex] is the chosen one. This is the only segmented
- * control of the program, so every row looks and sizes alike: Material's `SingleChoiceSegmentedButtonRow`
- * with a segment per option and the chosen one shown by its colour only. The check mark Material puts into the
- * chosen segment is left out: it widens that segment alone, so a label that fitted would wrap or be cut as soon
- * as it is chosen. A label is one line and never cut: Material sizes the row by the longest word of each label,
- * not by the whole label, so here every segment is as wide as its own label measures plus [SEGMENT_PADDING] on
- * both sides, and all segments of a row are of one height. Segment [index] is tagged `testTagOf(index)` when
- * that is not null.
+ * control of the program, so every row looks and sizes alike: a track in the colour of the fields' surface
+ * variant with a 1 dp line round it, and the chosen segment lifted off it, in the raised surface (white with a
+ * soft shadow in the light theme, a step up in the dark one) with its label heavier. The chosen one is shown by
+ * those alone, with no check mark: a mark widens that segment only, so a label that fitted would wrap or be
+ * cut as soon as it is chosen. A label is one line and never cut: every segment is as wide as its own label
+ * measures in the heavy weight, whether it is chosen or not, plus [SEGMENT_PADDING] on both sides, and all
+ * segments of a row are of one height. Segment [index] is tagged `testTagOf(index)` when that is not null.
  */
 @Composable
 fun SegmentedChoice(
@@ -419,26 +567,55 @@ fun SegmentedChoice(
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelLarge
-    val borderPx = with(density) { SegmentedButtonDefaults.BorderWidth.toPx() }
+    val chosenStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+    val idleStyle = chosenStyle.copy(fontWeight = FontWeight.Medium)
     val paddingPx = with(density) { SEGMENT_PADDING.toPx() }
-    // The row lays segments out by weight; a weight in pixels gives each segment exactly its label and padding.
-    val segmentPx = remember(options, labelStyle, paddingPx, measurer) {
-        options.map { measurer.measure(it, labelStyle, maxLines = 1, softWrap = false).size.width + 2 * paddingPx }
+    // The width of a segment in pixels: its label measured in the heavier weight and the padding on both sides.
+    val segmentWidths = remember(options, chosenStyle, paddingPx, measurer) {
+        options.map { with(density) { (measurer.measure(it, chosenStyle, maxLines = 1, softWrap = false).size.width + 2 * paddingPx).toDp() } }
     }
-    // Neighbouring segments overlap by one border width.
-    val rowWidth = with(density) { (segmentPx.sum() - borderPx * (options.size - 1)).toDp() }
-    SingleChoiceSegmentedButtonRow(modifier.width(rowWidth)) {
+    val scheme = MaterialTheme.colorScheme
+    val segmentShape = MaterialTheme.shapes.small
+    val trackShape = MaterialTheme.shapes.medium
+    Row(
+        modifier = modifier
+            .clip(trackShape)
+            .background(scheme.surfaceVariant, trackShape)
+            .border(1.dp, scheme.outlineVariant, trackShape)
+            .padding(TRACK_PADDING)
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(SEGMENT_GAP),
+    ) {
         options.forEachIndexed { index, option ->
-            SegmentedButton(
-                selected = index == selectedIndex,
-                onClick = { onSelect(index) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                modifier = Modifier.weight(segmentPx[index]).then(testTagOf(index)?.let { Modifier.testTag(it) } ?: Modifier),
-                contentPadding = PaddingValues(horizontal = SEGMENT_PADDING),
-                icon = {},
+            val chosen = index == selectedIndex
+            Box(
+                modifier = Modifier
+                    .width(segmentWidths[index])
+                    .height(SEGMENT_HEIGHT)
+                    .then(
+                        if (chosen) {
+                            Modifier.shadow(1.dp, segmentShape, ambientColor = MaterialTheme.extendedColors.raisedShadow, spotColor = MaterialTheme.extendedColors.raisedShadow)
+                                .background(scheme.surfaceBright, segmentShape)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .clip(segmentShape)
+                    .selectable(selected = chosen, role = Role.RadioButton, onClick = { onSelect(index) })
+                    .then(testTagOf(index)?.let { Modifier.testTag(it) } ?: Modifier),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(option, style = labelStyle, maxLines = 1, softWrap = false)
+                // The padding is round the text, not inside the segment: the text gets exactly the width of its label, and
+                // is centred in it, so the lighter weight of a segment that is not chosen leaves the room on both sides equal.
+                Text(
+                    option,
+                    modifier = Modifier.padding(horizontal = SEGMENT_PADDING).fillMaxWidth(),
+                    style = if (chosen) chosenStyle else idleStyle,
+                    color = if (chosen) scheme.onSurface else scheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
         }
     }

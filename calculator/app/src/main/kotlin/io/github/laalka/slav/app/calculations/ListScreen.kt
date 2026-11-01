@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +36,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -63,9 +61,16 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
+import io.github.laalka.slav.app.ui.ButtonIcon
+import io.github.laalka.slav.app.ui.HeaderText
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
+import io.github.laalka.slav.app.ui.PrimaryButton
+import io.github.laalka.slav.app.ui.SecondaryButton
+import io.github.laalka.slav.app.ui.StatusChip
+import io.github.laalka.slav.app.ui.TableDivider
 import io.github.laalka.slav.app.ui.besideField
+import io.github.laalka.slav.app.ui.tableRow
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
@@ -113,7 +118,7 @@ fun CalculationsScreen(
             Text("Готовые расчёты", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             // Nothing to select while the list is empty, and a selection already open has its own bar below.
             if (!state.isEmpty && !state.selecting) {
-                OutlinedButton(onClick = model::startSelecting, modifier = Modifier.testTag(CalculationTags.SELECT)) { Text("Выбрать") }
+                SecondaryButton(onClick = model::startSelecting, modifier = Modifier.testTag(CalculationTags.SELECT)) { Text("Выбрать") }
             }
             NewCalculationButton(onNew)
         }
@@ -174,7 +179,7 @@ private fun SelectionBar(state: ListState, model: CalculationListModel, filePick
         }
         Text("Выбрано: $checked", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box(Modifier.weight(1f))
-        Button(
+        PrimaryButton(
             onClick = {
                 filePicker.chooseSaveTarget(ARCHIVE_DIALOG_TITLE, model.suggestedArchiveName(), ARCHIVE_EXTENSION)?.let(model::requestArchive)
             },
@@ -190,8 +195,8 @@ private fun SelectionBar(state: ListState, model: CalculationListModel, filePick
 private fun NewCalculationButton(onNew: (CalculationKind) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        Button(onClick = { expanded = true }, modifier = Modifier.testTag(CalculationTags.NEW)) {
-            Icon(Icons.Filled.Add, contentDescription = null)
+        PrimaryButton(onClick = { expanded = true }, modifier = Modifier.testTag(CalculationTags.NEW)) {
+            ButtonIcon(Icons.Filled.Add)
             Text("Новый расчёт", modifier = Modifier.padding(start = Spacing.small))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -306,7 +311,7 @@ private fun Table(
             ListColumn.entries.forEach { column -> SortHeader(column, state, model) }
             Box(Modifier.width(ACTIONS_WIDTH))
         }
-        HorizontalDivider()
+        TableDivider()
         if (state.rows.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.large).testTag(CalculationTags.NO_MATCHES),
@@ -314,7 +319,7 @@ private fun Table(
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
                 Text("Ничего не найдено", style = MaterialTheme.typography.titleMedium)
-                OutlinedButton(onClick = model::clearFilters) { Text("Сбросить фильтры") }
+                SecondaryButton(onClick = model::clearFilters) { Text("Сбросить фильтры") }
             }
         } else {
             val listState = rememberLazyListState()
@@ -337,7 +342,7 @@ private fun Table(
                                     ?.let { model.export(row.id, format, it) }
                             },
                         )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        TableDivider()
                     }
                 }
                 VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
@@ -358,11 +363,10 @@ private fun RowScope.SortHeader(column: ListColumn, state: ListState, model: Cal
         horizontalArrangement = if (column.numeric) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        HeaderText(
             column.title,
-            style = MaterialTheme.typography.labelLarge,
+            numeric = column.numeric,
             color = if (active) MaterialTheme.extendedColors.accentText else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
         )
         if (active) {
             Icon(
@@ -389,7 +393,7 @@ private fun TableRow(
 ) {
     Row(
         // While rows are being selected a click on the row checks it, and «Открыть» in its menu is how to open it.
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = if (checked == null) onOpen else onToggle).padding(horizontal = Spacing.small).testTag(tag),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).tableRow().clickable(onClick = if (checked == null) onOpen else onToggle).padding(horizontal = Spacing.small).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {

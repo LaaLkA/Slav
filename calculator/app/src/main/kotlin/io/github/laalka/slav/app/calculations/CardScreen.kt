@@ -24,7 +24,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -43,11 +42,14 @@ import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.ArchiveIcon
+import io.github.laalka.slav.app.ui.ButtonIcon
 import io.github.laalka.slav.app.ui.ChoiceField
+import io.github.laalka.slav.app.ui.DestructiveButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.PasswordDialog
 import io.github.laalka.slav.app.ui.PasswordDialogTags
+import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 
 private val SUMMARY_WIDTH = 400.dp
@@ -248,7 +250,7 @@ private fun Summary(state: CardState, model: CardModel) {
             // The run size of a calculated record is not edited in place: a new run size is a new version.
             SummaryRow("Тираж, шт", quantity, CalculationTags.CARD_QUANTITY)
             if (state.isPriced) {
-                OutlinedButton(onClick = model::requestQuantityChange, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_CHANGE)) {
+                SecondaryButton(onClick = model::requestQuantityChange, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_QUANTITY_CHANGE)) {
                     Text("Изменить тираж")
                 }
             }
@@ -276,33 +278,33 @@ private fun SummaryRow(label: String, value: String, tag: String, emphasized: Bo
 private fun Actions(state: CardState, model: CardModel, filePicker: FilePicker) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
         // A draft is edited as it is; a calculated record is changed in place only under the administrator password.
-        OutlinedButton(onClick = model::requestEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
-            Icon(Icons.Filled.Edit, contentDescription = null)
+        SecondaryButton(onClick = model::requestEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_EDIT)) {
+            ButtonIcon(Icons.Filled.Edit)
             Text("Изменить", modifier = Modifier.padding(start = Spacing.small))
         }
         if (state.isPriced) {
-            OutlinedButton(onClick = model::copyAndEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_COPY_EDIT)) {
-                Icon(Icons.Filled.Add, contentDescription = null)
+            SecondaryButton(onClick = model::copyAndEdit, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_COPY_EDIT)) {
+                ButtonIcon(Icons.Filled.Add)
                 Text("Сделать копию и изменить", modifier = Modifier.padding(start = Spacing.small))
             }
-            OutlinedButton(onClick = model::prepareRecalc, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_RECALC)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null)
+            SecondaryButton(onClick = model::prepareRecalc, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_RECALC)) {
+                ButtonIcon(Icons.Filled.Refresh)
                 Text("Пересчитать по текущим ценам", modifier = Modifier.padding(start = Spacing.small))
             }
         }
         // The file is chosen first; the password is asked after it, and the calculation is deleted once the file is written and checked.
-        OutlinedButton(
+        SecondaryButton(
             onClick = {
                 filePicker.chooseSaveTarget(ARCHIVE_DIALOG_TITLE, model.suggestedArchiveName(), ARCHIVE_EXTENSION)?.let(model::requestArchive)
             },
             modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_ARCHIVE),
         ) {
-            Icon(ArchiveIcon, contentDescription = null, modifier = Modifier.testTag(CalculationTags.CARD_ARCHIVE_ICON))
+            ButtonIcon(ArchiveIcon, Modifier.testTag(CalculationTags.CARD_ARCHIVE_ICON))
             Text("В архив", modifier = Modifier.padding(start = Spacing.small))
         }
-        OutlinedButton(onClick = model::requestDelete, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_DELETE)) {
-            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-            Text("Удалить", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = Spacing.small))
+        DestructiveButton(onClick = model::requestDelete, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_DELETE)) {
+            ButtonIcon(Icons.Filled.Delete)
+            Text("Удалить", modifier = Modifier.padding(start = Spacing.small))
         }
     }
 }

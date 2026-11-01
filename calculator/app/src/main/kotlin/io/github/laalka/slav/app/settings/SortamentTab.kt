@@ -1,12 +1,12 @@
 package io.github.laalka.slav.app.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +26,9 @@ import io.github.laalka.slav.app.ui.NumberText
 import io.github.laalka.slav.app.ui.RemovableChips
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
+import io.github.laalka.slav.app.ui.TableDivider
+import io.github.laalka.slav.app.ui.TableHeaderRow
+import io.github.laalka.slav.app.ui.tableRow
 
 private val DESIGNATION_WIDTH = 176.dp
 private val SIZE_WIDTH = 176.dp
@@ -60,23 +63,25 @@ private fun SizeTableCard(section: SortamentSection, model: SortamentModel) {
         if (section.rows.isEmpty()) {
             EmptyList()
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                fields.forEach { HeaderText(it.label, Modifier.width(it.width), numeric = !it.isDesignation) }
-            }
-            section.rows.forEachIndexed { index, row ->
-                Row(
-                    Modifier.heightIn(min = 40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    fields.zip(row).forEach { (field, value) ->
-                        if (field.isDesignation) Text(value, Modifier.width(field.width)) else NumberText(value, Modifier.width(field.width))
-                    }
-                    IconButton(onClick = { model.delete(section.kind, index) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Удалить ${row.joinToString(" × ")}")
-                    }
+            Column {
+                TableHeaderRow {
+                    fields.forEach { HeaderText(it.label, Modifier.width(it.width), numeric = !it.isDesignation) }
                 }
-                HorizontalDivider()
+                section.rows.forEachIndexed { index, row ->
+                    Row(
+                        Modifier.heightIn(min = 40.dp).tableRow(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        fields.zip(row).forEach { (field, value) ->
+                            if (field.isDesignation) Text(value, Modifier.width(field.width)) else NumberText(value, Modifier.width(field.width))
+                        }
+                        IconButton(onClick = { model.delete(section.kind, index) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Удалить ${row.joinToString(" × ")}")
+                        }
+                    }
+                    TableDivider()
+                }
             }
         }
         AddRow(section, model)

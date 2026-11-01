@@ -104,6 +104,25 @@ private fun pairings(scheme: ColorScheme, extended: ExtendedColors): List<Pairin
         "В работе" to extended.statusInWork,
         "Завершён" to extended.statusFinished,
     ).forEach { (status, chip) -> onFill("the chip «$status»", chip.content, chip.container) }
+    // The box of a field is `surfaceContainerLowest`: what is typed in it, its label, its placeholder and the message under it.
+    on(
+        "the text of a field",
+        scheme.onSurface,
+        "the fill of a field" to scheme.surfaceContainerLowest,
+        "the chosen segment (surfaceBright)" to scheme.surfaceBright,
+    )
+    on("the label and the placeholder of a field", scheme.onSurfaceVariant, "the fill of a field" to scheme.surfaceContainerLowest)
+    on("the message under a field", extended.errorText, "the fill of a field" to scheme.surfaceContainerLowest)
+    on("the accent text of a link on a field", extended.accentText, "the fill of a field" to scheme.surfaceContainerLowest)
+    // A segment that is not chosen is read on the track, a row of a table under the pointer on the track colour.
+    on("the text of a segment not chosen", scheme.onSurfaceVariant, "the track (surfaceVariant)" to scheme.surfaceVariant)
+    // The text of a secondary button, and of a destructive one on the error container.
+    onFill("the text of a secondary button", scheme.onSurface, extended.buttonFill)
+    onFill("the error text of a destructive button", extended.errorText, scheme.errorContainer)
+    // Not text: the icon of an alert, `error` on the error container, over the card and the page.
+    grounds.forEach { (ground, base) ->
+        add(Pairing("the icon of an alert on a fill over $ground", scheme.error, over(scheme.errorContainer, base), LARGE))
+    }
     add(Pairing("onRail on rail", extended.onRail, extended.rail))
     add(Pairing("onRailSelected on the selected item", extended.onRailSelected, over(extended.railSelected, extended.rail)))
     // Not text: the fill of a button against the card and the page it lies on.

@@ -38,6 +38,7 @@ private val Orange600 = Color(0xFFEA580C)
 private val Orange700 = Color(0xFFC2410C)
 private val Orange800 = Color(0xFF9A3412)
 
+private val Red200 = Color(0xFFFECACA)
 private val Red300 = Color(0xFFFCA5A5)
 private val Red400 = Color(0xFFF87171)
 private val Red50 = Color(0xFFFEF2F2)
@@ -156,7 +157,11 @@ class FilledColors(val container: Color, val content: Color)
  * ([success] is the one of «Рассчитан»). The rail is the dark strip of navigation: it stays dark in the light
  * theme, and the selected item is tinted with the accent. [accentText] is the colour of links and of accented
  * text, which [ColorScheme.primary] is not in the dark theme; [errorText] is the colour of an error message,
- * lighter than [ColorScheme.error] in the dark theme, where `error` is the outline of a field.
+ * lighter than [ColorScheme.error] in the dark theme, where `error` is the outline of a field. [buttonFill] is the
+ * fill of an outlined button: white in the light theme, where a button on the page stands out from it, and nothing
+ * in the dark one, where it shows the card or the page it lies on. [errorBorder] is the line round a destructive
+ * button and an alert, softer than the 2 dp outline of a field in error. [raisedShadow] is the shadow under the
+ * chosen segment of a segmented control, which the light theme lifts off its track and the dark one does not.
  */
 @Immutable
 class ExtendedColors(
@@ -173,6 +178,9 @@ class ExtendedColors(
     val onRailSelected: Color,
     val accentText: Color,
     val errorText: Color,
+    val buttonFill: Color,
+    val errorBorder: Color,
+    val raisedShadow: Color,
 )
 
 internal val LightExtendedColors = ExtendedColors(
@@ -189,6 +197,9 @@ internal val LightExtendedColors = ExtendedColors(
     onRailSelected = Orange300,
     accentText = Orange700,
     errorText = Red700,
+    buttonFill = White,
+    errorBorder = Red200,
+    raisedShadow = Color(0x1F0F172A),
 )
 
 internal val DarkExtendedColors = ExtendedColors(
@@ -205,6 +216,9 @@ internal val DarkExtendedColors = ExtendedColors(
     onRailSelected = Orange300,
     accentText = Orange300,
     errorText = Red300,
+    buttonFill = Color.Transparent,
+    errorBorder = Color(0x80F87171),
+    raisedShadow = Color.Transparent,
 )
 
 private val LocalExtendedColors = staticCompositionLocalOf<ExtendedColors> { error("SlavTheme is not installed") }
@@ -225,11 +239,16 @@ internal val SlavShapes = Shapes(
     extraLarge = RoundedCornerShape(16.dp),
 )
 
-/** Every gap and padding is a multiple of 8 dp. */
+/**
+ * Every gap and padding is a multiple of 4 dp: the steps below, and the two the cards of the design are drawn with,
+ * [card] round their content and [gap] between the fields and the blocks inside them.
+ */
 object Spacing {
     val small = 8.dp
     val medium = 16.dp
     val large = 24.dp
+    val card = 20.dp
+    val gap = 12.dp
 }
 
 /** Digits of equal width, so the numbers of a column line up. */

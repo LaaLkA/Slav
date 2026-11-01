@@ -6,11 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,11 +20,14 @@ import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.ThemeMode
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.extendedColors
+import io.github.laalka.slav.app.ui.ButtonIcon
+import io.github.laalka.slav.app.ui.DestructiveButton
 import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.PasswordDialog
 import io.github.laalka.slav.app.ui.PasswordDialogTags
 import io.github.laalka.slav.app.ui.RemovableChips
+import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.SegmentedChoice
 import io.github.laalka.slav.app.ui.TabContent
@@ -137,7 +136,7 @@ fun GeneralTab(model: GeneralModel) {
                     "", model::onRepeatPasswordChange, Modifier.width(FIELD_WIDTH).testTag(GeneralTags.PASSWORD_REPEAT),
                     label = "Повторите новый пароль", error = state.password.repeatError, password = true, onEnter = model::changePassword,
                 )
-                Button(onClick = model::changePassword, modifier = Modifier.testTag(GeneralTags.PASSWORD_SAVE)) { Text("Сменить пароль") }
+                SecondaryButton(onClick = model::changePassword, modifier = Modifier.testTag(GeneralTags.PASSWORD_SAVE)) { Text("Сменить пароль") }
                 state.password.success?.let {
                     Text(
                         it,
@@ -176,12 +175,8 @@ fun GeneralTab(model: GeneralModel) {
                             Modifier.testTag(GeneralTags.FILL_TABLES),
                             label = "Заполнить таблицы случайными данными",
                         )
-                        OutlinedButton(
-                            onClick = model::requestResetTables,
-                            modifier = Modifier.testTag(GeneralTags.RESET_TABLES),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        ) {
-                            Icon(Icons.Filled.Delete, contentDescription = null)
+                        DestructiveButton(onClick = model::requestResetTables, modifier = Modifier.testTag(GeneralTags.RESET_TABLES)) {
+                            ButtonIcon(Icons.Filled.Delete)
                             Text("Очистить таблицы (исходное состояние)", modifier = Modifier.padding(start = Spacing.small))
                         }
                     }

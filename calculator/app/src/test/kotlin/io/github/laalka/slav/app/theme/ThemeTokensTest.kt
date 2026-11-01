@@ -87,6 +87,9 @@ class ThemeTokensTest {
         assertToken(token("#94A3B8"), light.onRail, "light rail items")
         assertToken(token("#C2410C"), light.accentText, "light accent text")
         assertToken(token("#B91C1C"), light.errorText, "light error text")
+        assertToken(token("#FFFFFF"), light.buttonFill, "light secondary button: white")
+        assertToken(token("#FECACA"), light.errorBorder, "light line of a destructive button and an alert")
+        assertToken(token("#0F172A", alpha = 0.12), light.raisedShadow, "light shadow under the chosen segment")
 
         val dark = DarkExtendedColors
         assertToken(token("#86EFAC"), dark.onSuccess, "dark success text")
@@ -97,10 +100,29 @@ class ThemeTokensTest {
         assertToken(token("#FDBA74"), dark.onRailSelected, "dark selected item text")
         assertToken(token("#FDBA74"), dark.accentText, "dark accent text")
         assertToken(token("#FCA5A5"), dark.errorText, "dark error text")
+        assertEquals(0f, dark.buttonFill.alpha, "dark secondary button: nothing, the card or the page shows through")
+        assertToken(token("#F87171", alpha = 0.5), dark.errorBorder, "dark line of a destructive button and an alert")
+        assertEquals(0f, dark.raisedShadow.alpha, "dark: the chosen segment is lifted by its colour, not by a shadow")
         // The dark chips: the hue of the light one at 16 % on the surface, with its light tint as text.
         listOf(dark.statusDraft, dark.statusSent, dark.statusInWork).forEach { chip ->
             assertEquals(0.16f, chip.container.alpha, 0.01f, "a dark chip is the hue at 16 %")
         }
+    }
+
+    @Test
+    fun `a field and the chosen segment stand on the roles the design gives them in both themes`() {
+        // The box of a field: white on the light card, the colour of the page inside the dark one.
+        assertToken(token("#FFFFFF"), LightColors.surfaceContainerLowest, "light field")
+        assertToken(token("#0F172A"), DarkColors.surfaceContainerLowest, "dark field")
+        // The chosen segment: raised, white in the light theme and #334155 in the dark one.
+        assertToken(token("#FFFFFF"), LightColors.surfaceBright, "light chosen segment")
+        assertToken(token("#334155"), DarkColors.surfaceBright, "dark chosen segment")
+    }
+
+    @Test
+    fun `the cards are drawn with 20 dp of padding and 12 dp between their blocks`() {
+        assertEquals(20f, Spacing.card.value)
+        assertEquals(12f, Spacing.gap.value)
     }
 
     @Test

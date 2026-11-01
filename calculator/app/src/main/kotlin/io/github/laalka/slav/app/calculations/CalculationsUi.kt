@@ -7,10 +7,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.laalka.slav.app.theme.extendedColors
 import io.github.laalka.slav.data.CalculationKind
 import io.github.laalka.slav.data.CalculationSortColumn
 import io.github.laalka.slav.data.CalculationStatus
@@ -100,25 +97,3 @@ fun QuickChip(modifier: Modifier = Modifier) {
 }
 
 const val QUICK_CHIP_TEXT = "упрощённый"
-
-/** The status as a chip; the colour tells the stage apart at a glance in the list. */
-@Composable
-fun StatusChip(status: CalculationStatus, modifier: Modifier = Modifier) {
-    val colors = MaterialTheme.extendedColors
-    val (container: Color, content: Color) = when (status) {
-        CalculationStatus.DRAFT -> colors.statusDraft.container to colors.statusDraft.content
-        CalculationStatus.CALCULATED -> colors.success to colors.onSuccess
-        CalculationStatus.SENT -> colors.statusSent.container to colors.statusSent.content
-        CalculationStatus.IN_WORK -> colors.statusInWork.container to colors.statusInWork.content
-        CalculationStatus.ARCHIVED -> colors.statusFinished.container to colors.statusFinished.content
-    }
-    Surface(shape = MaterialTheme.shapes.small, color = container, contentColor = content, modifier = modifier) {
-        Text(
-            status.title,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-        )
-    }
-}

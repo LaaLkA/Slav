@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.TableDivider
+import io.github.laalka.slav.app.ui.tableRow
 
 private val SEARCH_WIDTH = 320.dp
 
@@ -107,7 +108,7 @@ private fun Rows(state: LibraryState, model: LibraryModel, modifier: Modifier) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             itemsIndexed(state.rows, key = { _, row -> row.id }) { index, row ->
                 TemplateRow(row, LibraryTags.row(index), onRename = { model.requestRename(row.id) }, onDelete = { model.requestDelete(row.id) })
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                TableDivider()
             }
         }
         VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd).fillMaxHeight())
@@ -117,7 +118,7 @@ private fun Rows(state: LibraryState, model: LibraryModel, modifier: Modifier) {
 @Composable
 private fun TemplateRow(row: LibraryRow, tag: String, onRename: () -> Unit, onDelete: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = Spacing.small).testTag(tag),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).tableRow().padding(horizontal = Spacing.small).testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.small),
     ) {

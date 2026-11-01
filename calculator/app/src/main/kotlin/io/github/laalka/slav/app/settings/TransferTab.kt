@@ -4,10 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,8 +18,12 @@ import io.github.laalka.slav.app.ui.AccentTextButton
 import io.github.laalka.slav.app.ui.HeaderText
 import io.github.laalka.slav.app.ui.NoticeCard
 import io.github.laalka.slav.app.ui.NumberText
+import io.github.laalka.slav.app.ui.PrimaryButton
+import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
+import io.github.laalka.slav.app.ui.TableDivider
+import io.github.laalka.slav.app.ui.TableHeaderRow
 
 private val SECTION_WIDTH = 280.dp
 private val COUNT_WIDTH = 112.dp
@@ -32,7 +33,7 @@ fun TransferTab(model: TransferModel, filePicker: FilePicker) {
     val state by model.state.collectAsState()
     TabContent {
         SectionCard("Экспорт настроек", subtitle = "Справочники, сортамент и все цены — в один файл .json. Расчёты в файл не входят.") {
-            Button(onClick = { filePicker.chooseSaveTarget("Экспорт настроек", model.suggestedFileName(), ".json")?.let(model::export) }) {
+            PrimaryButton(onClick = { filePicker.chooseSaveTarget("Экспорт настроек", model.suggestedFileName(), ".json")?.let(model::export) }) {
                 Text("Экспортировать в файл…")
             }
         }
@@ -47,7 +48,7 @@ fun TransferTab(model: TransferModel, filePicker: FilePicker) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
                 ImportMode.entries.forEach { mode ->
-                    OutlinedButton(onClick = { filePicker.chooseImportSource()?.let { model.prepareImport(it, mode) } }) {
+                    SecondaryButton(onClick = { filePicker.chooseImportSource()?.let { model.prepareImport(it, mode) } }) {
                         Text(mode.title)
                     }
                 }
@@ -69,18 +70,18 @@ private fun PendingImportCard(pending: PendingImport, model: TransferModel) {
         if (pending.changes.isEmpty()) {
             Text("Файл не меняет текущие настройки.", style = MaterialTheme.typography.bodyMedium)
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
+            TableHeaderRow {
                 HeaderText("Раздел", Modifier.width(SECTION_WIDTH))
                 HeaderText("Добавится", Modifier.width(COUNT_WIDTH), numeric = true)
                 HeaderText("Изменится", Modifier.width(COUNT_WIDTH), numeric = true)
                 HeaderText("Удалится", Modifier.width(COUNT_WIDTH), numeric = true)
             }
             pending.changes.forEach { ChangeRow(it, bold = false) }
-            HorizontalDivider()
+            TableDivider()
             ChangeRow(pending.total, bold = true)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small)) {
-            Button(onClick = model::confirmImport) { Text("Применить") }
+            PrimaryButton(onClick = model::confirmImport) { Text("Применить") }
             AccentTextButton(onClick = model::cancelImport) { Text("Отмена") }
         }
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.HorizontalScrollbar
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,16 +22,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.laalka.slav.app.theme.Spacing
+import io.github.laalka.slav.app.ui.FieldTextInset
 import io.github.laalka.slav.app.ui.HeaderText
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.TabContent
+import io.github.laalka.slav.app.ui.TableDivider
+import io.github.laalka.slav.app.ui.TableHeaderRow
+import io.github.laalka.slav.app.ui.fieldTextOffset
+import io.github.laalka.slav.app.ui.tableRow
 
 private val ROW_HEADER_WIDTH = 144.dp
 private val CELL_WIDTH = 96.dp
 
-// Pushes a row label down to the text line of the outlined fields next to it.
-private val LABEL_OFFSET = 18.dp
+// Pushes a row label down to the text line of the fields next to it, which have no label of their own.
+private val LABEL_OFFSET = fieldTextOffset(lineHeight = 22.dp, labelled = false)
 
 private const val PRICE_HINT = "Пустая ячейка — цены нет, расчёт с ней остановится; 0 — бесплатная операция. Дробные числа — через запятую или точку."
 
@@ -77,17 +83,23 @@ private fun PriceGridCard(grid: PriceGrid, onCellChange: (PriceCell, String) -> 
         } else {
             // A table wider than the window scrolls sideways; the scrollbar shows there is more of it.
             val scroll = rememberScrollState()
-            Column(Modifier.horizontalScroll(scroll), verticalArrangement = Arrangement.spacedBy(Spacing.small)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Bottom) {
+            // As wide as its widest row, so the dividers and the lit row fill the table instead of being as wide as nothing.
+            Column(Modifier.horizontalScroll(scroll).width(IntrinsicSize.Max)) {
+                TableHeaderRow(verticalAlignment = Alignment.Bottom) {
                     HeaderText(grid.rowHeader, Modifier.width(ROW_HEADER_WIDTH))
-                    grid.columns.forEach { HeaderText(it, Modifier.width(CELL_WIDTH).padding(end = Spacing.medium), numeric = true) }
+                    grid.columns.forEach { HeaderText(it, Modifier.width(CELL_WIDTH).padding(end = FieldTextInset), numeric = true) }
                 }
                 grid.rows.forEach { row ->
                     key(row.label) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.small), verticalAlignment = Alignment.Top) {
+                        Row(
+                            Modifier.tableRow().padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                            verticalAlignment = Alignment.Top,
+                        ) {
                             Text(row.label, Modifier.width(ROW_HEADER_WIDTH).padding(top = LABEL_OFFSET), style = MaterialTheme.typography.bodyLarge)
                             row.cells.forEach { cell -> key(cell.cell) { PriceCellField(cell, onCellChange, Modifier.width(CELL_WIDTH)) } }
                         }
+                        TableDivider()
                     }
                 }
             }

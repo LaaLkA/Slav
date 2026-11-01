@@ -23,12 +23,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,15 +49,20 @@ import io.github.laalka.slav.app.settings.SortamentKind
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
 import io.github.laalka.slav.app.ui.AccentTextButton
+import io.github.laalka.slav.app.ui.ButtonIcon
 import io.github.laalka.slav.app.ui.CheckRow
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.FillRandomButton
 import io.github.laalka.slav.app.ui.InputField
+import io.github.laalka.slav.app.ui.PrimaryButton
+import io.github.laalka.slav.app.ui.SecondaryButton
 import io.github.laalka.slav.app.ui.SectionCard
 import io.github.laalka.slav.app.ui.SegmentedChoice
+import io.github.laalka.slav.app.ui.TouchTarget
 import io.github.laalka.slav.app.ui.WarningPanel
 import io.github.laalka.slav.app.ui.WarningWeight
 import io.github.laalka.slav.app.ui.besideField
+import io.github.laalka.slav.app.ui.fieldTextOffset
 
 internal val NUMBER_WIDTH = 168.dp
 internal val CHOICE_WIDTH = 208.dp
@@ -69,7 +72,7 @@ internal val WIDE_NUMBER_WIDTH = 208.dp
 private val PARAMS_INDENT = 48.dp
 
 // Lines a text up with the text of the outlined fields in the same row.
-private val FIELD_TEXT_OFFSET = 18.dp
+private val FIELD_TEXT_OFFSET = fieldTextOffset(lineHeight = 20.dp)
 
 /** [onFillRandom] is set in developer mode: the button that fills the editor with random data. */
 @Composable
@@ -106,8 +109,8 @@ fun EditorScreen(model: EditorModel, filePicker: FilePicker, onBack: () -> Unit,
                     AddFromLibraryRow(model.library)
                     state.parts.forEach { part -> key(part.id) { PartCard(part, state.currency, model) } }
                     state.partsError?.let { WarningPanel(it) }
-                    OutlinedButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
+                    SecondaryButton(onClick = model::addPart, modifier = Modifier.testTag(EditorTags.ADD_PART)) {
+                        ButtonIcon(Icons.Filled.Add)
                         Text("Добавить деталь", modifier = Modifier.padding(start = Spacing.small))
                     }
                     SectionCard("Операции изделия", subtitle = "Сборка из деталей: сварка сборки и покраска всего изделия") {
@@ -190,7 +193,7 @@ private fun PartCard(part: PartView, currency: String, model: EditorModel) {
             ) { Text("В библиотеку") }
             IconButton(
                 onClick = { model.deletePart(part.id) },
-                modifier = Modifier.besideField().testTag("${part.tag}/delete"),
+                modifier = Modifier.besideField(TouchTarget).testTag("${part.tag}/delete"),
             ) { Icon(Icons.Filled.Delete, contentDescription = "Удалить деталь") }
         }
 
@@ -322,7 +325,7 @@ private fun Params(line: LineRef, params: OperationParams, model: EditorModel) {
                                     "Через обе стенки",
                                     row.throughBothWalls,
                                     { model.onThroughBothWallsChange(part, row.id, it) },
-                                    Modifier.besideField().testTag("${row.tag}/both-walls"),
+                                    Modifier.besideField(TouchTarget).testTag("${row.tag}/both-walls"),
                                 )
                             }
                             DeleteRowButton("${row.tag}/delete") { model.deleteRow(line, row.id) }
@@ -373,14 +376,14 @@ private fun CountRows(line: LineRef, rows: List<CountRowView>, lengthLabel: Stri
 private fun RowsFooter(error: String?, addLabel: String, addTag: String, onAdd: () -> Unit) {
     error?.let { WarningPanel(it) }
     AccentTextButton(onClick = onAdd, modifier = Modifier.testTag(addTag)) {
-        Icon(Icons.Filled.Add, contentDescription = null)
+        ButtonIcon(Icons.Filled.Add)
         Text(addLabel, modifier = Modifier.padding(start = Spacing.small))
     }
 }
 
 @Composable
 private fun DeleteRowButton(tag: String, onDelete: () -> Unit) {
-    IconButton(onClick = onDelete, modifier = Modifier.besideField().testTag(tag)) {
+    IconButton(onClick = onDelete, modifier = Modifier.besideField(TouchTarget).testTag(tag)) {
         Icon(Icons.Filled.Delete, contentDescription = "Удалить строку")
     }
 }
@@ -429,7 +432,7 @@ internal fun CalculateBar(
                     }
                     summary?.let { PriceSummaryRow(it) }
                 }
-                Button(onClick = onCalculate, enabled = canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
+                PrimaryButton(onClick = onCalculate, enabled = canCalculate, modifier = Modifier.testTag(EditorTags.CALCULATE)) {
                     Text("Рассчитать")
                 }
             }
