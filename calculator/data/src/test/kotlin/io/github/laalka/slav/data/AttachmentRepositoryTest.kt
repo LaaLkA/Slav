@@ -128,6 +128,21 @@ class AttachmentRepositoryTest {
     }
 
     @Test
+    fun `on a clock that never moves the files of every calculation keep the order they were attached in`() {
+        val names = listOf("a.pdf", "b.pdf", "c.pdf", "d.pdf", "e.pdf")
+        val calculations = (0 until CALCULATIONS_ON_A_FROZEN_CLOCK).map { UUID.randomUUID() }
+
+        // One file at a time for every calculation, so the rows of one calculation are not next to each other.
+        names.forEach { name -> calculations.forEach { added(it, file(name)) } }
+
+        calculations.forEach { calculation ->
+            val listed = attachments.list(calculation)
+            assertEquals(names, listed.map { it.fileName }, "calculation $calculation")
+            assertEquals(1, listed.map { it.addedAt }.toSet().size, "every file has the instant of the frozen clock")
+        }
+    }
+
+    @Test
     fun `pdf, jpg, jpeg and png are accepted in any letter case`() {
         val calculation = UUID.randomUUID()
         val names = listOf("a.pdf", "B.PDF", "c.jpg", "D.JPG", "e.jpeg", "F.JpEg", "g.png", "Чертёж.PNG")
@@ -298,6 +313,24 @@ class AttachmentRepositoryTest {
     }
 
     @Test
+    fun `on a clock that never moves a copy and a copy of a copy keep the order of the source`() {
+        val names = listOf("a.pdf", "b.pdf", "c.pdf", "d.pdf", "e.pdf")
+        val sources = (0 until CALCULATIONS_ON_A_FROZEN_CLOCK).map { UUID.randomUUID() }
+        names.forEach { name -> sources.forEach { added(it, file(name)) } }
+
+        sources.forEach { source ->
+            val copy = UUID.randomUUID()
+            val copyOfCopy = UUID.randomUUID()
+            attachments.copyAll(source, copy)
+            attachments.copyAll(copy, copyOfCopy)
+
+            assertEquals(names, attachments.list(copy).map { it.fileName }, "copy of $source")
+            assertEquals(names, attachments.list(copyOfCopy).map { it.fileName }, "copy of the copy of $source")
+            assertEquals(1, attachments.list(copy).map { it.addedAt }.toSet().size, "the copies keep the instant of the source")
+        }
+    }
+
+    @Test
     fun `copyAll skips a file that has vanished and copies nothing from a calculation without files`() {
         val from = UUID.randomUUID()
         val to = UUID.randomUUID()
@@ -438,5 +471,10 @@ class AttachmentRepositoryTest {
         assertNotNull(calculations.get(withExtra))
         assertNotNull(calculations.get(withoutOriginal))
         assertEquals(listOf("a.pdf", "b.png"), attachments.list(withExtra).map { it.fileName })
+    }
+
+    private companion object {
+        // With a random tie-break, five files keep their order with a chance of 1 in 120 per calculation: 50 of them fail it for certain.
+        const val CALCULATIONS_ON_A_FROZEN_CLOCK = 50
     }
 }

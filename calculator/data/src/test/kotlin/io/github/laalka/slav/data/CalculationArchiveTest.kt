@@ -250,6 +250,19 @@ class CalculationArchiveTest {
     }
 
     @Test
+    fun `drawings attached within one millisecond go into the zip in the order they were attached`() {
+        val id = full()
+        // Not in the order of the alphabet, so a sort by name would not pass; the clock is not moved, so every drawing has one instant.
+        val names = listOf("m.pdf", "c.png", "x.jpg", "a.pdf", "t.png", "f.jpeg", "z.pdf", "b.png", "q.jpg", "d.pdf", "y.png", "e.pdf")
+        names.forEach { assertIs<AttachResult.Added>(attachments.add(id, drawing(it))) }
+
+        val entries = unzip(written(id))
+
+        val drawings = entries.keys.filter { "/drawings/" in it }.map { it.substringAfterLast('/') }
+        assertEquals(names, drawings)
+    }
+
+    @Test
     fun `a drawing whose file has vanished from the disk is left out and not counted`() {
         val id = full()
         val kept = attach(id, drawing("kept.pdf"))
