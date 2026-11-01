@@ -42,6 +42,7 @@ import io.github.laalka.slav.app.attachments.AttachmentsBlock
 import io.github.laalka.slav.app.editor.CalcErrors
 import io.github.laalka.slav.app.theme.Spacing
 import io.github.laalka.slav.app.theme.tabular
+import io.github.laalka.slav.app.ui.ArchiveIcon
 import io.github.laalka.slav.app.ui.ChoiceField
 import io.github.laalka.slav.app.ui.InputField
 import io.github.laalka.slav.app.ui.NoticeCard
@@ -296,7 +297,8 @@ private fun Actions(state: CardState, model: CardModel, filePicker: FilePicker) 
             },
             modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_ARCHIVE),
         ) {
-            Text("В архив")
+            Icon(ArchiveIcon, contentDescription = null, modifier = Modifier.testTag(CalculationTags.CARD_ARCHIVE_ICON))
+            Text("В архив", modifier = Modifier.padding(start = Spacing.small))
         }
         OutlinedButton(onClick = model::requestDelete, modifier = Modifier.fillMaxWidth().testTag(CalculationTags.CARD_DELETE)) {
             Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)

@@ -45,6 +45,7 @@ object CalculationTags {
     const val CARD_SOURCE = "card/source"
     const val CARD_DELETE = "card/delete"
     const val CARD_ARCHIVE = "card/archive"
+    const val CARD_ARCHIVE_ICON = "card/archive/icon"
     const val CARD_MESSAGE = "card/message"
     const val CARD_TOTAL = "card/total"
     const val CARD_UNIT_MASS = "card/unit-mass"

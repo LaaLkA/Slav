@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -168,6 +170,12 @@ class ArchiveUiTest {
             compose.setContent { SlavTheme(darkTheme = false) { App(deps, picker) } }
             node(CalculationTags.row(0)).performClick()
             compose.waitForIdle()
+
+            // Like the other actions of the card, the button has an icon before its label; the button merges its children, so the icon is looked for in the unmerged tree.
+            compose.onNode(
+                hasTestTag(CalculationTags.CARD_ARCHIVE_ICON) and hasAnyAncestor(hasTestTag(CalculationTags.CARD_ARCHIVE)),
+                useUnmergedTree = true,
+            ).assertExists()
 
             node(CalculationTags.CARD_ARCHIVE).performClick()
             compose.waitForIdle()
