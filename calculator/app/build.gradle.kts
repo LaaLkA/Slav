@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -46,6 +47,15 @@ tasks.register<JavaExec>("generateIcons") {
     jvmArgs("-Djava.awt.headless=true")
 }
 
+// The Compose DSL has no switch for jpackage's `--win-shortcut-prompt`, which adds the installer dialog with the
+// "desktop shortcut" and "Start menu shortcut" checkboxes. It is passed as a free argument to the .msi tasks only:
+// jpackage on macOS rejects every `--win-*` option, so the .dmg task must not get it.
+tasks.withType<AbstractJPackageTask>().configureEach {
+    if (targetFormat == TargetFormat.Msi) {
+        freeArgs.add("--win-shortcut-prompt")
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "io.github.laalka.slav.app.MainKt"
@@ -62,6 +72,9 @@ compose.desktop {
             windows {
                 // Must never change: a new .msi replaces the installed one only when this UUID matches.
                 upgradeUuid = "ac927098-2ae4-4dac-9c2d-a8dc800bc8fa"
+                // Both are on by default; the installer dialog (`--win-shortcut-prompt`, set above) lets the user decline.
+                shortcut = true
+                menu = true
                 menuGroup = "Slav"
                 perUserInstall = true
                 iconFile.set(iconsDir.file("Slav.ico"))
